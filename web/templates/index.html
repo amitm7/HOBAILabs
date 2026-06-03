@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOBAILabs — Story to Reel</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>HOBAILabs</h1>
+  <span>Story → Reel Pipeline</span>
+</header>
+
+<main>
+
+  <!-- ── Subject ─────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Subject</h2></div>
+    <div class="card-body grid-2">
+      <div class="field">
+        <label>Name</label>
+        <input type="text" id="subject-name" placeholder="Surabhi">
+      </div>
+      <div class="field">
+        <label>Description <span class="text-dim">(for face consistency across AI frames)</span></label>
+        <input type="text" id="subject-description"
+          placeholder="Assamese woman, 28, humble background, warm brown skin, traditional features">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Script ──────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Story Script</h2>
+      <button class="btn-secondary btn-small" id="parse-btn">Parse Frames →</button>
+    </div>
+    <div class="card-body">
+
+      <div class="assets-folder-row">
+        <div class="assets-folder-icon">📁</div>
+        <div style="flex:1">
+          <input type="text" id="assets-dir"
+            placeholder="Assets folder path — e.g. /Users/you/surabhi_assets  (leave blank for AI-only)">
+          <small>Photos &amp; videos in this folder are matched to frames by sort order. You can still override any frame individually.</small>
+        </div>
+        <span id="assets-status"></span>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <textarea id="script-input"
+          placeholder="Paste your Reels script here (Format B):
+
+Reels
+
+Frame 1
+Papa was an auto driver, and Maa worked as a househelp.
+That's where my story began…
+
+Frame 2
+I was just an Assamese girl, living in a 1RK...
+
+Caption:
+(Social media caption here — not shown in video)"></textarea>
+        <small>Supports [photo: filename|ai_portrait|ai_symbolic], [note: director instructions], [duration: 7s] per frame</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Frame cards ─────────────────────────────────────── -->
+  <div class="card" id="frames-card" style="display:none">
+    <div class="card-header">
+      <h2>Frame Assignment</h2>
+      <div class="dur-controls">
+        <span class="text-dim" id="frames-count"></span>
+        <div class="dur-target-row">
+          <label class="text-dim">Target length</label>
+          <div class="dur-presets">
+            <button class="dur-preset-btn" data-sec="30">30s</button>
+            <button class="dur-preset-btn" data-sec="45">45s</button>
+            <button class="dur-preset-btn" data-sec="60">60s</button>
+            <button class="dur-preset-btn" data-sec="90">90s</button>
+            <button class="dur-preset-btn" data-sec="0">Auto</button>
+          </div>
+          <input type="number" id="target-sec" placeholder="custom s" min="15" max="600" step="5">
+          <button class="btn-secondary btn-small" id="redistribute-btn">Apply →</button>
+          <span id="total-dur-display"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="frames-container"></div>
+    </div>
+  </div>
+
+  <!-- ── Style & Quality ─────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Style &amp; Quality</h2></div>
+    <div class="card-body">
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="field">
+          <label>Mood / Colour Palette</label>
+          <select id="mood">
+            <option value="">Default (no mood overlay)</option>
+            <option value="warm nostalgic">Warm Nostalgic — amber, golden hour</option>
+            <option value="cold struggle">Cold Struggle — blue-grey, deep shadows</option>
+            <option value="triumphant">Triumphant — golds, saffron, high saturation</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Orientation</label>
+          <select id="orientation">
+            <option value="portrait">Portrait — 1080 × 1920 (Reels/TikTok)</option>
+            <option value="landscape">Landscape — 1920 × 1080 (YouTube)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="field">
+          <label>Clip Quality (Kling)</label>
+          <select id="quality">
+            <option value="dev">Dev — 5s clips, fast (half Kling cost)</option>
+            <option value="production">Production — full duration (up to 9s)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Kling Mode</label>
+          <select id="kling-mode">
+            <option value="pro">Pro — highest quality</option>
+            <option value="std">Standard — lower cost</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="field">
+          <label>Transition Between Clips</label>
+          <select id="transition">
+            <option value="crossfade">Crossfade (0.4s dissolve)</option>
+            <option value="none">Hard Cut (instant)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Caption Position</label>
+          <select id="caption-position">
+            <option value="bottom">Bottom</option>
+            <option value="middle">Middle</option>
+            <option value="top">Top</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <div class="field" style="flex:2">
+          <label>Caption Font</label>
+          <select id="caption-font">
+            <option value="Baskerville">Baskerville (italic, storytelling)</option>
+            <option value="Arial">Arial (clean, modern)</option>
+            <option value="Georgia">Georgia (editorial, warm)</option>
+            <option value="Helvetica">Helvetica (minimal)</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1">
+          <label>Font Size (pt)</label>
+          <input type="number" id="caption-size" value="52" min="24" max="96" step="2">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Caption Color</label>
+          <select id="caption-color">
+            <option value="white">White</option>
+            <option value="yellow">Yellow</option>
+            <option value="black">Black</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Music ───────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Music</h2></div>
+    <div class="card-body">
+      <div class="music-options">
+
+        <div class="music-option">
+          <input type="radio" name="music-type" id="music-none" value="none" checked>
+          <div>
+            <label for="music-none" class="music-option-label">No music</label>
+          </div>
+        </div>
+
+        <div class="music-option">
+          <input type="radio" name="music-type" id="music-upload" value="upload">
+          <div>
+            <label for="music-upload" class="music-option-label">Upload music file</label>
+            <div class="music-option-sub" id="upload-music-sub" style="display:none">
+              <label class="upload-label">
+                📁 Choose MP3
+                <input type="file" id="music-file-input" accept=".mp3,.m4a,.wav,.aac">
+              </label>
+              <span id="music-upload-name" style="font-size:12px;color:var(--green);margin-left:8px"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="music-option">
+          <input type="radio" name="music-type" id="music-generate" value="generate">
+          <div style="flex:1">
+            <label for="music-generate" class="music-option-label">Auto-generate with Suno V5.5</label>
+            <div class="music-option-sub" id="generate-music-sub" style="display:none">
+              <div class="row">
+                <input type="text" class="flex-1" id="music-prompt"
+                  placeholder="e.g. struggle to triumph, Bollywood sitar and tabla, Indian classical">
+                <button class="btn-secondary btn-small" id="generate-music-btn">Generate →</button>
+              </div>
+              <div id="music-gen-status" style="font-size:12px;margin-top:6px;color:var(--text-dim)"></div>
+              <audio id="music-preview" controls style="display:none;width:100%;margin-top:8px"></audio>
+            </div>
+          </div>
+        </div>
+
+        <div class="music-option">
+          <input type="radio" name="music-type" id="music-voiceover" value="voiceover">
+          <div style="flex:1">
+            <label for="music-voiceover" class="music-option-label">🎙 Read captions (ElevenLabs voice-over)</label>
+            <div class="music-option-sub" id="voiceover-sub" style="display:none">
+              <div class="row">
+                <select id="voice-select" class="flex-1">
+                  <option value="">Loading voices…</option>
+                </select>
+                <span id="voice-load-status" style="font-size:12px;color:var(--text-dim);margin-left:8px"></span>
+              </div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:6px">
+                Each frame's caption is read aloud, timed to the video. Silent frames get silence.
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Run ─────────────────────────────────────────────── -->
+  <button class="btn-primary" id="run-btn">▶ Generate Video</button>
+
+  <!-- ── Progress ────────────────────────────────────────── -->
+  <div class="card" id="progress-panel">
+    <div class="card-header">
+      <h2>Progress</h2>
+      <span id="progress-status" style="font-size:12px;color:var(--text-dim)"></span>
+    </div>
+    <div class="card-body">
+      <div id="progress-log"></div>
+    </div>
+  </div>
+
+  <!-- ── Output ──────────────────────────────────────────── -->
+  <div class="card" id="output-panel">
+    <div class="card-header"><h2>Output</h2></div>
+    <div class="card-body">
+      <video id="output-video" controls playsinline></video>
+      <div class="output-actions">
+        <a id="download-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">
+          ⬇ Download .mp4
+        </a>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script src="/static/main.js"></script>
+</body>
+</html>

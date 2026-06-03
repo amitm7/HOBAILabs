@@ -1,0 +1,186 @@
+"""
+Scene Intelligence: converts story beats into cinematic visual + motion prompts.
+GPT-4o understands the EMOTION behind each story beat and designs the scene.
+"""
+import os
+from openai import OpenAI
+
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = OpenAI()
+    return _client
+
+
+_SHARED_IMAGE_RULES = """
+Image prompt rules (for gpt-image-2 generation):
+- 60-90 words, ultra-specific on lighting, color, texture, lens
+- State "photorealistic, cinematic, 9:16 vertical frame" in every prompt
+- Specify lens/depth: "85mm portrait lens, f/1.8 bokeh", "wide 24mm", "macro"
+- Specify light source: "golden hour side-light", "single tungsten lamp", "overcast diffused light"
+- Specify color palette: "warm amber tones", "desaturated blue-grey", "deep reds and saffron"
+- NO text, NO watermarks, NO logos in the scene
+"""
+
+SYSTEM_PROMPT = f"""You are a cinematic director for an Indian storytelling platform (like Humans of Bombay).
+Your job: read a story beat and design ONE cinematic shot that EMOTIONALLY represents it.
+
+Filmmaking rules:
+- Think like a filmmaker, not a photographer. What shot tells this EMOTION, not this action?
+- Use visual metaphors: "I was alone" = person motionless on a packed Assam bus stand, everyone rushing past, shallow focus.
+- Ground every scene in real India: bamboo homes, auto stands, chawls, Assam tea estates, government school classrooms, Guwahati streets.
+- Subject: Assamese Indian woman, late 20s, natural features — not glamorous.
+- For real photos (motion only): design how the camera moves across the existing photo.
+{_SHARED_IMAGE_RULES}
+Respond in this EXACT JSON:
+{{
+  "emotion": "one word",
+  "scene_description": "2-3 sentences — what is in frame, subject posture, setting, light",
+  "image_prompt": "60-90 word gpt-image-2 prompt, photorealistic cinematic 9:16 vertical",
+  "motion_prompt": "10-15 words for Kling v3 camera movement",
+  "camera_angle": "low angle / eye level / over-shoulder / extreme close-up / wide establishing"
+}}"""
+
+
+CONTEXTUAL_SYSTEM_PROMPT = f"""You are a cinematic director for an Indian storytelling platform (like Humans of Bombay).
+Your job: design an AGE-ACCURATE, ERA-ACCURATE portrait that EMOTIONALLY represents this story moment.
+
+Age and era rules:
+- Infer exact age: "8th grade" = 13 years old, "12th grade" = 17, "college" = 19-21, "teaching kids" = 17.
+- Era: early 2000s India — no smartphones, no earphones, cotton salwar or school uniform, simple bindi.
+- Location: Assam/Northeast India — bamboo, corrugated iron roofs, handloom textures, red soil.
+- Body language conveys emotion — don't just put a person in a setting, show how they FEEL.
+- The face should look innocent, determined, or vulnerable — matching the story beat.
+{_SHARED_IMAGE_RULES}
+Respond in this EXACT JSON:
+{{
+  "emotion": "one word",
+  "scene_description": "2-3 sentences — subject age, exact setting, body language, light quality",
+  "image_prompt": "60-90 word gpt-image-2 prompt — MUST state age explicitly (e.g. '13-year-old Indian girl'), era details, photorealistic cinematic 9:16 vertical",
+  "motion_prompt": "10-15 words for Kling v3 camera movement",
+  "camera_angle": "low angle / eye level / over-shoulder / extreme close-up / wide establishing"
+}}"""
+
+
+SYMBOLIC_SYSTEM_PROMPT = f"""You are a cinematic director for an Indian storytelling platform (like Humans of Bombay).
+Your job: design a SYMBOLIC / METAPHORICAL still — objects, textures, environments ONLY. Absolutely no people or faces.
+
+Symbolic composition rules:
+- ZERO people, ZERO faces, ZERO hands (unless disembodied hands as a deliberate metaphor, and only if essential).
+- One or two HERO OBJECTS that carry the entire emotional weight of the story beat.
+- Examples: crumpled newspaper audition ad on a concrete floor, ₹500 notes fanned out under a kerosene lamp, a worn textbook with someone else's name crossed out on the cover, chalk dust settling on a dark slate board, an auto's side mirror reflecting an empty road at dusk.
+- Objects must SUGGEST the emotion — never literally illustrate the caption.
+- Ground in India: handloom fabric, red oxide floors, banana leaf, jute, iron trunk, government school items.
+- Light is the emotion: kerosene warmth = struggle, morning blue-grey = uncertainty, golden hour = hope.
+{_SHARED_IMAGE_RULES}
+Respond in this EXACT JSON:
+{{
+  "emotion": "one word",
+  "scene_description": "2-3 sentences — which objects, how arranged, light source, color palette — NO people mentioned",
+  "image_prompt": "60-90 word gpt-image-2 prompt — begin with 'No people, no faces.' — then objects, setting, light, photorealistic cinematic 9:16 vertical",
+  "motion_prompt": "10-15 words for Kling v3 — slow drift, macro pull-back, dust particles, etc.",
+  "camera_angle": "macro close-up / low angle / eye level / wide establishing"
+}}"""
+
+
+def design_scene(story_beat: str, subject_name: str = "Surabhi",
+                 has_real_photo: bool = False, director_note: str = "",
+                 visual_type: str = "portrait", subject_description: str = "") -> dict:
+    """
+    Given a story beat (frame text), return cinematic visual + motion design.
+    visual_type: "portrait" (default), "contextual" (age-accurate), or "symbolic" (no people).
+    If has_real_photo=True, only returns motion_prompt (image already exists).
+    """
+    client = _get_client()
+
+    if visual_type == "symbolic":
+        system_prompt = SYMBOLIC_SYSTEM_PROMPT
+    elif visual_type == "contextual":
+        system_prompt = CONTEXTUAL_SYSTEM_PROMPT
+    else:
+        system_prompt = SYSTEM_PROMPT
+
+    subj = f"{subject_name}"
+    if subject_description:
+        subj += f" — {subject_description}"
+    user_msg = f'Story beat: "{story_beat}"\nSubject: {subj}.\n'
+    if director_note:
+        user_msg += f'\nDirector note: {director_note}\n'
+    if has_real_photo:
+        user_msg += "A real photo exists. Only design the MOTION (how it should move/animate). Skip image_prompt details."
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.8,
+        )
+        import json
+        result = json.loads(resp.choices[0].message.content)
+        return result
+    except Exception as e:
+        print(f"[SceneIntelligence] Error: {e} — using fallback")
+        fallback_prompt = (
+            f"Cinematic symbolic objects, no people, {story_beat[:60]}, "
+            "warm natural lighting, shallow depth of field, photorealistic, vertical 9:16"
+            if visual_type == "symbolic" else
+            f"Cinematic portrait of a young Assamese Indian woman, {story_beat[:60]}, "
+            "warm natural lighting, shallow depth of field, photorealistic, vertical 9:16"
+        )
+        return {
+            "emotion": "reflective",
+            "scene_description": "Cinematic shot.",
+            "image_prompt": fallback_prompt,
+            "motion_prompt": "Slow gentle push-in, subtle ambient movement",
+            "camera_angle": "eye level",
+        }
+
+
+def design_all_scenes(frames: list[dict], subject_name: str = "Surabhi",
+                      subject_description: str = "") -> list[dict]:
+    """Add scene intelligence to all frames. Enriches each frame dict in place."""
+    print(f"[SceneIntelligence] Designing {len(frames)} scenes for {subject_name}...")
+
+    for f in frames:
+        caption = f.get("caption", "").strip()
+        note = f.get("director_note", "")
+        photo_spec = f.get("photo_spec", "")
+
+        # Real photo: scene intelligence only needs to design motion
+        has_photo = (
+            os.path.exists(f.get("visual_path", ""))
+            or (photo_spec and not photo_spec.startswith("ai_"))
+        )
+
+        # Map photo_spec to visual_type for prompt selection
+        if photo_spec == "ai_symbolic":
+            visual_type = "symbolic"
+        elif photo_spec == "ai_portrait":
+            visual_type = "contextual"
+        else:
+            visual_type = "portrait"
+
+        if not caption:
+            f["scene"] = {
+                "emotion": "silence",
+                "motion_prompt": "Very slow zoom out, still, contemplative",
+                "camera_angle": "eye level",
+                "image_prompt": "",
+            }
+            continue
+
+        scene = design_scene(caption, subject_name, has_real_photo=has_photo,
+                             director_note=note, visual_type=visual_type,
+                             subject_description=subject_description)
+        f["scene"] = scene
+
+        print(f"  {f['frame_id']} [{scene.get('emotion','?')}] [{visual_type}] → {scene.get('motion_prompt','?')}")
+
+    return frames
