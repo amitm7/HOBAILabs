@@ -1,0 +1,1007 @@
+# HOBAILabs — Complete User Guide
+
+**Platform:** AI-powered storytelling video pipeline (Instagram Reels / YouTube Shorts)  
+**Flow:** Script → Scene Intelligence → AI Images → Animated Clips → Captions → Assembled Reel  
+
+---
+
+## Table of Contents
+
+0. [What This App Does (Plain English)](#0-what-this-app-does-plain-english)
+1. [Starting the App](#1-starting-the-app)
+2. [Recharging Credits](#2-recharging-credits)
+3. [Script Format — Complete Reference](#3-script-format--complete-reference)
+4. [Web UI — Step by Step](#4-web-ui--step-by-step)
+5. [Frame Assignment — All Options](#5-frame-assignment--all-options)
+6. [Director Notes — How to Write Them](#6-director-notes--how-to-write-them)
+7. [Camera Angles & Motion](#7-camera-angles--motion)
+8. [Lip Sync — Make the Subject Speak](#8-lip-sync--make-the-subject-speak)
+9. [Image Edits — Change What's in a Photo](#9-image-edits--change-whats-in-a-photo)
+10. [Style & Quality Settings](#10-style--quality-settings)
+11. [Models, Providers & Routing](#11-models-providers--routing)
+12. [Music Options](#12-music-options)
+13. [CLI Reference — All Flags](#13-cli-reference--all-flags)
+14. [Cost Management](#14-cost-management)
+15. [Cache System](#15-cache-system)
+16. [Best Practices for Storytelling Scripts](#16-best-practices-for-storytelling-scripts)
+17. [Complete Worked Example — Lalita's Story](#17-complete-worked-example--lalitas-story)
+
+---
+
+## 0. What This App Does (Plain English)
+
+You give the app a **story written as short lines** (a script) and a **folder of photos/videos**. It returns a **finished vertical video** ready to post on Instagram Reels or YouTube Shorts — with captions on screen, background music, and cinematic camera movement on each photo.
+
+**Think of it like an automated video editor with a film director's brain.** For each line of your story, it decides what should be on screen, how the camera should move, and how it should feel emotionally — then assembles everything into one reel.
+
+Here is the whole journey, in order:
+
+```
+1. YOU WRITE       →  a story in "frames" (one beat per frame) + pick a photo/video folder
+2. THE APP READS   →  splits your story into frames, matches each to a photo or video
+3. IT DIRECTS      →  for each frame, an AI "director" decides the emotion, lighting, camera move
+4. IT CREATES      →  missing visuals are AI-generated (a portrait, or symbolic objects)
+5. IT ANIMATES     →  still photos are turned into moving video (camera pans, zooms, orbits)
+6. IT CAN SPEAK    →  optionally, a photo can become a talking face narrating the line (lip sync)
+7. IT CAPTIONS     →  your text appears on screen, timed to each frame
+8. IT SCORES       →  background music is added and ducked under any spoken audio
+9. YOU DOWNLOAD    →  one polished 9:16 MP4
+```
+
+**Why "frames"?** A frame is one beat of the story — usually one or two sentences. Each frame becomes one shot in the final video. A 10-frame story becomes a 10-shot reel.
+
+**You control everything per frame** using simple bracket tags in the script (like `[note: show pride]` or `[camera: 360 orbit]`) OR by clicking in the web UI. You never touch code.
+
+The rest of this guide explains each control. **Section 17 is a complete worked example** using Lalita's real story — start there if you learn best by example.
+
+---
+
+## 1. Starting the App
+
+```bash
+# Start web server
+~/.pyenv/versions/3.12.3/bin/python3.12 web_app.py
+
+# Open in browser
+http://localhost:7860
+```
+
+To stop: `kill $(lsof -ti:7860)`
+
+---
+
+## 2. Recharging Credits
+
+| Service | Used For | Recharge / Sign-up URL |
+|---|---|---|
+| **fal.ai** | Aggregator: Flux, Seedream, Nano Banana (images) + Seedance, Veo 3, Hailuo (video) — one key, many models | fal.ai → Avatar → Billing |
+| **Kling AI** | Image-to-video animation (native, default for most shots) | klingai.com → Account → Recharge |
+| **Higgsfield** | Cinematic video + camera-motion presets | cloud.higgsfield.ai → Billing |
+| **OpenAI** | Scene intelligence (GPT-4.1) + symbolic images + image edits | platform.openai.com → Billing |
+| **ElevenLabs** | Voice-over + lip-sync audio | elevenlabs.io → Billing |
+| **Hedra** | Lip sync from a photo (talking portrait) — *optional* | hedra.com → Creator plan → Profile → API |
+| **SyncLabs** | Lip sync on a video (mouth re-sync) — *optional* | app.sync.so → API Keys |
+| **Suno** | AI music generation | sunoapi.org (third-party wrapper) |
+
+**Lip-sync services (Hedra / SyncLabs) are optional.** If their keys are not set, lip-sync frames silently fall back to a normal animated photo (Ken Burns). Nothing breaks — you just don't get a talking face on those frames.
+
+**Multiple models, auto-chosen per shot.** You no longer pick one provider for the whole video. The pipeline routes each shot to the best model for its type, cost-tier aware (cheap models in Dev, premium models in Production). You can override globally or per frame. See [§11 Models, Providers & Routing](#11-models-providers--routing). Models + routing policy live in `config/models.json`.
+
+**Approximate costs per 10-frame story (Auto routing):**
+- Dev / draft tier (Kling Standard video + Seedream images): ~$0.85
+- Production / premium tier (Kling Pro / Seedance / Hailuo + Nano Banana): ~$1.00–2.00 depending on which premium video models the router picks
+- Higgsfield (when chosen): ~$1.00 · GPT-4.1 scene design: ~$0.01 (cached after first run)
+
+> ⚠ **fal.ai model endpoint slugs and prices in `config/models.json` / `config/pricing.json` are marked `VERIFY`.** Confirm each on fal.ai before a *Production* render — they shift monthly. Dev renders are safe: video uses Kling, and unverified fal image models fall back to gpt-image automatically.
+
+All prices stored in `config/pricing.json`; model capabilities + routing in `config/models.json` — update those files when vendor rates/models change.
+
+---
+
+## 3. Script Format — Complete Reference
+
+The app uses **Format B** — plain text with `Frame N` headers and optional bracket annotations.
+
+### Minimal Script
+
+```
+Reels
+
+Frame 1
+From a farmer to a model…
+This is the story of a desi girl with big dreams.
+
+Frame 2
+At 19, I got married into a traditional Rajasthani home.
+
+Caption:
+Your full Instagram caption goes here (NOT shown in video).
+```
+
+### Full Script with All Annotations
+
+```
+Reels
+
+Frame 1
+From a farmer to a model… This is the story of a desi girl.
+[photo: IMG_1240.MOV]
+[note: Opening hook — strong, proud face. Direct gaze into camera. NOT victimized.]
+[duration: 6]
+
+Frame 2
+At 19, I got married into a traditional Rajasthani home.
+[photo: 02_wedding.jpg]
+[note: Traditional setting, ghunghat — but eyes show inner fire]
+
+Frame 3
+Being a kisan ki beti, I was riding tractors even after marriage.
+[photo: ai_portrait]
+[note: Strong, proud farmer woman. NOT poor — powerful. Golden hour light.]
+[camera: crane up]
+
+Frame 4
+After COVID, I was diagnosed with rheumatoid arthritis.
+[photo: ai_symbolic]
+[note: No person. Medicine bottles, fallen hair, cold blue-grey light. Silence.]
+[edit: add frost on the window and grey winter light]
+
+Frame 7
+Bedridden, I watched modelling videos dreaming of the ramp.
+[photo: lalita_face.jpg]
+[lipsync: yes]
+[note: She speaks this line herself — hope kindling in her eyes]
+
+Frame 8
+One day, the girl who couldn't stand walked the ramp in heels.
+[photo: IMG_3020.MOV]
+[start: 4]
+[note: Use the ramp-walk clip; skip the first 4s of intro]
+[duration: 7]
+
+Caption:
+"From the farm to the ramp, I am that Desi Girl…"
+```
+
+### Annotation Reference
+
+| Annotation | What it does | Example |
+|---|---|---|
+| `[photo: filename.jpg]` | Use a specific file from your assets folder | `[photo: lalita_ramp.jpg]` |
+| `[photo: ai_portrait]` | Generate an AI portrait of the subject | `[photo: ai_portrait]` |
+| `[photo: ai_symbolic]` | Generate AI objects/setting (no people) | `[photo: ai_symbolic]` |
+| `[note: text]` | Director note — guides AI scene design and image generation | `[note: show grief not anger]` |
+| `[camera: move]` | Set the camera movement directly (alias: `[motion:]`) | `[camera: 360 orbit]` |
+| `[motion: move]` | Same as `[camera:]` — pick whichever word you prefer | `[motion: crane up]` |
+| `[lipsync: yes]` | Make this frame a talking face speaking the caption | `[lipsync: yes]` |
+| `[voice: voice_id]` | Use a specific ElevenLabs voice for this frame's lip sync | `[voice: 21m00Tcm4TlvDq8ikWAM]` |
+| `[edit: prompt]` | Apply a natural-language edit to the image before animating | `[edit: add thunderstorm]` |
+| `[model: id]` | Force a specific model for this frame (image + video) — overrides Auto routing | `[model: seedance]` |
+| `[imgmodel: id]` | Force only the image model for this frame | `[imgmodel: nano_banana]` |
+| `[vidmodel: id]` | Force only the video model for this frame | `[vidmodel: hailuo]` |
+| `[duration: Xs]` | Override the auto-calculated frame duration | `[duration: 8]` |
+| `[start: Xs]` | Skip the first X seconds of a raw video clip | `[start: 3]` |
+
+**Rules:**
+- Frame numbers don't need to be sequential — the parser reads order, not number
+- `Caption:` section at the bottom is the Instagram posting text — it does NOT appear in the video
+- Multiple annotations per frame are fine — put each on its own line
+- `[note:]` guides the AI director (GPT). `[camera:]` sets the camera move directly. `[edit:]` changes the photo itself. `[lipsync:]` makes the face talk. `[model:]` forces a specific model (otherwise the router auto-picks per shot — see §10).
+- Valid model ids are listed in `config/models.json` (e.g. `seedream`, `nano_banana`, `flux`, `gpt_image` for images; `kling_std`, `kling_pro`, `higgsfield`, `seedance`, `veo`, `hailuo` for video). A wrong-kind id is ignored and the router auto-picks instead.
+- **`[camera:]` and `[lipsync:]` on the same frame:** lip sync wins. A talking face controls its own head motion, so the camera move is ignored on that frame. Choose one per frame: a cinematic camera move OR a talking face.
+
+### Frame Duration Auto-Calculation
+
+If you don't specify `[duration:]`, the app calculates it from word count:
+- Minimum: 3.5 seconds
+- Maximum: 9.0 seconds (or 5.0 in dev mode)
+- Formula: `max(3.5, min(max_dur, word_count / 2.0))`
+
+A 10-word caption → 5.0s. A 20-word caption → 9.0s.
+
+---
+
+## 4. Web UI — Step by Step
+
+### Step 1: Subject
+- **Name**: Subject's first name — used in scene intelligence prompts ("design a shot of Lalita…")
+- **Description**: Physical description for AI portrait consistency across frames
+  - Example: `Rajasthani woman, 30s, strong features, sun-kissed skin, traditional clothing`
+  - Leave blank if using only real photos
+
+### Step 2: Paste Script + Set Assets Folder
+- **Script box**: Paste your Format B script
+- **Assets folder**: Full path to your photos/videos folder
+  - Example: `/Users/amitmishra/Downloads/lalita`
+  - Leave blank for AI-only generation
+- Click **Parse Frames →**
+- After parsing: check `✓ N photos matched` — this confirms auto-matching worked
+
+### Step 3: Frame Assignment
+See [Section 5](#5-frame-assignment--all-options) for full details.
+
+### Step 4: Target Length
+- Presets: 30s / 45s / 60s / 90s / Auto
+- Durations are redistributed proportionally by word count across frames
+- Silent frames always get 2.5s
+- Click **Apply →** to redistribute, or type a custom value
+
+### Step 5: Style & Quality
+See [Section 7](#7-style--quality-settings).
+
+### Step 6: Music
+See [Section 9](#9-music-options).
+
+### Step 7: Check Cost Estimate
+The **💰 Estimated Cost** panel appears after parsing. Shows a per-category breakdown reflecting the **models the router will actually use** (mixed models are listed). Updates live when you change the Image/Video Model, quality tier, or per-frame model.
+
+### Step 8: Generate
+- Click **▶ Generate Video**
+- Watch the progress log — each step is logged in real time
+- Video plays automatically when done
+- Click **⬇ Download .mp4** to save
+
+---
+
+## 5. Frame Assignment — All Options
+
+After clicking Parse Frames, each frame card shows:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ f03   Caption text shown here...                  7.5s    │
+│                                                            │
+│  📁 IMG_3020.MOV   ← matched file badge                   │
+│                                                            │
+│ [ Auto ] [📁 From Folder] [📷 Upload] [AI Portrait] [AI Symbolic] │
+│                                                            │
+│ Director note:    ____________________________________     │
+│ ✏️ Image edit:     ____________________________________     │
+│ 🎥 Camera motion:  ____________________________________     │
+│ 🎙 Lip Sync ☐     [voice dropdown appears when ticked]     │
+│ Video start:      0  s  (only for video sources)           │
+│ Duration:         7.5  s  (auto: 7.5s)                    │
+└──────────────────────────────────────────────────────────┘
+```
+
+Each row top-to-bottom: pick the **source**, then optionally add a **director note** (emotion), an **image edit** (change the photo), a **camera move**, a **lip-sync toggle**, and finally **duration**.
+
+### Source Buttons
+
+| Button | What happens |
+|---|---|
+| **Auto** | Reset to auto-matched file from folder (sort order) |
+| **📁 From Folder** | Use the auto-matched file (shown in green badge) |
+| **📷 Upload Photo** | Browse and upload any image or video from your Mac |
+| **🎨 AI Portrait** | Generate an AI photo of the subject for this frame |
+| **🖼 AI Symbolic** | Generate AI objects/setting (NO person) for this frame |
+
+### Director Note Field
+- Free text instruction for the AI director (GPT)
+- Affects: what to generate, how to animate, the emotional tone
+- Most powerful field in the UI — see [Section 6](#6-director-notes--how-to-write-them)
+
+### 🎥 Camera Motion Field
+- Type a camera move in plain English: `360 orbit`, `crane up`, `dolly in`, `crash zoom`
+- Box border turns **purple** when filled
+- Leave blank → the AI director picks the motion automatically from the emotion
+- Full list and meanings — see [Section 7](#7-camera-angles--motion)
+
+### 🎙 Lip Sync Toggle
+- Tick it → this frame becomes a **talking face** speaking the caption aloud
+- A **voice dropdown** appears (pick an ElevenLabs voice, or use the global default)
+- **Duration goes grey** — it's now set by how long the spoken line takes, not word count
+- Full explanation — see [Section 8](#8-lip-sync--make-the-subject-speak)
+
+### ✏️ Image Edit Field
+- Natural-language change to the photo *before* it's animated — see [Section 9](#9-image-edits--change-whats-in-a-photo)
+- Examples: `add thunderstorm`, `make lighting warmer`, `add rain on the window`
+
+### Video Start Field
+- Only shown for frames assigned a video file (.mp4, .mov, etc.)
+- Skips the first N seconds of the video — use when the good part starts mid-way
+- Example: `3` skips the first 3 seconds
+
+---
+
+## 6. Director Notes — How to Write Them
+
+Director notes go to GPT-4.1 which designs the visual for you. Think like a film director telling a DP what to shoot.
+
+**Format:** `[what is in frame] + [how the subject looks/feels] + [light quality]`
+
+### Bad notes (too literal)
+```
+[note: show her being sad about arthritis]
+[note: show the farm]
+[note: wedding scene]
+```
+
+### Good notes (emotional, specific)
+```
+[note: Her hands grip the tractor wheel — strong, capable. 
+Not poverty, this is PRIDE. Golden hour from the left, dust catching the light.]
+
+[note: Medicine bottles on a windowsill. No person. Cold winter light from outside. 
+The silence of an empty room. She is absent — the objects speak for her.]
+
+[note: Ramp walk. Head high, back straight, heels clicking. 
+This is the PEAK moment — full confidence. Warm gold backlight. She earned this.]
+```
+
+### Director Note Cheat Sheet
+
+| Emotion | Note structure |
+|---|---|
+| Pride/Triumph | "Head high, direct gaze, warm gold backlight, full confidence" |
+| Grief/Loss | "No eye contact, slumped posture, cold blue-grey, objects rather than face" |
+| Longing | "Eyes looking just off-frame, window light, half-turned away" |
+| Determination | "Jaw set, hands busy, warm practical light, grounded posture" |
+| Fear/Uncertainty | "Shadow falling across face, shallow depth of field, out-of-focus background looms" |
+| Innocence | "Young face, soft diffused light, looking up slightly, clean background" |
+| Turning point | "Spark in eyes, phone glow in dark room, small smile starting — hope igniting" |
+
+### When to Use ai_symbolic
+Use `ai_symbolic` (no person) for:
+- Illness, trauma, or events that feel exploitative if shown directly
+- Abstract emotions (loneliness, confusion, change)
+- Scene transitions and atmosphere frames
+- When you have no good photo for a moment
+
+```
+[photo: ai_symbolic]
+[note: No person. A crumpled train ticket on a dirty floor. 
+Single overhead fluorescent light. This is the moment of rejection — not shown, felt.]
+```
+
+---
+
+## 7. Camera Angles & Motion
+
+A still photo with the right camera move feels like real film. This is what turns your photos into cinema instead of a slideshow.
+
+**Where to set it:** the **🎥 Camera motion** field on each frame card, OR `[camera: ...]` (same as `[motion: ...]`) in the script.
+
+**If you leave it blank,** the AI director chooses a camera move automatically based on the emotion of that line. So you only need to set it when you want a *specific* move.
+
+### Camera move reference
+
+| What you type | Effect | Best for |
+|---|---|---|
+| `360 orbit` | Full circle around the subject | Hero reveal, triumph |
+| `bullet time` | Freeze + orbit (Matrix style) | Peak emotional moment |
+| `crash zoom in` | Dramatic fast zoom toward subject | Surprise, shock, realization |
+| `dolly in` | Smooth move toward the subject | Intimacy, building emotion |
+| `dolly out` | Pull back to reveal surroundings | Scale, loneliness, isolation |
+| `Hitchcock zoom` | Zoom in + dolly back (vertigo) | Dread, disorientation |
+| `crane up` | Camera lifts upward | Victory, freedom, triumph |
+| `crane down` | Camera lowers | Weight, defeat, gravity |
+| `overhead` | Bird's-eye view from directly above | Isolation, vulnerability |
+| `dutch angle` | Tilted horizon | Tension, unease, things "off" |
+| `extreme close on eyes` | Macro on the face/eyes | Deep emotion, connection |
+| `handheld` | Shaky, organic, human | Raw truth, documentary feel |
+| `static` | No camera movement at all | Weight, stillness, gravity |
+| `super 8mm` | Vintage film grain look | Memory, flashback, nostalgia |
+| `whip pan` | Fast blurred pan | Energy, passage of time, transition |
+
+### How it works behind the scenes
+- **Kling / Seedance / Veo / Hailuo (and other prompt-driven models):** your words are sent as the motion instruction (they understand natural language)
+- **Higgsfield:** your words are matched to one of 30 real cinematic presets (e.g. `360 orbit` → their actual 360° Orbit preset)
+- **Either way:** type plainly. `crane up`, `slow zoom in`, `orbit around her` all work — and whichever model the router picks for that shot receives them.
+- **Tip (avoids face morphing):** keep it to *one* gentle action + a slow camera (e.g. `slow push in`). Over-describing motion is the main cause of distorted faces.
+
+### Important: camera moves vs. lip sync
+A frame can be **either** a cinematic camera move **or** a talking face (lip sync) — not both. A talking face controls its own subtle head motion, so if you tick **🎙 Lip Sync** on a frame, any camera move on that frame is ignored. Use camera moves on your *visual* beats and lip sync on your *spoken* beats.
+
+---
+
+## 8. Lip Sync — Make the Subject Speak
+
+Lip sync turns a frame into a **talking face** that narrates the caption in a real voice. Instead of silent text on screen, the person on screen actually speaks the line.
+
+This is the platform's most powerful storytelling feature — the subject appears to tell their own story.
+
+### Two ways it works (chosen automatically)
+
+| Your frame source | Service used | What happens |
+|---|---|---|
+| A **photo** or AI portrait | **Hedra** | Generates a talking-head video from the still — the face speaks with natural head movement and blinks |
+| A **video** of the person | **SyncLabs** | Re-syncs the existing mouth to a new clean voice — keeps the original footage, swaps the audio |
+
+You don't choose the service — the app routes automatically: photos → Hedra, videos → SyncLabs.
+
+### How to turn it on
+
+**In the script:**
+```
+Frame 7
+Bedridden, I watched modelling videos dreaming of the ramp.
+[photo: lalita_face.jpg]
+[lipsync: yes]
+[voice: 21m00Tcm4TlvDq8ikWAM]
+```
+
+**In the web UI:** tick the **🎙 Lip Sync** checkbox on the frame card. A voice dropdown appears — pick a voice or leave it on the global default.
+
+### Key things to know
+
+1. **Duration is set by the audio.** When lip sync is on, the frame lasts exactly as long as the spoken line takes. The duration field goes grey — you can't set it manually, because the voice decides it.
+
+2. **The caption is what gets spoken.** Whatever text is in that frame becomes both the on-screen caption AND the spoken words. Keep it natural to say aloud.
+
+3. **Voice selection.** Set a default voice once (in the UI voice dropdown, or `ELEVENLABS_VOICE_ID` in `.env`), or override per frame with `[voice: voice_id]`. For Lalita, use a warm female Hindi-capable voice (`eleven_multilingual_v2` model handles Hindi/Hinglish well).
+
+4. **Background music ducks automatically.** During a talking frame, music drops to 10% so the voice is clear. On non-talking frames it returns to 25%.
+
+5. **It's optional and safe.** If the Hedra/SyncLabs key isn't set, or the service fails, that frame quietly falls back to a normal animated photo. Your render never crashes.
+
+### When to use it
+- **Best:** 2–4 emotional "I" statements where hearing the person makes it hit harder — the turning point, the confession, the triumph
+- **Don't:** lip-sync every frame. It's expensive and exhausting to watch. Mix talking beats with silent cinematic beats.
+
+### Cost
+- Hedra (photo → talking): ~$0.10 per frame
+- SyncLabs (video → re-sync): ~$0.012 per second
+- The 💰 cost estimate updates the moment you tick the box.
+
+---
+
+## 9. Image Edits — Change What's in a Photo
+
+The **✏️ Image edit** field lets you change a photo with plain English *before* it's animated. The app edits the still image, then animates the edited version.
+
+**Where:** the ✏️ field on each frame card, or `[edit: ...]` in the script.
+
+### What works well
+| You type | Result |
+|---|---|
+| `add thunderstorm and dark clouds` | Storm added to the sky/background |
+| `make the lighting warmer and golden` | Warm sunset tone over the whole image |
+| `add rain on the window` | Rain streaks added |
+| `more trees and greenery behind her` | Background filled with foliage |
+| `add soft morning fog` | Atmospheric fog layer |
+
+### Tips
+- **Global changes work best** ("add storm", "warmer light"). Precise spatial edits ("move her to the left") are less reliable — that's expected.
+- Works on **any** source: a real photo, an AI portrait, or an AI symbolic image.
+- Cost: ~$0.04 per edited frame.
+- Use it to unify mood — e.g. add the same cold blue tone to several "struggle" frames so they feel like one chapter.
+
+---
+
+## 10. Style & Quality Settings
+
+### Image Model & Video Model (Auto by default)
+Two dropdowns in the UI (and `--image-model` / `--video-model` on the CLI). Leave both on **Auto** and the router picks the best model per shot, cost-tier aware. Pick a specific model to force it for the whole video, or override a single frame with its **🤖 Model** dropdown (or `[model:]` in the script). Full behaviour in [§11 Models, Providers & Routing](#11-models-providers--routing).
+
+- **Auto (recommended):** real photos animate via Kling; AI images route by type; Dev uses cheap models, Production uses premium ones.
+- **Ken Burns** (in the Video Model dropdown): basic zoom, free, no AI — for testing or when credits are out.
+
+### Clip Quality = cost tier
+| Mode | Duration | Models used | Use when |
+|---|---|---|---|
+| **Dev** | 5s per clip | Draft tier — cheap (Kling Std video, Seedream images) | Testing script + captions; **always start here** |
+| **Production** | Up to 9s per clip | Premium tier — best (Kling Pro / Seedance / Hailuo, Nano Banana) | Final render only |
+
+This is the "test cheap, finish expensive" rule baked in: Dev renders cost a fraction; only switch to Production once the script + timing are right. Higgsfield/fal models that are always 5s are auto-extended to longer frames with a freeze-frame.
+
+### Kling Mode (applies when the router uses Kling)
+| Mode | Quality | Cost |
+|---|---|---|
+| **Pro** | Highest | ~$0.14/5s |
+| **Standard** | Good | ~$0.08/5s |
+
+### Mood / Colour Palette
+Applied on top of every AI-generated image prompt:
+| Mood | Effect |
+|---|---|
+| **Warm Nostalgic** | Amber tones, golden hour, slightly desaturated vintage |
+| **Cold Struggle** | Blue-grey palette, overcast, high contrast deep shadows |
+| **Triumphant** | Rich golds and saffron, directional sunlight, high saturation |
+| **Default** | No overlay — scene intelligence chooses per frame |
+
+### Orientation
+- **Portrait 1080×1920** — Instagram Reels, TikTok, YouTube Shorts
+- **Landscape 1920×1080** — YouTube (horizontal), LinkedIn
+
+### Transition
+- **Crossfade** — 0.4s dissolve between clips (default, smooth)
+- **Hard Cut** — instant cut (more aggressive, editorial feel)
+
+### Caption Styling
+| Setting | Options | Recommendation |
+|---|---|---|
+| **Font** | Baskerville, Arial, Georgia, Helvetica | Baskerville for storytelling |
+| **Size** | 24–96 pt | 52 default; 60–70 for dramatic |
+| **Color** | White, Yellow, Black | White — always readable |
+| **Position** | Bottom, Middle, Top | Bottom for Reels standard |
+
+---
+
+## 11. Models, Providers & Routing
+
+### Model Selection & Routing (how Auto works)
+You don't pick one provider for the whole video any more. A **router** (`agents/model_router.py`) chooses a model for each shot, reading metadata the pipeline already produces (real photo vs AI, portrait vs object, lip-sync, frame position) plus the **cost tier** (Dev → draft, Production → premium).
+
+**Rules, in order:**
+1. An explicit override wins — UI per-frame **🤖 Model**, `[model:]`/`[imgmodel:]`/`[vidmodel:]` in the script, or the global Image/Video Model dropdowns. (A wrong-kind id is ignored.)
+2. **Real photos and videos are never AI-regenerated** at the image step — your real subject is preserved (this is your biggest realism advantage).
+3. Otherwise the shot type + cost tier map to the best model via `config/models.json` → `routing`.
+
+**Default routing policy** (edit in `config/models.json`):
+
+| Shot | Dev (draft) | Production (premium) |
+|---|---|---|
+| Real photo → image | passthrough (kept as-is) | passthrough |
+| Real photo → video | Kling Std | Kling Pro / Seedance |
+| AI face / portrait (image) | Seedream | Nano Banana |
+| AI object / symbolic (image) | Seedream | Flux / Nano Banana |
+| Landscape / wide (video) | Kling Std | Hailuo / Seedance |
+| Hero / establishing (video) | Kling Std | Seedance / Veo |
+| Dialogue / lip-sync (video) | (lip-sync path) | Veo / Kling Pro |
+
+**To add or re-rank a model:** add it under `models` in `config/models.json` and list its id in `routing` — no code change. fal-hosted models just need a `fal_endpoint`. New video models are reached through fal.ai via `agents/fal_video.py`; images via `agents/image_generator.py`.
+
+> ⚠ fal endpoint slugs + prices are marked `VERIFY` — confirm on fal.ai before a Production render. Dev is safe: video = Kling, and unverified fal image models fall back to gpt-image.
+
+### fal.ai-hosted models (Seedance, Veo, Hailuo / Nano Banana, Seedream)
+- **One key (`FAL_API_KEY`), many models.** Reached through the same REST pattern.
+- **Video:** Seedance (cinematic, multi-shot), Veo 3 (best native audio/dialogue), Hailuo (wide landscapes, motion physics).
+- **Image:** Nano Banana (premium photoreal), Seedream (cheap draft/testing).
+- **Cache:** fal video clips share `~/.hob_cache/kling_clips/`, keyed per model so switching models never returns the wrong clip; existing Kling/Higgsfield clips keep their old keys (no re-billing).
+
+### Kling AI
+- **What it does:** Animates a still photo into cinematic motion — hair moves, atmosphere breathes, camera pans
+- **Account:** klingai.com → Top up at klingai.com → Recharge
+- **Parallel limit:** 4 simultaneous tasks (Standard plan). Frames 5+ fall back to Ken Burns if all 4 slots are busy
+- **Clip cache:** `~/.hob_cache/kling_clips/` — clips reused across renders (key = MD5 of image + prompt + duration)
+
+### Higgsfield
+- **What it does:** Cinematic DoP-style animation — generally more film-quality than Kling
+- **Account:** cloud.higgsfield.ai → Billing
+- **Always 5s:** Frames longer than 5s are extended with a freeze-frame
+- **Motion presets:** 121 presets available. Auto-selected from motion_prompt keywords:
+  - "zoom in / dolly in / approach" → Dolly In
+  - "pull back / reveal / zoom out" → Dolly Out
+  - "orbit / circle / arc" → Arc Left
+  - "crane up / lift / rise" → Crane Up
+  - "vintage / nostalgic / 8mm" → Super 8mm
+  - Everything else → **General** (balanced, all-purpose)
+- **Image hosting:** Your images are uploaded to Higgsfield's CDN automatically
+
+### Ken Burns (Free)
+- **What it does:** Slow zoom in/out on a still image. No AI, no cost.
+- **Use for:** Testing scripts, adjusting captions, when animation credits are depleted
+- **Always available:** Automatic fallback when Kling/Higgsfield fails or has no credits
+
+---
+
+## 12. Music Options
+
+### No Music
+Silent video. Add your own music in editing.
+
+### Upload Music File
+- Browse and upload an MP3, M4A, WAV, or AAC file
+- Music loops if shorter than video; fades out in last 3 seconds
+- Volume: 25% (background level)
+
+### Auto-Generate with Suno V5.5
+- Describe the mood: `Emotional Bollywood instrumental, struggle to triumph, sitar and tabla`
+- Generates ~3-4 minute instrumental track
+- Cost: ~$0.05 per generation
+- Takes 2–3 minutes to generate
+- Wait for **✓ Music ready** before clicking Generate
+
+**Good Suno prompts for storytelling:**
+```
+Emotional Indian classical, slow build to triumph, sarod and tabla, no lyrics
+Melancholic Rajasthani folk, personal struggle, raw acoustic feel
+Hopeful Bollywood instrumental, journey from hardship to success
+Modern Indian cinematic, emotional flashback, piano with sitar
+```
+
+### Voice-Over (ElevenLabs)
+- Each frame's caption text is read aloud in the selected voice
+- Silent frames get silence (no audio gap)
+- Requires ElevenLabs credits
+- Choose voice from the dropdown (loads from your ElevenLabs account)
+
+---
+
+## 13. CLI Reference — All Flags
+
+Run from the project root with the venv Python:
+
+```bash
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py [options]
+```
+
+### Required
+
+| Flag | Description | Example |
+|---|---|---|
+| `--script PATH` | Path to your script .txt file | `--script lalita_story.txt` |
+| `--assets PATH` | Path to photos/videos folder | `--assets /Downloads/lalita` |
+
+### Common Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--subject NAME` | `the subject` | Subject name for scene intelligence | 
+| `--output PATH` | `output/caption_video.mp4` | Output file path |
+| `--music PATH` | None | Path to background music MP3 |
+| `--provider` | `kling` | Legacy global provider used as router fallback: `kling`, `higgsfield`, `kenburns` |
+| `--image-model` | `auto` | Force an image model (e.g. `seedream`, `nano_banana`, `flux`, `gpt_image`) or `auto` to route per shot |
+| `--video-model` | `auto` | Force a video model (e.g. `kling_std`, `kling_pro`, `seedance`, `veo`, `hailuo`, `higgsfield`) or `auto` |
+
+### Quality & Rendering
+
+| Flag | Default | Description |
+|---|---|---|
+| `--dev` | Off | Dev mode: cap all clips at 5s (half Kling cost, full quality) |
+| `--width INT` | `1080` | Output width in pixels |
+| `--height INT` | `1920` | Output height in pixels (1920 = portrait, 1080 = landscape) |
+| `--fps INT` | `30` | Frames per second |
+
+### Pipeline Control
+
+| Flag | Default | Description |
+|---|---|---|
+| `--dry-run` | Off | Show cost estimate and frame plan without rendering |
+| `--face-lock` | Off | V1 face consistency: generate first ai_portrait once, reuse same still for all subsequent portrait frames |
+| `--lipsync` | Off | Auto-enable lip sync on all video-source frames (photos still need `[lipsync: yes]` per frame) |
+| `--voice-id ID` | env default | ElevenLabs voice for lip sync audio (falls back to `ELEVENLABS_VOICE_ID` in `.env`) |
+| `--skip-scene-ai` | Off | Skip GPT scene design, use generic motion prompts (saves ~$0.01, faster) |
+| `--keep-temp` | Off | Don't delete temp directory after render (for debugging) |
+
+### Full Example Commands
+
+```bash
+# Quick test — Dev mode, Ken Burns, no credits spent
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script lalita_story.txt \
+  --assets /Users/amitmishra/Downloads/lalita \
+  --subject "Lalita" \
+  --provider kenburns \
+  --dev \
+  --output output/lalita_test.mp4
+
+# See cost before spending credits
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script lalita_story.txt \
+  --assets /Users/amitmishra/Downloads/lalita \
+  --subject "Lalita" \
+  --dry-run
+
+# Production render — Auto routing (best model per shot, premium tier) + music
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script lalita_story.txt \
+  --assets /Users/amitmishra/Downloads/lalita \
+  --subject "Lalita" \
+  --image-model auto --video-model auto \
+  --music output/lalita_music.mp3 \
+  --face-lock \
+  --output output/lalita_final.mp4
+
+# Force a specific model everywhere (e.g. Seedance video + Nano Banana images)
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script lalita_story.txt \
+  --assets /Users/amitmishra/Downloads/lalita \
+  --subject "Lalita" \
+  --video-model seedance --image-model nano_banana \
+  --output output/lalita_seedance.mp4
+
+# Landscape YouTube version
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script lalita_story.txt \
+  --assets /Users/amitmishra/Downloads/lalita \
+  --subject "Lalita" \
+  --width 1920 --height 1080 \
+  --output output/lalita_youtube.mp4
+
+# Skip GPT scene design (use pre-defined scenes only)
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script surabhi_story.txt \
+  --assets surabhi_assets/ \
+  --subject "Surabhi" \
+  --skip-scene-ai \
+  --output output/surabhi_fast.mp4
+
+# Lip sync: talking faces on flagged frames (needs HEDRA_API_KEY / SYNCLABS_API_KEY)
+~/.pyenv/versions/3.12.3/bin/python3.12 run_caption.py \
+  --script lalita_story.txt \
+  --assets /Users/amitmishra/Downloads/lalita \
+  --subject "Lalita" \
+  --provider higgsfield \
+  --lipsync \
+  --voice-id 21m00Tcm4TlvDq8ikWAM \
+  --music output/lalita_music.mp3 \
+  --output output/lalita_final.mp4
+```
+
+---
+
+## 14. Cost Management
+
+### Check costs before rendering
+
+**Web UI:** The **💰 Estimated Cost** panel appears after Parse Frames. Updates live.
+
+**CLI:**
+```bash
+python3.12 run_caption.py --script story.txt --assets /path --dry-run
+```
+
+Output:
+```
+[Dry Run] ── Frame Plan ──────────────────────────────────────────
+[Dry Run]  f01  8.0s  real photo [IMG_1240.MOV]  Ken Burns ($0)
+[Dry Run]  f02  5.0s  real photo [IMG_3511.JPG]  Kling (~$0.08)
+[Dry Run]  f03  9.0s  Flux gen (~$0.05)  Kling (~$0.08)
+...
+[Dry Run]  Estimated total: ~$0.92 USD
+```
+
+### Reduce cost strategies
+
+| Strategy | How | Saving |
+|---|---|---|
+| **Dev mode** | `--dev` flag or select "Dev" in quality dropdown | ~50% Kling cost |
+| **Ken Burns fallback** | Select "Ken Burns" as provider | 100% animation cost |
+| **Use real photos/videos** | Photos from assets folder skip AI image generation | ~$0.04–0.05 per frame |
+| **Face-lock** | `--face-lock` generates portrait once, reuses for all portrait frames | $0.04–0.05 per duplicate frame |
+| **Use Kling Standard** | Select "Standard" in Kling Mode | ~43% vs Pro |
+
+### Updating prices
+
+When vendor prices change, edit `config/pricing.json`:
+```json
+{
+  "kling": {
+    "standard_5s_usd": 0.08,
+    "pro_5s_usd": 0.14
+  },
+  "image_gen": {
+    "flux_portrait_usd": 0.05,
+    "openai_gpt_image_usd": 0.04,
+    "openai_edit_usd": 0.04
+  },
+  "higgsfield": {
+    "generation_5s_usd": 0.10
+  }
+}
+```
+
+---
+
+## 15. Cache System
+
+The app caches aggressively to avoid re-spending credits on identical content.
+
+### What is cached
+
+| Cache | Location | Key | When used |
+|---|---|---|---|
+| **Kling clips** | `~/.hob_cache/kling_clips/` | MD5(image + motion_prompt + duration) | Same image + same motion on re-render |
+| **Scene designs** | `~/.hob_cache/scene_designs/` | MD5(caption + note + type + subject) | Same frame text on re-render |
+| **AI images** | Your assets folder | Filename (e.g. `ai_portrait_f03.jpg`) | File exists and > 50KB |
+
+### What breaks the cache
+
+| Cache | What invalidates it |
+|---|---|
+| Kling clips | Changing image, motion prompt, or duration |
+| Scene designs | Changing caption, director note, visual type, or subject description |
+| AI images | Deleting the file, or file smaller than 50KB |
+
+### Clear caches manually
+
+```bash
+# Clear Kling clip cache (forces all clips to regenerate)
+rm -rf ~/.hob_cache/kling_clips/
+
+# Clear scene design cache (forces all GPT scene calls to re-run)
+rm -rf ~/.hob_cache/scene_designs/
+
+# Clear AI images for a specific story (regenerate all AI frames)
+rm surabhi_assets/ai_*.jpg
+```
+
+---
+
+## 16. Best Practices for Storytelling Scripts
+
+### Frame Count & Pacing
+- **10–12 frames** is optimal for a 60–90 second Reel
+- Under 6 frames: feels too short, no emotional build
+- Over 15 frames: each frame too short to land
+
+### Story Arc Structure
+```
+Frame 1:   HOOK — who is this person, why should I watch?
+Frame 2-3: CONTEXT — background, before the event
+Frame 4-5: CONFLICT — the problem, the challenge, the loss
+Frame 6-7: LOWEST POINT — darkest moment
+Frame 8:   TURNING POINT — the decision, the spark
+Frame 9:   TRIUMPH — the result
+Frame 10:  RESOLUTION — who they are now, the lesson
+```
+
+### Photo/Video Assignment Guide
+
+| Frame type | Best source | Notes |
+|---|---|---|
+| Hook (Frame 1) | Your best video clip | Real motion is most powerful for opening hook |
+| Childhood / past | Real old photos if available | If not: `ai_portrait` with age in director note |
+| Emotional peak | Real video of the moment | Ramp walk, ceremony, achievement |
+| Internal struggle | `ai_symbolic` | Never show trauma directly — show the environment |
+| Support / family | Real family photos | Group shots work well here |
+| Resolution | Real photo: confident, present-day | Strong, direct gaze |
+
+### Caption Text Writing
+
+The on-screen captions are SHORT (they appear as 3-15 word overlays timed to each frame). Write them:
+- In first person, present tense
+- Punchy, not complete sentences
+- Maximum 15 words — the camera moves before longer text is read
+- Build emotionally across frames — each caption is a single beat
+
+```
+BAD:  "During the time when I was suffering from rheumatoid arthritis I was completely bedridden"
+GOOD: "Bedridden. I lost my hair, my confidence… and myself."
+```
+
+### The Caption Section (Instagram)
+The `Caption:` section at the bottom is your Instagram post text — **not shown in the video**. Write the full story here for your followers who want to read the details. This can be 500–1000 words. The video is the visual hook; the caption is the full narrative.
+
+---
+
+## Quick Reference Card
+
+```
+START:         ~/.pyenv/versions/3.12.3/bin/python3.12 web_app.py → localhost:7860
+DRY RUN:       --dry-run flag shows costs without rendering
+FREE TEST:     --provider kenburns (no credits, Ken Burns zoom)
+HALF COST:     --dev flag (5s Kling clips)
+FACE LOCK:     --face-lock (one portrait AI image reused across all portrait frames)
+LIP SYNC:      [lipsync: yes] per frame, or --lipsync flag for all video frames
+CAMERA:        [camera: 360 orbit] per frame, or 🎥 field in UI
+EDIT PHOTO:    [edit: add storm] per frame, or ✏️ field in UI
+CLEAR KLING:   rm -rf ~/.hob_cache/kling_clips/
+CLEAR SCENES:  rm -rf ~/.hob_cache/scene_designs/
+CLEAR LIPSYNC: rm -rf ~/.hob_cache/lipsync_clips/ ~/.hob_cache/lipsync_audio/
+
+RECHARGE FLUX:       fal.ai → Billing
+RECHARGE KLING:      klingai.com → Recharge
+RECHARGE HIGGSFIELD: cloud.higgsfield.ai → Billing
+RECHARGE OPENAI:     platform.openai.com → Billing
+RECHARGE HEDRA:      hedra.com → Creator plan
+RECHARGE SYNCLABS:   app.sync.so → Billing
+```
+
+---
+
+## 17. Complete Worked Example — Lalita's Story
+
+This is a real, full story turned into a finished reel — with the *reasoning* behind every choice explained in plain language. If you read nothing else, read this.
+
+### The raw story (what the client gives you)
+
+> From a farmer to a model. At 19 married into a traditional Rajasthani home. A kisan ki beti who rode tractors. Diagnosed with rheumatoid arthritis after COVID — bedridden, lost her hair and confidence. Family stood by her. Watching modelling videos in bed, a spark: "Ek din main bhi ramp pe chalungi." She fought back with medication, yoga, diet — and walked the ramp in heels. Won Mrs. Rajasthan 1st runner-up. Today: a model, still a farmer, still fighting arthritis, financially independent.
+
+### The thinking — why each frame is built the way it is
+
+We map the story to a 10-frame arc: **Hook → Context → Strength → Restlessness → The Blow → Support → The Spark → The Fight → Triumph → Who She Is Now.** Then for each frame we ask three questions:
+
+1. **What's on screen?** (real photo, real video, or AI-generated)
+2. **What's the emotion?** (the director note)
+3. **How does the camera move, or does she speak?** (camera vs lip sync)
+
+### The complete annotated script
+
+Paste this into the script box, set the assets folder, and click Parse Frames. Every choice is explained in the comment above it (the `#` lines are just notes for you — don't paste those, or do; the parser ignores unknown lines but cleaner to remove).
+
+```
+Reels
+
+Frame 1
+From a farmer to a model… This is the story of a desi girl with big dreams.
+[photo: ai_portrait]
+[note: Strong proud Rajasthani woman, direct gaze into camera, chin up. Golden hour, dust in air. This is a HERO, not a victim.]
+[camera: crash zoom in]
+
+Frame 2
+At 19, I got married into a traditional Rajasthani home.
+[photo: ai_portrait]
+[note: Young bride in lehenga and ghunghat, beautiful traditional setting — but her eyes show quiet restraint, like a bird that just noticed the cage. Warm tones, subtle unease.]
+[camera: slow dolly in]
+
+Frame 3
+Being a kisan ki beti, even after marriage, I was riding tractors and ploughing fields.
+[photo: ai_portrait]
+[note: Her hands on a tractor wheel, or standing in a mustard field. This is STRENGTH not poverty — proud, capable, powerful. Late afternoon golden light.]
+[camera: crane up]
+
+Frame 4
+But I knew I was meant for more than "ghunghat, khana, kheti."
+[photo: ai_portrait]
+[note: Close on face, looking at something just off-frame — a window, a far horizon. Eyes lit with longing, not sadness. "There is more out there." Warm indoor light with a sliver of bright outside.]
+[camera: dolly in]
+
+Frame 5
+After COVID, I was diagnosed with rheumatoid arthritis. I lost my hair, my confidence… and myself.
+[photo: ai_symbolic]
+[note: NO person. Medicine bottles on a windowsill, a hairbrush with fallen strands, an empty chair by a rain-streaked window. Cold blue-grey light. Silence. She is absent — the objects carry the grief.]
+[edit: add cold grey winter light and frost on the window]
+[camera: static]
+
+Frame 6
+My husband, father, friends — everyone stood by me. But inside, I felt shattered.
+[photo: 06_family.jpg]
+[note: Warmth around her — hands held, figures close. But HER face shows the contradiction: grateful and broken at once. Eyes wet, not crying. Warm light on others, shadow across her own face.]
+[camera: handheld]
+
+Frame 7
+Bedridden, I watched modelling videos thinking, "Ek din main bhi ramp pe chalungi."
+[photo: lalita_face.jpg]
+[lipsync: yes]
+[note: This is the TURNING POINT — she says it herself. Phone glow on her face in a dark room. A spark, a small smile starting. Hope igniting.]
+
+Frame 8
+Medication, yoga, diet… I fought back. The girl who couldn't stand walked the ramp in heels.
+[photo: IMG_3020.MOV]
+[start: 3]
+[note: Use the real ramp-walk clip. Head high, back straight, full confidence. The emotional PEAK. Skip the first 3s of intro.]
+[duration: 8]
+
+Frame 9
+I won Mrs. Rajasthan 1st runner-up. Suddenly, kisan ki beti turned model was everywhere.
+[photo: 09_crown.jpg]
+[note: Pure victory — crown, sash, stage. NOT humble, she EARNED this. High saturation, saffron and gold. Let the joy be loud.]
+[camera: 360 orbit]
+
+Frame 10
+Today, I'm a model. But I'm still a farmer. Still fighting arthritis. Most importantly, I'm financially independent.
+[photo: lalita_final.jpg]
+[lipsync: yes]
+[note: Closing image — proud, complete, direct gaze. Both worlds in one frame if possible. Soft warm light. This is what viewers remember.]
+
+Caption:
+"From the farm to the ramp, I am that 'Desi Girl' who is ready to conquer the world. I was 19 when I got married, just after completing my BSc… [full Instagram caption here — see client's text]"
+```
+
+### Why these specific choices (the plain-English logic)
+
+| Frame | Choice | Why |
+|---|---|---|
+| 1 | `ai_portrait` + `crash zoom in` | No strong opening photo, so AI-generate a hero shot. Crash zoom grabs attention in the first 1.5s — critical for stopping the scroll. |
+| 2 | `ai_portrait` + `slow dolly in` | The "married into tradition" beat. Slow push-in pulls the viewer toward her conflicted eyes. |
+| 3 | `ai_portrait` + `crane up` | Her strength. Crane up = rising, powerful — matches "I rode tractors." |
+| 4 | `ai_portrait` + `dolly in` | Inner restlessness. Moving closer = getting intimate with her longing. |
+| 5 | `ai_symbolic` + `static` + `edit` | The illness. We **never show illness directly** — it's exploitative and weaker. Show the empty room instead. Static camera = the weight of stillness. The edit adds cold light to deepen the mood. |
+| 6 | real photo + `handheld` | Family support. A real family photo is most authentic here. Handheld = raw, human, documentary truth. |
+| 7 | **lip sync** | The spark. She *says her dream out loud* — hearing her voice makes it land. No camera move; her face talking is the whole shot. |
+| 8 | real video + `start: 3` | The triumph moment. Real ramp-walk footage beats anything AI. We skip 3s of intro to land on the strong part. |
+| 9 | real photo + `360 orbit` | The win. A full orbit around her crowned moment = the hero reveal. The most cinematic move for the highest point. |
+| 10 | **lip sync** | The resolution. She closes the story in her own voice — the most personal, direct way to end. |
+
+### The pattern to copy for any story
+
+- **Open with a hook** (camera move that grabs — crash zoom, or your best video clip)
+- **Use `ai_symbolic` for pain** — never show trauma on a face; show the environment
+- **Use lip sync on 2 beats max** — the spoken turning point and the closing line
+- **Save `360 orbit` / `crane up` for the single highest moment** — overusing big moves cheapens them
+- **Use real footage for the literal peak** (the ramp walk, the ceremony) — AI can't beat the real thing
+- **End on a strong, present-day, direct-gaze shot** — it's the last frame viewers see
+
+### How to run it
+
+1. Put Lalita's photos/videos in a folder, e.g. `/Users/amitmishra/Downloads/lalita`
+2. Rename the key files to match the script (`06_family.jpg`, `09_crown.jpg`, `lalita_face.jpg`, `lalita_final.jpg`, `IMG_3020.MOV`) — or just use `ai_portrait` everywhere you don't have a photo
+3. Start the app, paste the script, set the folder, **Parse Frames**
+4. Check the **💰 cost estimate** — roughly: 6 Kling clips + 6 AI portraits + 2 lip-sync + 1 edit ≈ **$1.10**
+5. Pick **Higgsfield** provider for best camera moves, choose a warm Hindi-capable voice, generate music
+6. **Generate Video** → download
+
+That's a complete, professionally-directed reel from a paragraph of raw story.

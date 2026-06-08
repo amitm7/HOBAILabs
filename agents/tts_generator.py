@@ -80,6 +80,22 @@ def _generate_silence(duration: float, path: str):
     ], check=True, capture_output=True)
 
 
+def generate_single_tts(text: str, path: str, voice_id: str) -> float:
+    """
+    Generate a single TTS audio file for one caption.
+    Returns the audio duration in seconds.
+    Used by the lip sync coordinator for per-frame audio generation.
+    Raises RuntimeError if ElevenLabs key is not set or generation fails.
+    """
+    if not text.strip():
+        raise ValueError("generate_single_tts called with empty text")
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    if not api_key or not voice_id:
+        raise RuntimeError("ELEVENLABS_API_KEY and voice_id are required for lip sync audio")
+    _generate_elevenlabs(text, path, voice_id)
+    return get_audio_duration(path)
+
+
 def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -> str:
     """
     Generate a voice-over audio track timed to match the video.

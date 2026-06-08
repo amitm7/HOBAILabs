@@ -1,0 +1,94 @@
+{
+  "_note": "Model capability catalog + per-shot routing policy. Keep model FACTS here, costs in pricing.json. The router (agents/model_router.py) reads 'routing'; clip_builder/image_generator read 'models' to dispatch a backend. Add a model by adding an entry under 'models' and listing its id in 'routing'.",
+  "_updated": "2026-06-07",
+  "_fal_endpoints_warning": "fal.ai endpoint slugs and pricing shift monthly — VERIFY each fal_endpoint on fal.ai before the first paid run.",
+
+  "models": {
+    "flux": {
+      "kind": "image", "backend": "flux", "tier": "premium",
+      "strengths": ["face", "portrait", "object"],
+      "max_concurrent": 4, "pricing_key": "image_gen.flux_portrait_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "gpt_image": {
+      "kind": "image", "backend": "openai", "tier": "standard",
+      "strengths": ["object", "symbolic", "text-in-image"],
+      "max_concurrent": 4, "pricing_key": "image_gen.openai_gpt_image_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "seedream": {
+      "kind": "image", "backend": "fal", "fal_endpoint": "fal-ai/bytedance/seedream/v4/text-to-image",
+      "tier": "draft",
+      "strengths": ["face", "object", "cheap-test"],
+      "max_concurrent": 8, "pricing_key": "image_gen.seedream_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "nano_banana": {
+      "kind": "image", "backend": "fal", "fal_endpoint": "fal-ai/nano-banana",
+      "tier": "premium",
+      "strengths": ["face", "portrait", "photoreal"],
+      "max_concurrent": 4, "pricing_key": "image_gen.nano_banana_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+
+    "kling_std": {
+      "kind": "video", "backend": "kling", "kling_mode": "std", "tier": "draft",
+      "strengths": ["face", "motion", "value", "start-frame"],
+      "max_concurrent": 5, "pricing_key": "kling.standard_5s_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "kling_pro": {
+      "kind": "video", "backend": "kling", "kling_mode": "pro", "tier": "premium",
+      "strengths": ["face", "motion", "cinematic", "start-frame"],
+      "max_concurrent": 5, "pricing_key": "kling.pro_5s_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "higgsfield": {
+      "kind": "video", "backend": "higgsfield", "tier": "premium",
+      "strengths": ["camera-move", "cinematic"],
+      "max_concurrent": 4, "pricing_key": "higgsfield.generation_5s_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "seedance": {
+      "kind": "video", "backend": "fal", "fal_endpoint": "fal-ai/bytedance/seedance/v1/pro/image-to-video",
+      "tier": "premium",
+      "strengths": ["cinematic", "multi-shot", "motion", "audio"],
+      "max_concurrent": 4, "pricing_key": "seedance.generation_5s_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "veo": {
+      "kind": "video", "backend": "fal", "fal_endpoint": "fal-ai/veo3/image-to-video",
+      "tier": "premium",
+      "strengths": ["cinematic", "audio", "dialogue", "lipsync"],
+      "max_concurrent": 2, "pricing_key": "veo.generation_5s_usd",
+      "aspect": ["9:16", "16:9"]
+    },
+    "hailuo": {
+      "kind": "video", "backend": "fal", "fal_endpoint": "fal-ai/minimax/hailuo-02/standard/image-to-video",
+      "tier": "premium",
+      "strengths": ["landscape", "motion-physics", "wide"],
+      "max_concurrent": 4, "pricing_key": "hailuo.generation_5s_usd",
+      "aspect": ["9:16", "16:9", "1:1"]
+    }
+  },
+
+  "routing": {
+    "_note": "shot_type → cost_tier → ordered preference list of model ids. Router picks the first id that exists in 'models'. 'real' (real photo/video at the video step) and 'passthrough' (real media at the image step) are handled in the router code.",
+    "image": {
+      "face":   { "draft": ["seedream"], "premium": ["nano_banana", "flux"] },
+      "object": { "draft": ["seedream"], "premium": ["flux", "nano_banana"] }
+    },
+    "video": {
+      "real":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance"] },
+      "face":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance"] },
+      "landscape": { "draft": ["kling_std"], "premium": ["hailuo", "seedance"] },
+      "hero":      { "draft": ["kling_std"], "premium": ["seedance", "veo"] },
+      "dialogue":  { "draft": ["kling_std"], "premium": ["veo", "kling_pro"] }
+    }
+  },
+
+  "defaults": {
+    "image": "flux",
+    "video": "kling_std"
+  }
+}

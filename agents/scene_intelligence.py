@@ -1,9 +1,22 @@
 """
 Scene Intelligence: converts story beats into cinematic visual + motion prompts.
-GPT-4o understands the EMOTION behind each story beat and designs the scene.
+GPT-4.1 understands the EMOTION behind each story beat and designs the scene.
+
+Optimisations:
+- Disk cache: results stored in ~/.hob_cache/scene_designs/ by MD5 of inputs.
+  Same story re-renders without any GPT calls.
+- Parallel: all frames designed concurrently (I/O-bound → threads ideal).
+  10 serial calls (~25s) → ~3s wall-clock.
 """
+import hashlib
+import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from openai import OpenAI
+
+SCENE_CACHE_DIR = Path.home() / ".hob_cache" / "scene_designs"
+SCENE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _client = None
 
@@ -13,6 +26,31 @@ def _get_client():
     if _client is None:
         _client = OpenAI()
     return _client
+
+
+def _cache_key(caption: str, director_note: str, visual_type: str,
+               subject_name: str, subject_description: str, has_real_photo: bool) -> str:
+    h = hashlib.md5()
+    for part in [caption, director_note, visual_type, subject_name,
+                 subject_description, str(has_real_photo)]:
+        h.update(part.encode())
+    return h.hexdigest()
+
+
+def _cache_load(key: str) -> dict | None:
+    p = SCENE_CACHE_DIR / f"{key}.json"
+    if p.exists():
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _cache_save(key: str, scene: dict):
+    with open(SCENE_CACHE_DIR / f"{key}.json", "w") as f:
+        json.dump(scene, f)
 
 
 _SHARED_IMAGE_RULES = """
@@ -90,12 +128,17 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
                  has_real_photo: bool = False, director_note: str = "",
                  visual_type: str = "portrait", subject_description: str = "") -> dict:
     """
-    Given a story beat (frame text), return cinematic visual + motion design.
-    visual_type: "portrait" (default), "contextual" (age-accurate), or "symbolic" (no people).
-    If has_real_photo=True, only returns motion_prompt (image already exists).
+    Given a story beat, return cinematic visual + motion design.
+    Results are cached to disk — identical inputs return instantly on re-runs.
     """
-    client = _get_client()
+    # ── Cache lookup ──────────────────────────────────────────────────────────
+    key    = _cache_key(story_beat, director_note, visual_type,
+                        subject_name, subject_description, has_real_photo)
+    cached = _cache_load(key)
+    if cached:
+        return cached
 
+    # ── Build prompt ──────────────────────────────────────────────────────────
     if visual_type == "symbolic":
         system_prompt = SYMBOLIC_SYSTEM_PROMPT
     elif visual_type == "contextual":
@@ -103,7 +146,7 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
     else:
         system_prompt = SYSTEM_PROMPT
 
-    subj = f"{subject_name}"
+    subj = subject_name
     if subject_description:
         subj += f" — {subject_description}"
     user_msg = f'Story beat: "{story_beat}"\nSubject: {subj}.\n'
@@ -112,19 +155,21 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
     if has_real_photo:
         user_msg += "A real photo exists. Only design the MOTION (how it should move/animate). Skip image_prompt details."
 
+    # ── GPT call ──────────────────────────────────────────────────────────────
     try:
-        resp = client.chat.completions.create(
+        resp = _get_client().chat.completions.create(
             model="gpt-4.1",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg},
+                {"role": "user",   "content": user_msg},
             ],
             response_format={"type": "json_object"},
             temperature=0.8,
         )
-        import json
         result = json.loads(resp.choices[0].message.content)
+        _cache_save(key, result)
         return result
+
     except Exception as e:
         print(f"[SceneIntelligence] Error: {e} — using fallback")
         fallback_prompt = (
@@ -135,52 +180,66 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
             "warm natural lighting, shallow depth of field, photorealistic, vertical 9:16"
         )
         return {
-            "emotion": "reflective",
+            "emotion":          "reflective",
             "scene_description": "Cinematic shot.",
-            "image_prompt": fallback_prompt,
-            "motion_prompt": "Slow gentle push-in, subtle ambient movement",
-            "camera_angle": "eye level",
+            "image_prompt":     fallback_prompt,
+            "motion_prompt":    "Slow gentle push-in, subtle ambient movement",
+            "camera_angle":     "eye level",
         }
 
 
 def design_all_scenes(frames: list[dict], subject_name: str = "Surabhi",
                       subject_description: str = "") -> list[dict]:
-    """Add scene intelligence to all frames. Enriches each frame dict in place."""
-    print(f"[SceneIntelligence] Designing {len(frames)} scenes for {subject_name}...")
+    """
+    Add scene intelligence to all frames in parallel (ThreadPoolExecutor).
+    10 serial calls (~25s) → ~3s wall-clock. Results cached to disk.
+    """
+    print(f"[SceneIntelligence] Designing {len(frames)} scenes for {subject_name} (parallel)…")
 
-    for f in frames:
-        caption = f.get("caption", "").strip()
-        note = f.get("director_note", "")
+    def _process(f: dict):
+        caption    = f.get("caption", "").strip()
+        note       = f.get("director_note", "")
         photo_spec = f.get("photo_spec", "")
 
-        # Real photo: scene intelligence only needs to design motion
-        has_photo = (
-            os.path.exists(f.get("visual_path", ""))
-            or (photo_spec and not photo_spec.startswith("ai_"))
-        )
-
-        # Map photo_spec to visual_type for prompt selection
-        if photo_spec == "ai_symbolic":
-            visual_type = "symbolic"
-        elif photo_spec == "ai_portrait":
-            visual_type = "contextual"
-        else:
-            visual_type = "portrait"
-
         if not caption:
-            f["scene"] = {
-                "emotion": "silence",
+            return f, {
+                "emotion":      "silence",
                 "motion_prompt": "Very slow zoom out, still, contemplative",
                 "camera_angle": "eye level",
                 "image_prompt": "",
             }
-            continue
 
-        scene = design_scene(caption, subject_name, has_real_photo=has_photo,
-                             director_note=note, visual_type=visual_type,
+        has_photo = (
+            os.path.exists(f.get("visual_path", ""))
+            or (photo_spec and not photo_spec.startswith("ai_"))
+        )
+        visual_type = (
+            "symbolic"    if photo_spec == "ai_symbolic"  else
+            "contextual"  if photo_spec == "ai_portrait"  else
+            "portrait"
+        )
+
+        scene = design_scene(caption, subject_name,
+                             has_real_photo=has_photo,
+                             director_note=note,
+                             visual_type=visual_type,
                              subject_description=subject_description)
-        f["scene"] = scene
+        return f, scene
 
-        print(f"  {f['frame_id']} [{scene.get('emotion','?')}] [{visual_type}] → {scene.get('motion_prompt','?')}")
+    with ThreadPoolExecutor(max_workers=min(len(frames), 10)) as pool:
+        futures = {pool.submit(_process, f): f for f in frames}
+        for future in as_completed(futures):
+            f, scene = future.result()
+            f["scene"] = scene
+            cached_tag = "[cached]" if _cache_load(
+                _cache_key(f.get("caption",""), f.get("director_note",""),
+                           "symbolic" if f.get("photo_spec")=="ai_symbolic" else
+                           "contextual" if f.get("photo_spec")=="ai_portrait" else "portrait",
+                           subject_name, subject_description,
+                           os.path.exists(f.get("visual_path","")) or
+                           bool(f.get("photo_spec","") and not f.get("photo_spec","").startswith("ai_")))
+            ) else ""
+            print(f"  {f['frame_id']} [{scene.get('emotion','?')}] {cached_tag} → {scene.get('motion_prompt','?')}")
 
+    # Restore original order (futures complete out of order)
     return frames

@@ -44,7 +44,11 @@
         <div style="flex:1">
           <input type="text" id="assets-dir"
             placeholder="Assets folder path — e.g. /Users/you/surabhi_assets  (leave blank for AI-only)">
-          <small>Photos &amp; videos in this folder are matched to frames by sort order. You can still override any frame individually.</small>
+          <small>Photos &amp; videos in this folder are matched to frames. You can still override any frame individually.</small>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="smart-match">
+            🤖 Smart-match images (AI) — reads names/text in photos &amp; matches by meaning (uses GPT-4o; first parse on a new folder is slower)
+          </label>
         </div>
         <span id="assets-status"></span>
       </div>
@@ -64,7 +68,7 @@ I was just an Assamese girl, living in a 1RK...
 
 Caption:
 (Social media caption here — not shown in video)"></textarea>
-        <small>Supports [photo: filename|ai_portrait|ai_symbolic], [note: director instructions], [duration: 7s] per frame</small>
+        <small>Supports [photo: filename|ai_portrait|ai_symbolic], [note: director instructions], [duration: 7s], [edit: add rain], [start: 3s] per frame</small>
       </div>
     </div>
   </div>
@@ -125,6 +129,19 @@ Caption:
           <select id="quality">
             <option value="dev">Dev — 5s clips, fast (half Kling cost)</option>
             <option value="production">Production — full duration (up to 9s)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Image Model</label>
+          <select id="image-model">
+            <option value="auto">Auto — best per shot</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Video Model</label>
+          <select id="video-model">
+            <option value="auto">Auto — best per shot</option>
+            <option value="kenburns">Ken Burns (free, offline)</option>
           </select>
         </div>
         <div class="field">
@@ -246,8 +263,27 @@ Caption:
     </div>
   </div>
 
-  <!-- ── Run ─────────────────────────────────────────────── -->
-  <button class="btn-primary" id="run-btn">▶ Generate Video</button>
+  <!-- ── Cost Estimate ─────────────────────────────────────── -->
+  <div class="card" id="cost-card" style="display:none">
+    <div class="card-header">
+      <h2>💰 Estimated Cost</h2>
+      <span id="cost-updated" style="font-size:11px;color:var(--text-dim)"></span>
+    </div>
+    <div class="card-body">
+      <div id="cost-breakdown" style="font-family:monospace;font-size:13px;line-height:1.8"></div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:8px">
+        Prices from <code>config/pricing.json</code> — edit that file when vendor rates change.
+        Kling cost = 0 if account balance empty (Ken Burns fallback used instead).
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Preview + Run ───────────────────────────────────── -->
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button class="btn-secondary" id="preview-btn">👁 Preview Stills (cheap — no animation)</button>
+    <button class="btn-primary" id="run-btn">▶ Generate Video</button>
+  </div>
+  <div id="preview-status" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
 
   <!-- ── Progress ────────────────────────────────────────── -->
   <div class="card" id="progress-panel">
