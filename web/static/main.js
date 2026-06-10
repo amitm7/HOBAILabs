@@ -218,6 +218,33 @@ el('generate-music-btn').addEventListener('click', async () => {
   }
 });
 
+// ── Folder upload (browse a whole folder — required for the hosted app, since
+//    the server can't see a user's local disk) ──────────────────────────────
+const _MEDIA_RE = /\.(jpe?g|png|webp|bmp|heic|heif|mp4|mov|avi|m4v|webm)$/i;
+
+el('browse-folder-btn')?.addEventListener('click', () => el('folder-input').click());
+
+el('folder-input')?.addEventListener('change', async (e) => {
+  const media = Array.from(e.target.files || []).filter(f => _MEDIA_RE.test(f.name));
+  if (!media.length) { alert('No images or videos found in that folder.'); return; }
+
+  el('assets-status').innerHTML = `<span class="muted">Uploading ${media.length} files…</span>`;
+  const fd = new FormData();
+  fd.append('session_id', SESSION_ID);
+  media.forEach(f => fd.append('files', f, f.name));
+
+  try {
+    const res = await postForm('/upload-folder', fd);
+    if (res.error) { alert('Upload failed: ' + res.error); el('assets-status').textContent = ''; return; }
+    el('assets-dir').value = res.assets_dir;   // server path used by parse + generate
+    el('assets-status').innerHTML = `<span class="text-green">✓ ${res.count} files uploaded</span>`;
+  } catch (err) {
+    alert('Upload error: ' + err); el('assets-status').textContent = '';
+  } finally {
+    e.target.value = '';   // allow re-selecting the same folder
+  }
+});
+
 // ── Parse script ──────────────────────────────────────────────────────────
 
 el('parse-btn').addEventListener('click', async () => {

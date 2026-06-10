@@ -42,9 +42,13 @@
       <div class="assets-folder-row">
         <div class="assets-folder-icon">📁</div>
         <div style="flex:1">
-          <input type="text" id="assets-dir"
-            placeholder="Assets folder path — e.g. /Users/you/surabhi_assets  (leave blank for AI-only)">
-          <small>Photos &amp; videos in this folder are matched to frames. You can still override any frame individually.</small>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+            <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">📁 Browse folder…</button>
+            <input type="text" id="assets-dir" style="flex:1;min-width:220px"
+              placeholder="Choose a folder of your photos/videos (or leave blank for AI-only)">
+          </div>
+          <small>Pick the folder with your photos &amp; videos — they're uploaded and matched to frames. You can still override any frame individually.</small>
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="smart-match">
             🤖 Smart-match images (AI) — reads names/text in photos &amp; matches by meaning (uses GPT-4o; first parse on a new folder is slower)

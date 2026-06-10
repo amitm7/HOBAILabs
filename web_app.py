@@ -166,6 +166,41 @@ def upload_photo():
     return jsonify({"tmp_path": str(save_path), "session_id": session_id})
 
 
+_MEDIA_UPLOAD_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif",
+                      ".mp4", ".mov", ".avi", ".m4v", ".webm"}
+
+
+@app.route("/upload-folder", methods=["POST"])
+def upload_folder():
+    """Upload a whole local folder of photos/videos (browser 'webkitdirectory').
+
+    Saves the media into this session's assets dir and returns that server-side
+    path, which the existing parse-script / generate flow then matches against.
+    This replaces typing a server path — required now the app is hosted, since
+    the server cannot see a user's local disk. Subfolders are flattened to their
+    base filename; non-media files are ignored.
+    """
+    session_id = request.form.get("session_id", str(uuid.uuid4()))
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "no files"}), 400
+
+    assets_dir = RUNS_DIR / session_id / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    saved = 0
+    for f in files:
+        name = os.path.basename((f.filename or "").replace("\\", "/"))
+        if not name or os.path.splitext(name)[1].lower() not in _MEDIA_UPLOAD_EXTS:
+            continue
+        f.save(str(assets_dir / name))
+        saved += 1
+
+    if not saved:
+        return jsonify({"error": "no images or videos found in that folder"}), 400
+    return jsonify({"assets_dir": str(assets_dir), "session_id": session_id, "count": saved})
+
+
 @app.route("/pricing")
 def get_pricing():
     try:
