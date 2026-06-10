@@ -13,19 +13,11 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from openai import OpenAI
+
+from agents import llm
 
 SCENE_CACHE_DIR = Path.home() / ".hob_cache" / "scene_designs"
 SCENE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-_client = None
-
-
-def _get_client():
-    global _client
-    if _client is None:
-        _client = OpenAI()
-    return _client
 
 
 def _cache_key(caption: str, director_note: str, visual_type: str,
@@ -146,6 +138,14 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
     else:
         system_prompt = SYSTEM_PROMPT
 
+    # Optional: bias scene design toward the lab's hand-made house style.
+    from agents import style_exemplars
+    if style_exemplars.enabled():
+        extra = "\n\n".join(x for x in (style_exemplars.style_preamble(),
+                                        style_exemplars.scene_examples()) if x)
+        if extra:
+            system_prompt = system_prompt + "\n\n" + extra
+
     subj = subject_name
     if subject_description:
         subj += f" — {subject_description}"
@@ -155,18 +155,16 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
     if has_real_photo:
         user_msg += "A real photo exists. Only design the MOTION (how it should move/animate). Skip image_prompt details."
 
-    # ── GPT call ──────────────────────────────────────────────────────────────
+    # ── LLM call (provider-pluggable; default OpenAI gpt-4.1) ──────────────────
     try:
-        resp = _get_client().chat.completions.create(
-            model="gpt-4.1",
-            messages=[
+        text = llm.chat(
+            [
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_msg},
             ],
-            response_format={"type": "json_object"},
-            temperature=0.8,
+            json_mode=True, temperature=0.8, model_tier="reasoning",
         )
-        result = json.loads(resp.choices[0].message.content)
+        result = llm.json_loads_lenient(text)
         _cache_save(key, result)
         return result
 

@@ -23,21 +23,23 @@ smart_match() is gated and SAFE:
   · NEVER touches the animation stage (it only chooses WHICH still to use)
 """
 
-import base64
 import hashlib
 import json
-import mimetypes
 import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
-CACHE_PATH   = Path.home() / ".hob_cache" / "image_descriptions.json"
-IMAGE_EXTS   = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}   # OpenAI-vision safe
-VISION_MODEL = "gpt-4o"
+from agents import llm
+from agents._kv import KVStore
 
+CACHE_DB     = Path.home() / ".hob_cache" / "image_descriptions.db"
+_LEGACY_JSON = Path.home() / ".hob_cache" / "image_descriptions.json"
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}   # vision-safe formats
+VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v", ".webm"}
 
-def _client():
-    from openai import OpenAI
-    return OpenAI()
+_store: KVStore | None = None
 
 
 def _img_hash(path: str) -> str:
@@ -47,23 +49,93 @@ def _img_hash(path: str) -> str:
     return h.hexdigest()
 
 
-def _data_uri(path: str) -> str:
-    mime = mimetypes.guess_type(path)[0] or "image/jpeg"
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
-    return f"data:{mime};base64,{b64}"
+def _cache() -> KVStore:
+    """Lazily open the SQLite description cache, importing any legacy JSON once.
+
+    Per-key writes under WAL are concurrency-safe, replacing the old whole-file
+    JSON rewrite that raced under describe_images()'s thread pool.
+    """
+    global _store
+    if _store is None:
+        _store = KVStore(CACHE_DB, table="descriptions")
+        _migrate_legacy_json(_store)
+    return _store
 
 
-def _load_cache() -> dict:
+def _migrate_legacy_json(store: KVStore) -> None:
+    if not _LEGACY_JSON.exists():
+        return
     try:
-        return json.loads(CACHE_PATH.read_text())
+        data = json.loads(_LEGACY_JSON.read_text())
+        for k, v in data.items():
+            if isinstance(v, str) and k not in store:
+                store.set(k, v)
+        _LEGACY_JSON.rename(_LEGACY_JSON.with_suffix(".json.bak"))
+        print(f"[Matcher] Migrated {len(data)} cached descriptions JSON → SQLite")
+    except Exception as e:
+        print(f"[Matcher] description cache migration skipped ({e})")
+
+
+# ── Video keyframes → vision description ──────────────────────────────────────
+
+_VIDEO_DESCRIBE_PROMPT = (
+    "These are 1-3 keyframes sampled from a single REAL VIDEO CLIP, in order. "
+    "Describe the clip in 1-2 sentences for a video editor: who or what is shown, "
+    "ANY text/names/captions visible (quote them), the setting, the action/motion, "
+    "and the mood. Be concrete."
+)
+
+
+def _probe_duration(path: str) -> float:
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nk=1:nw=1", path],
+            capture_output=True, text=True, timeout=30,
+        )
+        return float((out.stdout or "0").strip() or 0.0)
     except Exception:
-        return {}
+        return 0.0
 
 
-def _save_cache(cache: dict):
-    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CACHE_PATH.write_text(json.dumps(cache, indent=2))
+def _extract_keyframes(path: str, tmpdir: str, n: int = 3) -> list[str]:
+    """Sample up to n keyframes (start/middle/end) as small JPEGs."""
+    dur = _probe_duration(path)
+    if dur and dur > 0.5:
+        ts = [round(dur * f, 2) for f in (0.15, 0.5, 0.85)[:n]]
+    else:
+        ts = [0.0]
+    frames = []
+    for i, t in enumerate(ts):
+        out = os.path.join(tmpdir, f"kf_{i}.jpg")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", str(t), "-i", path, "-frames:v", "1",
+                 "-q:v", "3", "-vf", "scale=512:-1", out],
+                capture_output=True, timeout=60,
+            )
+            if os.path.exists(out) and os.path.getsize(out) > 2000:
+                frames.append(out)
+        except Exception:
+            pass
+    return frames
+
+
+def _describe_video(path: str) -> str:
+    """Describe a video clip from its keyframes via the vision LLM."""
+    tmp = tempfile.mkdtemp(prefix="hob_kf_")
+    try:
+        frames = _extract_keyframes(path, tmp)
+        if not frames:
+            return "(real video clip) " + os.path.basename(path)
+        content = [{"type": "text", "text": _VIDEO_DESCRIBE_PROMPT}]
+        for f in frames:
+            content.append({"type": "image", "path": f})
+        desc = llm.chat([{"role": "user", "content": content}],
+                        max_tokens=160, model_tier="vision").strip()
+        return "(real video clip) " + desc
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ── Stage 1: describe each image once (cached) ────────────────────────────────
@@ -76,43 +148,42 @@ _DESCRIBE_PROMPT = (
 
 
 def describe_images(paths: list[str]) -> dict:
-    """Return {path: description}. Caches by image content hash."""
-    cache = _load_cache()
-    out, changed, client = {}, False, None
+    """Return {path: description} for images AND videos. Caches by content hash.
+    Images are described directly; videos via sampled keyframes."""
+    store = _cache()
+    out = {}
 
     for p in paths:
         try:
             key = _img_hash(p)
         except Exception:
             continue
-        if key in cache:
-            out[p] = cache[key]
+        hit = store.get(key)
+        if hit is not None:
+            out[p] = hit
             continue
-        if client is None:
-            client = _client()
+        is_video = os.path.splitext(p)[1].lower() in VIDEO_EXTS
         try:
-            resp = client.chat.completions.create(
-                model=VISION_MODEL,
-                max_tokens=150,
-                messages=[{"role": "user", "content": [
-                    {"type": "text", "text": _DESCRIBE_PROMPT},
-                    {"type": "image_url", "image_url": {"url": _data_uri(p)}},
-                ]}],
-            )
-            desc = resp.choices[0].message.content.strip()
+            if is_video:
+                desc = _describe_video(p)
+            else:
+                desc = llm.chat(
+                    [{"role": "user", "content": [
+                        {"type": "text", "text": _DESCRIBE_PROMPT},
+                        {"type": "image", "path": p},
+                    ]}],
+                    max_tokens=150, model_tier="vision",
+                ).strip()
         except Exception as e:
             # Do NOT cache failures — use the filename as a weak signal for THIS
             # run only, so a later run with a working key retries the image.
             out[p] = os.path.basename(p)
             print(f"[Matcher] describe failed for {os.path.basename(p)} ({e})")
             continue
-        cache[key] = desc
+        store.set(key, desc)   # per-key write — safe under the thread pool
         out[p] = desc
-        changed = True
         print(f"[Matcher] described {os.path.basename(p)}")
 
-    if changed:
-        _save_cache(cache)
     return out
 
 
@@ -138,19 +209,24 @@ def assign_images(frames: list[dict], descriptions: dict) -> dict:
         f"STORY FRAMES (id: caption):\n{frm_list}\n\n"
         "For each frame, choose the IMAGE NUMBER that best matches its meaning — "
         "use names/text visible in an image as a strong signal, then emotional "
-        "tone and setting. Avoid reusing an image unless there are fewer images "
-        "than frames.\n"
-        'Reply ONLY as JSON mapping each frame id to an image number, e.g. '
+        "tone and setting. Items marked '(real video clip)' are REAL FOOTAGE — "
+        "prefer them over photos when they fit a beat about as well, since real "
+        "footage looks better than an animated still. Avoid reusing an item unless "
+        "there are fewer items than frames.\n"
+        'Reply ONLY as JSON mapping each frame id to an item number, e.g. '
         '{"f01": 3, "f02": 7}.'
     )
 
-    resp = _client().chat.completions.create(
-        model=VISION_MODEL,
-        max_tokens=600,
-        response_format={"type": "json_object"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    mapping = json.loads(resp.choices[0].message.content)
+    # Optional: prepend the lab's house-style matching examples.
+    from agents import style_exemplars
+    if style_exemplars.enabled():
+        examples = style_exemplars.matching_examples()
+        if examples:
+            prompt = examples + "\n\n" + prompt
+
+    text = llm.chat([{"role": "user", "content": prompt}],
+                    json_mode=True, max_tokens=600, model_tier="reasoning")
+    mapping = llm.json_loads_lenient(text)
 
     paths = [p for p, _ in items]
     out = {}
@@ -189,7 +265,7 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
             os.path.join(assets_dir, fn)
             for fn in sorted(os.listdir(assets_dir))
             if is_source_media(fn)
-            and os.path.splitext(fn)[1].lower() in IMAGE_EXTS
+            and os.path.splitext(fn)[1].lower() in (IMAGE_EXTS | VIDEO_EXTS)
             and fn not in pinned
         ]
     except Exception:
@@ -199,7 +275,7 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
 
     try:
         print(f"[Matcher] Smart-matching {len(need)} frames against "
-              f"{len(candidates)} images via {VISION_MODEL}…")
+              f"{len(candidates)} images via {llm._provider()}…")
         descriptions = describe_images(candidates)
         mapping = assign_images(
             [{"frame_id": f["frame_id"], "caption": f.get("caption", "")} for f in need],

@@ -1,0 +1,22 @@
+# Auto-HTTPS reverse proxy in front of the app container.
+# DNS: point an A record for creative.kevat.ai → the EC2 Elastic IP.
+# Caddy fetches + renews a Let's Encrypt cert automatically.
+creative.kevat.ai {
+    # Static team guide at /guide (mounted from the host at /srv/guide in the
+    # caddy container). The app itself is served for every other path.
+    @guide path /guide /guide/
+    handle @guide {
+        root * /srv/guide
+        rewrite * /OPERATOR_GUIDE.html
+        file_server
+    }
+    handle {
+        reverse_proxy localhost:7860
+    }
+}
+
+# No domain yet? Comment the block above and use this to serve plain HTTP on :80
+# for a quick test (NOT for anything sensitive):
+# :80 {
+#     reverse_proxy localhost:7860
+# }

@@ -1,6 +1,6 @@
 # HOBAILabs AI Reel Platform — Product Roadmap
 
-**Last revised:** 2026-06-04  
+**Last revised:** 2026-06-09  
 **Stack:** Python + FFmpeg + Kling AI + OpenAI + ElevenLabs + Suno AI  
 **Current state:** Single-story pipeline working end-to-end (script → Kling clips → ASS captions → assembled Reel). Web UI live at `web_app.py`.
 
@@ -250,9 +250,48 @@ beat_times = librosa.beat.beat_track(y=y, sr=sr)[1]
 
 ---
 
+### #15 · Smart Coverage — Video Matching + Multi-Shot  ← NEW
+**Context:** Single-image *content* matching already shipped — `agents/image_matcher.py`
+uses GPT-4o (via the pluggable `agents/llm.py`) to read names/text in photos and place
+the right photo on each beat (opt-in "🤖 Smart-match images"). This phase raises
+*coverage* quality: use video as a first-class source and, optionally, cover a beat
+with multiple shots.
+
+**Do in priority order — 1 & 2 are high-ROI / low-cost / small; 3 & 4 are bigger and opt-in.**
+
+**1 — Video matching (do first):** Extract 2-3 keyframes per clip (ffmpeg), describe them
+via the existing `llm.chat` vision path (cached by file content hash), and match videos
+exactly like photos. Makes videos first-class in Smart-match (today they fall back to
+positional order). Reuses `describe_images` / `assign_images`.
+
+**2 — Prefer real footage:** When a beat matches a real video clip, anchor on the footage
+over an AI-animated still — higher quality *and* lower cost (no animation credits). Implemented
+as a bias in the assignment prompt + the pipeline already plays matched videos as footage.
+
+**3 — Multi-shot coverage (opt-in, cost-aware):** Score every (beat, media) pair, take
+**top-K above a quality floor**, with **no duplicates across beats** (global assignment),
+**gated by availability** (only multi-shot a beat that has ≥2 strong matches). Cover a beat
+with e.g. a real clip + 1-2 still B-roll. *Replaces the earlier fixed-"80% match" idea, which
+is dropped — a fixed threshold is the wrong mechanism; use continuous CLIP scores + top-K.*
+
+**4 — Editorial polish:** Order sub-shots (wide→close), enforce a min sub-shot duration,
+let one caption span the sub-shots, give each sub-shot its own subtle motion. Prevents the
+"gallery slideshow" feel.
+
+**Dependencies:** Multi-shot scoring uses CLIP embeddings (credit-funded on AWS GPU — see the
+Bedrock/AWS work and P3 #12). **Cost:** ~2× video credits on multi-shot beats → opt-in.
+**Priority note:** below P0 #2 (face consistency) and per-shot motion quality — this is polish,
+not the core quality lever.
+**Status:** steps 1-2 implemented; 3-4 deferred (need CLIP + assembler sub-clip support).
+
+---
+
 ## P3 — Backlog
 
 ### #12 · CLIP Semantic Media Matching
+**Note:** Single-image semantic matching is now partially delivered via the GPT-4o
+matcher (#15). CLIP remains the path for cheap, at-scale, *score-based* matching (the
+top-K multi-shot selection in #15) — run it credit-funded on AWS GPU.
 **What:** Given a script segment's text, use OpenAI CLIP to score semantic similarity against all available images/videos in the asset library. Auto-assign the most relevant asset per frame instead of relying on manual asset-to-frame mapping.
 
 **Replaces:** Current numbered-filename convention (`01_papa_auto.jpg` = Frame 1).  

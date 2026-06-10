@@ -1,0 +1,45 @@
+{
+  "title": "EXAMPLE — Lalita: farmer to model (replace with your real project)",
+  "subject": "Lalita Nehra",
+  "style": {
+    "mood": "warm nostalgic, hopeful",
+    "palette": "amber / golden hour, slightly desaturated vintage",
+    "pacing": "slow and emotional; let stills breathe; average shot ~4.5s",
+    "camera": "subtle slow push-ins only; no fast moves; one action per shot",
+    "transitions": "soft crossfade ~0.4s",
+    "captions": "Baskerville, bottom-center, calm, ~38-char wrap",
+    "music": "soft acoustic bed, ducked under voice"
+  },
+  "frames": [
+    {
+      "caption": "Papa was an auto driver, and Maa worked as a househelp.",
+      "media": "01_papa_auto.jpg",
+      "media_type": "image",
+      "shot_type": "establishing",
+      "why_this_media": "real photo of the auto-rickshaw and father grounds the humble origin in the first beat",
+      "motion": "slow push-in",
+      "duration_sec": 4.5,
+      "emotion": "origin / humble"
+    },
+    {
+      "caption": "Bedridden, I watched modelling videos dreaming of the ramp.",
+      "media": "ai_portrait",
+      "media_type": "image",
+      "shot_type": "close",
+      "why_this_media": "no real photo of this private moment existed; an AI close-up on her hopeful face carries the longing",
+      "motion": "very slow push-in, phone glow on face",
+      "duration_sec": 5.0,
+      "emotion": "longing / hope"
+    },
+    {
+      "caption": "I got my big break — becoming TV's Nima Denzongpa!",
+      "media": "07_nima_denzongpa.mp4",
+      "media_type": "video",
+      "shot_type": "payoff",
+      "why_this_media": "real footage of the actual TV role is the strongest possible proof — use real footage on the triumph beat",
+      "motion": "real footage (no animation)",
+      "duration_sec": 6.0,
+      "emotion": "triumph"
+    }
+  ]
+}

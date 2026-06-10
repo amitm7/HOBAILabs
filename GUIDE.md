@@ -13,6 +13,7 @@
 3. [Script Format — Complete Reference](#3-script-format--complete-reference)
 4. [Web UI — Step by Step](#4-web-ui--step-by-step)
 5. [Frame Assignment — All Options](#5-frame-assignment--all-options)
+5b. [Smart Matching & Style Exemplars](#5b-smart-matching--style-exemplars)
 6. [Director Notes — How to Write Them](#6-director-notes--how-to-write-them)
 7. [Camera Angles & Motion](#7-camera-angles--motion)
 8. [Lip Sync — Make the Subject Speak](#8-lip-sync--make-the-subject-speak)
@@ -301,6 +302,35 @@ Each row top-to-bottom: pick the **source**, then optionally add a **director no
 - Only shown for frames assigned a video file (.mp4, .mov, etc.)
 - Skips the first N seconds of the video — use when the good part starts mid-way
 - Example: `3` skips the first 3 seconds
+
+---
+
+## 5b. Smart Matching & Style Exemplars
+
+### 🤖 Smart-match images (AI)
+By default, frames you don't pin with `[photo:]` are filled by **alphabetical order** of the folder — so the right photo only lands on the right beat by luck. Tick **🤖 Smart-match images (AI)** (or pass `--smart-match` on the CLI) and the app instead **reads each photo's content** (who/what is in it, *and any text/names written in it*) and places the best-fitting photo on each beat.
+
+- **Videos are matched too:** a clip is sampled into a few keyframes, "watched," and matched like a photo — then played as **real footage** (not animated). Real footage is preferred over an AI-animated still when both fit, because it looks better and costs nothing to animate.
+- **Respects your choices:** pinned `[photo:]` frames, AI frames, and the per-frame 🤖 Model picker are never overridden.
+- **Cost:** each image/video is described **once** via the LLM and cached forever (pennies). Off by default — when off, behaviour is unchanged.
+- Powered by the pluggable LLM brain (`config/llm.json`), so it works on OpenAI / Bedrock / Gemini.
+
+### Style Exemplars — teach the AI your lab's hand-made taste
+You can feed the pipeline **gold examples** from past manually-edited projects so the AI imitates your editing judgment (pacing, shot grammar, which media goes on which beat, and *why*). This is in-context guidance — **not** model training — and it's **off unless you enable it**.
+
+**Folder layout** — one folder per past project under `exemplars/`:
+```
+exemplars/<project>/
+  script.txt        # the original script
+  assets/           # the source images & clips that project used
+  final.mp4         # your manually-edited final video (reference / benchmark)
+  exemplar.json     # the DISTILLED DECISIONS — the part the AI reads
+```
+Copy `exemplars/_template/exemplar.json`, fill it in (per beat: the media used, **why**, shot type, motion, duration, emotion + a global `style` block), and that's it. The pipeline reads `exemplar.json`; `final.mp4`/`assets/` are kept for reference and future auto-extraction. See `exemplars/README.md` for the field guide.
+
+**Turn it on:** set `USE_EXEMPLARS=1`. The lab's house-style note + a few worked examples are then injected into scene design and image matching. 3–10 strong, diverse exemplars is plenty. Folders starting with `_` (like `_template`) are ignored.
+
+> Honest note: a finished `.mp4` can't be "trained on" — what teaches the AI is the **decisions** in `exemplar.json`. If you only have final videos + scripts (no shot list), those decisions can be semi-auto-extracted later; for now, hand-author the best few.
 
 ---
 

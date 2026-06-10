@@ -4,8 +4,10 @@ from pathlib import Path
 
 TRANSITION_DUR = 0.4  # seconds crossfade between clips
 
-# macOS system font directory containing Baskerville.ttc
-FONT_DIR = "/System/Library/Fonts/Supplemental"
+# Directory libass searches for the caption font. Defaults to the macOS system
+# fonts (Baskerville.ttc) for local dev; override with HOB_FONT_DIR in the Docker
+# image / Linux deploy where that path doesn't exist (see Dockerfile).
+FONT_DIR = os.environ.get("HOB_FONT_DIR", "/System/Library/Fonts/Supplemental")
 
 
 def _run(cmd: list[str]):

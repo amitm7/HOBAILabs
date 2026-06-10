@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reel Maker — Team Guide</title>
+<style>
+  :root{--ink:#1d2530;--muted:#5b6776;--line:#e3e8ef;--bg:#fff;--soft:#f6f8fb;
+        --accent:#7c3aed;--accent2:#0ea5e9;--good:#16a34a;--warn:#b45309;--chip:#eef2ff;}
+  *{box-sizing:border-box}
+  body{font:16px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);max-width:920px;margin:0 auto;padding:32px 22px 80px;background:var(--bg)}
+  h1{font-size:30px;margin:.2em 0 .1em;letter-spacing:-.02em}
+  h2{font-size:23px;margin:1.7em 0 .5em;padding-top:.5em;border-top:2px solid var(--line)}
+  h3{font-size:18px;margin:1.3em 0 .35em;color:#111}
+  p{margin:.55em 0}
+  code{background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.92em}
+  .lead{font-size:18px;color:var(--muted)}
+  .tag{display:inline-block;background:var(--chip);color:#3730a3;border-radius:999px;
+       padding:2px 10px;font-size:13px;font-weight:600;margin:2px 4px 2px 0}
+  table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:700}
+  tr:nth-child(even) td{background:#fcfdff}
+  .box{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--soft);
+       border-radius:8px;padding:12px 16px;margin:1em 0}
+  .tip{border-left-color:var(--good)}
+  .warn{border-left-color:var(--warn);background:#fffbeb}
+  .big{border-left-color:var(--accent2)}
+  .step{display:flex;gap:14px;align-items:flex-start;margin:.6em 0}
+  .num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+       font-weight:700;display:flex;align-items:center;justify-content:center;font-size:15px}
+  .kbd{font-weight:700;color:var(--accent)}
+  .muted{color:var(--muted)}
+  .url{font-size:18px;font-weight:700;color:var(--accent2)}
+  ul{margin:.4em 0 .6em;padding-left:1.25em}
+  li{margin:.25em 0}
+  hr{border:none;border-top:1px solid var(--line);margin:2em 0}
+  .toc a{display:block;color:#334;text-decoration:none;padding:3px 0}
+  .toc a:hover{color:var(--accent)}
+  .pill{font-size:12.5px;font-weight:700;border-radius:6px;padding:2px 8px}
+  .free{background:#dcfce7;color:#166534}
+  .cheap{background:#fef9c3;color:#854d0e}
+  .prem{background:#ede9fe;color:#5b21b6}
+  @media print{body{max-width:none}h2{break-before:auto}.box{break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<h1>🎬 Reel Maker — Team Guide</h1>
+<p class="lead">Turn a short written story + your photos and clips into a finished, captioned vertical video — no editing skills needed. This guide explains <b>every button and field in plain language</b>, with the <b>exact words you can type</b>.</p>
+
+<div class="box big">
+  <b>Where to open the tool:</b> <span class="url">https://creative.kevat.ai</span><br>
+  Works in any browser. Nothing to install. If a teammate is mid-render, just wait a moment and refresh.
+</div>
+
+<h2 id="toc">What's inside</h2>
+<div class="toc">
+  <a href="#what">1 · What it does (in one minute)</a>
+  <a href="#flow">2 · The 8 steps, start to finish</a>
+  <a href="#subject">3 · Step 1 — Subject (who the story is about)</a>
+  <a href="#story">4 · Step 2 — Write the story (with template)</a>
+  <a href="#card">5 · The Frame Card — every field explained</a>
+  <a href="#source">5a · Picture source (Auto / Upload / AI)</a>
+  <a href="#note">5b · Director Note — the most important box</a>
+  <a href="#camera">5c · Camera Motion — full keyword list</a>
+  <a href="#edit">5d · Image Edit — change a photo with words</a>
+  <a href="#lipsync">5e · Lip Sync — make a face talk</a>
+  <a href="#duration">5f · Duration & Video Start</a>
+  <a href="#models">5g · Picture & Video "model" pickers</a>
+  <a href="#style">6 · Style, Quality, Mood, Captions</a>
+  <a href="#music">7 · Music</a>
+  <a href="#cost">8 · Cost panel — read before you press Generate</a>
+  <a href="#arc">9 · How to build a story that lands</a>
+  <a href="#cheat">10 · One-page cheat sheet (all keywords)</a>
+  <a href="#example">11 · A full worked example</a>
+  <a href="#faq">12 · Quick fixes (FAQ)</a>
+</div>
+
+<h2 id="what">1 · What it does (in one minute)</h2>
+<p>You give it a <b>story written as short lines</b> and a <b>folder of photos/videos</b>. For each line it decides what should be on screen, how the camera moves, and the mood — then builds one <b>9:16 vertical video</b> with captions and music, ready for Reels / Shorts.</p>
+<p>Think of it as an <b>automated video editor with a film director's brain</b>. Each line of your story becomes one shot. A 10-line story becomes a 10-shot reel.</p>
+
+<h2 id="flow">2 · The 8 steps, start to finish</h2>
+<div class="step"><div class="num">1</div><div><b>Subject</b> — type the person's name + a short look description.</div></div>
+<div class="step"><div class="num">2</div><div><b>Paste your story</b> and point to your photo/video folder. Click <span class="kbd">Parse Frames →</span>.</div></div>
+<div class="step"><div class="num">3</div><div><b>Frame cards</b> appear — one per line. Tweak the picture, mood note, and camera on each.</div></div>
+<div class="step"><div class="num">4</div><div><b>Target length</b> — pick 30/45/60/90s or Auto.</div></div>
+<div class="step"><div class="num">5</div><div><b>Style & Quality</b> — start in <b>Dev</b> (cheap) while testing.</div></div>
+<div class="step"><div class="num">6</div><div><b>Music</b> — none, upload, or auto-generate.</div></div>
+<div class="step"><div class="num">7</div><div><b>Check the 💰 cost panel.</b></div></div>
+<div class="step"><div class="num">8</div><div><b>Generate</b> → watch the log → <b>Download .mp4</b>.</div></div>
+
+<h2 id="subject">3 · Step 1 — Subject</h2>
+<table>
+<tr><th>Field</th><th>What to type</th><th>Example</th></tr>
+<tr><td><b>Name</b></td><td>The person's first name. Used so the AI "designs a shot of ___".</td><td><code>Lalita</code></td></tr>
+<tr><td><b>Description</b></td><td>A short physical look so AI-made pictures stay consistent. Leave blank if you only use real photos.</td><td><code>Rajasthani woman, 30s, strong features, sun-kissed skin, traditional clothing</code></td></tr>
+</table>
+
+<h2 id="story">4 · Step 2 — Write the story</h2>
+<p>The story is plain text. Start each shot with the word <b>Frame</b> and a number, then write the line that should appear on screen. That's it.</p>
+
+<h3>Copy-paste template</h3>
+<div class="box">
+<pre style="margin:0;white-space:pre-wrap">Reels
+
+Frame 1
+From a farmer to a model… the story of a desi girl with big dreams.
+
+Frame 2
+At 19, I got married into a traditional Rajasthani home.
+
+Frame 3
+A kisan ki beti — I rode tractors even after marriage.
+
+Caption:
+Write your full Instagram caption here. (This does NOT appear in the video.)</pre>
+</div>
+
+<table>
+<tr><th>Rule</th><th>Plain meaning</th></tr>
+<tr><td>One <b>Frame</b> = one shot</td><td>Keep each line short — it shows on screen as a caption while the camera moves.</td></tr>
+<tr><td>Numbers don't need to be in order</td><td>The tool reads top-to-bottom, not the numbers.</td></tr>
+<tr><td>The <code>Caption:</code> block at the bottom</td><td>Is your Instagram post text. It is <b>never shown in the video</b> — write the long version here.</td></tr>
+<tr><td>Keep on-screen lines under ~15 words</td><td>The camera moves before longer text can be read.</td></tr>
+</table>
+
+<div class="box tip"><b>You don't have to type anything fancy.</b> Everything below (picture, mood, camera, lip-sync) can be set by <b>clicking on the frame card</b> after you parse. The bracket tags shown later are just the typed shortcut for the same buttons.</div>
+
+<h2 id="card">5 · The Frame Card — every field explained</h2>
+<p>After <span class="kbd">Parse Frames →</span>, each line becomes a card. Top to bottom you choose: <b>the picture</b>, then optionally a <b>mood note</b>, a <b>photo edit</b>, a <b>camera move</b>, a <b>lip-sync</b> toggle, and the <b>length</b>.</p>
+
+<h3 id="source">5a · Picture source — where the shot's image comes from</h3>
+<table>
+<tr><th>Button</th><th>Use it when…</th></tr>
+<tr><td><b>Auto</b></td><td>You're happy with the photo it auto-picked from your folder.</td></tr>
+<tr><td><b>📁 From Folder</b></td><td>Use the matched file from your folder (shown as a green badge).</td></tr>
+<tr><td><b>📷 Upload Photo</b></td><td>Pick any photo or video from your computer for this shot.</td></tr>
+<tr><td><b>🎨 AI Portrait</b></td><td>No good photo? The AI <b>creates a person/portrait</b> for this moment, matching the Subject + your note.</td></tr>
+<tr><td><b>🖼 AI Symbolic</b></td><td>The AI creates <b>objects/scenery with NO people</b> — perfect for sad/abstract beats (illness, loss, a turning point) where showing a face feels wrong.</td></tr>
+</table>
+<div class="box tip"><b>Golden rule:</b> real photos and clips always look best — use them whenever you have one. Use <b>AI Portrait</b> when you have no photo, and <b>AI Symbolic</b> for pain or abstract moments (show the empty room, not the person crying).</div>
+
+<h3 id="note">5b · Director Note — the most important box</h3>
+<p>This tells the AI director the <b>feeling and look</b> of the shot. Write it like you're briefing a photographer: <b>what's in frame + how they feel + the light</b>.</p>
+<table>
+<tr><th>Feeling you want</th><th>What to type in the note</th></tr>
+<tr><td>Pride / Triumph</td><td>Head high, direct gaze, warm gold backlight, full confidence</td></tr>
+<tr><td>Grief / Loss</td><td>No eye contact, slumped posture, cold blue-grey light, objects rather than face</td></tr>
+<tr><td>Longing</td><td>Eyes looking just off-frame, window light, half-turned away</td></tr>
+<tr><td>Determination</td><td>Jaw set, hands busy, warm practical light, grounded posture</td></tr>
+<tr><td>Fear / Uncertainty</td><td>Shadow across the face, shallow focus, background looms out of focus</td></tr>
+<tr><td>Innocence</td><td>Young face, soft diffused light, looking up slightly, clean background</td></tr>
+<tr><td>Turning point / Hope</td><td>Spark in the eyes, phone glow in a dark room, a small smile starting</td></tr>
+</table>
+<table>
+<tr><th>❌ Too plain</th><th>✅ Better (emotional + specific)</th></tr>
+<tr><td>show her being sad</td><td>Medicine bottles on a windowsill, no person, cold winter light, the silence of an empty room</td></tr>
+<tr><td>the ramp walk</td><td>Head high, back straight, heels clicking, full confidence, warm gold backlight — she earned this</td></tr>
+</table>
+
+<h3 id="camera">5c · Camera Motion — the full keyword list</h3>
+<p>Type any of these into the <b>🎥 Camera motion</b> box (or leave it blank to let the AI choose from the mood). Plain English works — <code>slow zoom in</code>, <code>orbit around her</code> are all understood.</p>
+<table>
+<tr><th>Type this</th><th>What you'll see</th><th>Best for</th></tr>
+<tr><td><code>360 orbit</code></td><td>Camera circles all the way around</td><td>Hero reveal, triumph</td></tr>
+<tr><td><code>bullet time</code></td><td>Freeze + orbit (Matrix style)</td><td>The single peak moment</td></tr>
+<tr><td><code>crash zoom in</code></td><td>Fast dramatic zoom toward the subject</td><td>Shock, surprise, realization</td></tr>
+<tr><td><code>crash zoom out</code></td><td>Fast zoom away</td><td>Sudden scale, "the world opens up"</td></tr>
+<tr><td><code>dolly in</code> / <code>push in</code></td><td>Smooth glide toward the subject</td><td>Intimacy, building emotion</td></tr>
+<tr><td><code>dolly out</code> / <code>pull back</code></td><td>Smooth glide away, revealing surroundings</td><td>Loneliness, scale, isolation</td></tr>
+<tr><td><code>crane up</code></td><td>Camera lifts upward</td><td>Victory, freedom, rising</td></tr>
+<tr><td><code>crane down</code></td><td>Camera lowers</td><td>Weight, defeat, gravity</td></tr>
+<tr><td><code>tilt up</code> / <code>tilt down</code></td><td>Camera angles up or down</td><td>Looking to the sky / looking down</td></tr>
+<tr><td><code>overhead</code></td><td>Bird's-eye view from directly above</td><td>Vulnerability, isolation</td></tr>
+<tr><td><code>dutch angle</code></td><td>Tilted, off-kilter horizon</td><td>Tension, unease, something's wrong</td></tr>
+<tr><td><code>Hitchcock zoom</code></td><td>Vertigo effect (zoom + pull)</td><td>Dread, disorientation</td></tr>
+<tr><td><code>extreme close on eyes</code></td><td>Macro on the face/eyes</td><td>Deep emotion, connection</td></tr>
+<tr><td><code>arc left</code> / <code>arc right</code></td><td>Camera sweeps in a partial circle</td><td>Gentle reveal, momentum</td></tr>
+<tr><td><code>handheld</code></td><td>Slightly shaky, human feel</td><td>Raw truth, documentary realism</td></tr>
+<tr><td><code>static</code></td><td>No movement at all</td><td>Stillness, weight, gravity</td></tr>
+<tr><td><code>super 8mm</code></td><td>Vintage film-grain look</td><td>Memory, flashback, nostalgia</td></tr>
+<tr><td><code>whip pan</code></td><td>Fast blurred swipe</td><td>Energy, time passing, scene change</td></tr>
+</table>
+<div class="box warn"><b>One move per shot.</b> Keep it to a single gentle action (e.g. <code>slow push in</code>). Over-describing motion is the #1 cause of weird, melty faces. And remember: a shot is <b>either</b> a camera move <b>or</b> a talking face (lip sync) — not both.</div>
+
+<h3 id="edit">5d · Image Edit — change a photo with words</h3>
+<p>The <b>✏️ Image edit</b> box changes the picture <i>before</i> it animates. Type a plain instruction.</p>
+<table>
+<tr><th>Type this</th><th>Result</th></tr>
+<tr><td><code>add thunderstorm and dark clouds</code></td><td>Storm added to the sky</td></tr>
+<tr><td><code>make the lighting warmer and golden</code></td><td>Warm sunset tone over the whole image</td></tr>
+<tr><td><code>add rain on the window</code></td><td>Rain streaks added</td></tr>
+<tr><td><code>add soft morning fog</code></td><td>Atmospheric fog layer</td></tr>
+<tr><td><code>cold grey winter light and frost</code></td><td>Turns a scene cold and sombre</td></tr>
+</table>
+<p class="muted">Big mood changes ("add storm", "warmer light") work great. Precise moves ("shift her to the left") are less reliable — that's expected.</p>
+
+<h3 id="lipsync">5e · Lip Sync — make the subject speak</h3>
+<p>Tick <b>🎙 Lip Sync</b> and that shot becomes a <b>talking face</b> that says the line aloud in a real voice. A voice menu appears — pick one or leave the default.</p>
+<ul>
+<li><b>What gets spoken</b> = the line you wrote for that frame.</li>
+<li><b>Length is automatic</b> — the shot lasts exactly as long as the spoken line (the duration box greys out).</li>
+<li><b>Music ducks</b> under the voice automatically.</li>
+<li><b>Safe:</b> if a voice/lip-sync service is unavailable, the shot quietly becomes a normal animated photo. Nothing breaks.</li>
+</ul>
+<div class="box tip"><b>Use it on 2–4 shots max</b> — the spoken turning point and the closing line. Don't lip-sync everything; mix talking beats with silent cinematic beats.</div>
+
+<h3 id="duration">5f · Duration & Video Start</h3>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><b>Duration</b></td><td>How long the shot lasts. Leave blank and it's auto-calculated from word count (longer line = longer shot). Lip-sync shots set this themselves.</td></tr>
+<tr><td><b>Video start</b> <span class="muted">(only for video sources)</span></td><td>Skip the first few seconds of a clip. e.g. <code>3</code> starts the clip 3 seconds in — handy when the good part is mid-way.</td></tr>
+</table>
+
+<h3 id="models">5g · Picture & Video "model" pickers</h3>
+<p>"Model" = which AI engine makes the picture or the motion. <b>Leave both on <span class="kbd">Auto</span></b> and the tool picks the best one for each shot, cheap while testing and premium for the final. Only override if you want a specific look.</p>
+<h4>Picture models</h4>
+<table>
+<tr><th>Name</th><th>Plain meaning</th><th>Tier</th></tr>
+<tr><td><b>Seedream</b></td><td>Cheap, fast pictures — great for testing</td><td><span class="pill cheap">draft</span></td></tr>
+<tr><td><b>Nano Banana</b></td><td>Premium, very photo-real faces</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Flux</b></td><td>Premium portraits & objects</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>GPT Image</b></td><td>Best for objects, symbolic scenes, and any text-in-image</td><td><span class="pill cheap">standard</span></td></tr>
+</table>
+<h4>Video (motion) models</h4>
+<table>
+<tr><th>Name</th><th>Plain meaning</th><th>Tier</th></tr>
+<tr><td><b>Kling Standard</b></td><td>Solid animation, great value — the testing default</td><td><span class="pill cheap">draft</span></td></tr>
+<tr><td><b>Kling Pro</b></td><td>Highest-quality Kling motion</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Higgsfield</b></td><td>Most cinematic camera-move presets</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Seedance</b></td><td>Cinematic, multi-shot feel</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Veo</b></td><td>Best built-in audio/dialogue</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Hailuo</b></td><td>Wide landscapes, realistic motion</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Ken Burns</b></td><td>Simple zoom, <b>free</b>, no AI — for free tests</td><td><span class="pill free">free</span></td></tr>
+</table>
+<div class="box tip"><b>99% of the time: leave both on Auto.</b> Auto already uses cheap engines in Dev and premium in Production, and never re-generates your real photos.</div>
+
+<h2 id="style">6 · Style, Quality, Mood & Captions</h2>
+<h3>Quality tier — "test cheap, finish expensive"</h3>
+<table>
+<tr><th>Tier</th><th>Use when</th></tr>
+<tr><td><b>Dev</b> <span class="pill cheap">cheap, 5s shots</span></td><td><b>Always start here.</b> Cheap draft to check your story, captions, and timing.</td></tr>
+<tr><td><b>Production</b> <span class="pill prem">premium, up to 9s</span></td><td>Only for the <b>final</b> render once everything looks right.</td></tr>
+</table>
+<h3>Mood / colour palette</h3>
+<table>
+<tr><th>Mood</th><th>Look</th></tr>
+<tr><td><b>Warm Nostalgic</b></td><td>Amber, golden-hour, slightly vintage</td></tr>
+<tr><td><b>Cold Struggle</b></td><td>Blue-grey, overcast, deep shadows</td></tr>
+<tr><td><b>Triumphant</b></td><td>Rich golds & saffron, bright, high saturation</td></tr>
+<tr><td><b>Default</b></td><td>Let the AI choose per shot</td></tr>
+</table>
+<h3>Orientation, transition & captions</h3>
+<table>
+<tr><th>Setting</th><th>Options</th><th>Pick</th></tr>
+<tr><td>Orientation</td><td>Portrait 1080×1920 / Landscape 1920×1080</td><td><b>Portrait</b> for Reels/Shorts/TikTok</td></tr>
+<tr><td>Transition</td><td>Crossfade / Hard Cut</td><td>Crossfade for smooth, Hard Cut for punchy</td></tr>
+<tr><td>Caption font</td><td>Baskerville / Arial / Georgia / Helvetica</td><td>Baskerville for storytelling</td></tr>
+<tr><td>Caption size</td><td>24–96 pt</td><td>52 default; 60–70 for dramatic</td></tr>
+<tr><td>Caption colour</td><td>White / Yellow / Black</td><td>White — always readable</td></tr>
+<tr><td>Caption position</td><td>Bottom / Middle / Top</td><td>Bottom for Reels</td></tr>
+</table>
+
+<h2 id="music">7 · Music</h2>
+<table>
+<tr><th>Option</th><th>What it does</th></tr>
+<tr><td><b>No Music</b></td><td>Silent video — add your own later.</td></tr>
+<tr><td><b>Upload Music</b></td><td>Use your own MP3/M4A/WAV. It loops and fades out at the end.</td></tr>
+<tr><td><b>Auto-Generate</b></td><td>Describe a mood and it makes a track (~2–3 min). Wait for <b>✓ Music ready</b> before Generate.</td></tr>
+<tr><td><b>Voice-Over</b></td><td>Reads each caption aloud in a chosen voice.</td></tr>
+</table>
+<p class="muted">Good auto-music prompts: <code>Emotional Bollywood instrumental, struggle to triumph, sitar and tabla, no lyrics</code> · <code>Melancholic Rajasthani folk, raw acoustic</code></p>
+
+<h2 id="cost">8 · The 💰 cost panel — read it before Generate</h2>
+<p>After you parse, a cost estimate appears and updates live as you change settings. <b>Check it before pressing Generate.</b> Want it cheaper? Use <b>Dev</b> tier, prefer <b>real photos/videos</b>, and keep lip-sync to a few shots.</p>
+
+<h2 id="arc">9 · How to build a story that lands</h2>
+<table>
+<tr><th>Shot</th><th>Job</th></tr>
+<tr><td>Frame 1</td><td><b>Hook</b> — who is this, why watch? Use your best clip or a crash-zoom.</td></tr>
+<tr><td>2–3</td><td><b>Context</b> — the before.</td></tr>
+<tr><td>4–5</td><td><b>Conflict</b> — the problem / loss (use AI Symbolic for pain).</td></tr>
+<tr><td>6–7</td><td><b>Lowest point</b>, then the <b>spark</b> (great lip-sync moment).</td></tr>
+<tr><td>8–9</td><td><b>Turning point → triumph</b> (real footage of the win; save <code>360 orbit</code> for here).</td></tr>
+<tr><td>10</td><td><b>Resolution</b> — strong, present-day, direct gaze (great closing lip-sync line).</td></tr>
+</table>
+<ul>
+<li><b>10–12 frames</b> = a great 60–90s reel.</li>
+<li>Write captions in <b>first person, present tense</b>, punchy, under 15 words.</li>
+<li>Never show illness/trauma on a face — use <b>AI Symbolic</b> (the empty room speaks louder).</li>
+<li>Save big moves (<code>360 orbit</code>, <code>crane up</code>) for the <b>single</b> biggest moment.</li>
+</ul>
+
+<h2 id="cheat">10 · One-page cheat sheet (print this)</h2>
+<div class="box">
+<b>Picture source:</b> Auto · From Folder · Upload · AI Portrait · AI Symbolic<br><br>
+<b>Camera moves:</b> 360 orbit · bullet time · crash zoom in/out · dolly in (push in) · dolly out (pull back) · crane up · crane down · tilt up/down · overhead · dutch angle · Hitchcock zoom · extreme close on eyes · arc left/right · handheld · static · super 8mm · whip pan<br><br>
+<b>Moods:</b> Warm Nostalgic · Cold Struggle · Triumphant · Default<br><br>
+<b>Picture models:</b> Seedream (cheap) · Nano Banana (photo-real) · Flux · GPT Image (objects/text)<br>
+<b>Video models:</b> Kling Standard (default) · Kling Pro · Higgsfield · Seedance · Veo · Hailuo · Ken Burns (free)<br><br>
+<b>Quality:</b> Dev (test cheap) → Production (final)<br>
+<b>Lip sync:</b> 2–4 shots max, the spoken beats only<br>
+<b>Edit examples:</b> add thunderstorm · warmer golden light · add rain on the window · morning fog
+</div>
+
+<h4>Optional: typing it in the story instead of clicking</h4>
+<p class="muted">Every button has a typed shortcut you can put under a frame line. The buttons do the same thing — use whichever you prefer.</p>
+<table>
+<tr><th>Type under the line</th><th>Same as the button…</th></tr>
+<tr><td><code>[photo: filename.jpg]</code></td><td>Use a specific file</td></tr>
+<tr><td><code>[photo: ai_portrait]</code> / <code>[photo: ai_symbolic]</code></td><td>AI Portrait / AI Symbolic</td></tr>
+<tr><td><code>[note: ...]</code></td><td>Director Note</td></tr>
+<tr><td><code>[camera: 360 orbit]</code></td><td>Camera motion</td></tr>
+<tr><td><code>[edit: add storm]</code></td><td>Image Edit</td></tr>
+<tr><td><code>[lipsync: yes]</code></td><td>Lip Sync toggle</td></tr>
+<tr><td><code>[duration: 8]</code> · <code>[start: 3]</code></td><td>Duration · Video start</td></tr>
+</table>
+
+<h2 id="example">11 · A full worked example</h2>
+<p>A real story turned into a 10-shot reel. Paste it, set the folder, hit Parse — then read <i>why</i> each choice was made.</p>
+<div class="box">
+<pre style="margin:0;white-space:pre-wrap">Reels
+
+Frame 1
+From a farmer to a model… the story of a desi girl with big dreams.
+[photo: ai_portrait]
+[note: Strong proud Rajasthani woman, direct gaze, chin up. Golden hour, dust in air. A HERO, not a victim.]
+[camera: crash zoom in]
+
+Frame 5
+After COVID, I was diagnosed with arthritis. I lost my hair, my confidence… and myself.
+[photo: ai_symbolic]
+[note: NO person. Medicine bottles on a windowsill, a hairbrush with fallen strands, cold blue-grey light. The objects carry the grief.]
+[edit: cold grey winter light and frost on the window]
+[camera: static]
+
+Frame 7
+Bedridden, I watched modelling videos thinking, "one day I'll walk the ramp."
+[photo: lalita_face.jpg]
+[lipsync: yes]
+[note: The turning point — she says it herself. Phone glow on her face in a dark room. A small smile starting.]
+
+Frame 8
+I fought back — and the girl who couldn't stand walked the ramp in heels.
+[photo: ramp_walk.mov]
+[start: 3]
+[note: Real ramp-walk clip. Head high, full confidence. The peak. Skip the first 3 seconds.]
+[duration: 8]
+
+Frame 9
+I won Mrs. Rajasthan 1st runner-up.
+[photo: crown.jpg]
+[note: Pure victory — crown, sash, stage. She earned this. High saturation, saffron and gold.]
+[camera: 360 orbit]
+
+Caption:
+From the farm to the ramp — the full story for your followers goes here.</pre>
+</div>
+<table>
+<tr><th>Frame</th><th>Why</th></tr>
+<tr><td>1</td><td>No strong opening photo → AI Portrait hero shot. <b>Crash zoom</b> stops the scroll in the first 1.5s.</td></tr>
+<tr><td>5</td><td>Illness shown as <b>objects, not a face</b> (AI Symbolic) + cold <b>edit</b> + <b>static</b> camera = the weight of stillness.</td></tr>
+<tr><td>7</td><td><b>Lip sync</b> on the spark — hearing her say it lands harder than text.</td></tr>
+<tr><td>8</td><td><b>Real video</b> of the win beats any AI. <code>start: 3</code> skips the boring intro.</td></tr>
+<tr><td>9</td><td><b>360 orbit</b> saved for the single highest moment.</td></tr>
+</table>
+
+<h2 id="faq">12 · Quick fixes (FAQ)</h2>
+<table>
+<tr><th>Problem</th><th>Fix</th></tr>
+<tr><td>Face looks melty/distorted</td><td>Simplify the camera move (one gentle action), or use a real photo.</td></tr>
+<tr><td>Wrong photo on a beat</td><td>Click <b>📁 Upload</b> or <b>From Folder</b> on that card and pick the right one.</td></tr>
+<tr><td>Caption too long / gets cut</td><td>Shorten the line to under 15 words.</td></tr>
+<tr><td>Costs look high</td><td>Switch to <b>Dev</b>, use real photos, cut lip-sync to 2–4 shots.</td></tr>
+<tr><td>Lip-sync shot came out silent/animated</td><td>That shot fell back safely — check the line isn't empty and try again.</td></tr>
+<tr><td>Testing for free</td><td>Set Video model to <b>Ken Burns</b> + Quality to <b>Dev</b> — zero AI cost.</td></tr>
+</table>
+
+<hr>
+<p class="muted">Workflow in one line: <b>Write short lines → Parse → set Picture + Note + Camera per shot → Dev test → Production final → Download.</b> When unsure, leave models on <b>Auto</b> and start in <b>Dev</b>.</p>
+
+</body>
+</html>

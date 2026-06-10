@@ -1,7 +1,4 @@
-import json
-from openai import OpenAI
-
-client = OpenAI()
+from agents import llm
 
 WORDS_PER_SEC = 2.5  # natural speaking pace
 
@@ -34,17 +31,9 @@ Script:
 Format:
 [{{"id": "s1", "text": "...", "duration_sec": 4}}, ...]"""
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
-    raw = response.choices[0].message.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+    raw = llm.chat([{"role": "user", "content": prompt}],
+                   temperature=0.3, model_tier="reasoning")
+    return llm.json_loads_lenient(raw)
 
 
 def segment_script(script: str, target_duration_sec: int) -> list[dict]:

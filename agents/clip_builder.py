@@ -10,6 +10,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from agents import model_router
+from agents.cache_store import BlobCache
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
 HEIC_EXTS  = {".heic", ".heif"}
@@ -18,9 +19,10 @@ KLING_API_BASE  = "https://api.klingai.com"
 KLING_POLL_SEC  = 5
 KLING_TIMEOUT   = 360
 
-# Persistent cache directory — clips reused across runs
-CLIP_CACHE_DIR = Path.home() / ".hob_cache" / "kling_clips"
-CLIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Persistent clip cache — reused across runs; FS by default, S3-backed when
+# HOB_CACHE_BACKEND=s3 so paid clips survive container redeploys (see cache_store).
+_CLIP_CACHE = BlobCache("kling_clips", ext=".mp4", min_bytes=10_000)
+CLIP_CACHE_DIR = _CLIP_CACHE.local_dir   # back-compat: still logged at startup
 
 
 def _clip_cache_key(image_path: str, motion_prompt: str, duration: float) -> str:
@@ -34,10 +36,7 @@ def _clip_cache_key(image_path: str, motion_prompt: str, duration: float) -> str
 
 
 def _cache_lookup(key: str) -> str | None:
-    cached = CLIP_CACHE_DIR / f"{key}.mp4"
-    if cached.exists() and cached.stat().st_size > 10_000:
-        return str(cached)
-    return None
+    return _CLIP_CACHE.local_path(key)
 
 
 def _resolve_model_id(item: dict, provider: str, kling_mode: str) -> str:
@@ -74,9 +73,7 @@ def _model_cache_key(model_id: str, media: str, motion: str,
 
 
 def _cache_store(key: str, clip_path: str):
-    import shutil
-    dest = str(CLIP_CACHE_DIR / f"{key}.mp4")
-    shutil.copy2(clip_path, dest)
+    _CLIP_CACHE.put(key, clip_path)
 
 
 def _kling_jwt() -> str:
@@ -96,9 +93,19 @@ def _run(cmd: list[str]):
 def heic_to_jpeg(heic_path: str, temp_dir: str) -> str:
     stem = Path(heic_path).stem
     out = str(Path(temp_dir) / f"{stem}_converted.jpg")
-    subprocess.run(["sips", "-s", "format", "jpeg", heic_path, "--out", out],
-                   check=True, capture_output=True)
-    return out
+    # Cross-platform HEIC decode via pillow-heif — Linux/containers have no
+    # macOS `sips`. Fall back to `sips` on a Mac dev box without pillow-heif.
+    try:
+        from PIL import Image, ImageOps
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        img = ImageOps.exif_transpose(Image.open(heic_path))
+        img.convert("RGB").save(out, "JPEG", quality=95)
+        return out
+    except Exception:
+        subprocess.run(["sips", "-s", "format", "jpeg", heic_path, "--out", out],
+                       check=True, capture_output=True)
+        return out
 
 
 def _face_center_x(image_path: str, img_w: int) -> int | None:

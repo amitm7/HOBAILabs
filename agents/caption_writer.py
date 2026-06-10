@@ -4,6 +4,8 @@ Uses ASS format for reliable font, size, position, and color control.
 All style parameters are runtime-configurable.
 """
 
+import os
+
 # ASS alignment codes: bottom=2, middle=5, top=8 (all center-aligned)
 _ALIGNMENT = {"bottom": 2, "middle": 5, "top": 8}
 _MARGIN_V   = {"bottom": 100, "middle": 0, "top": 60}
@@ -45,7 +47,9 @@ def _build_ass_header(font: str, size: int, color: str, position: str,
     alignment  = _ALIGNMENT.get(position, 2)
     margin_v   = _MARGIN_V.get(position, 100)
     color_code = _COLOR.get(color, "&H00FFFFFF")
-    italic     = 1 if font == "Baskerville" else 0
+    # Storytelling captions are set in Baskerville italic; keep italic for any
+    # Baskerville variant (incl. "Libre Baskerville" used in the Linux image).
+    italic     = 1 if "baskerville" in font.lower() else 0
 
     return (
         f"[Script Info]\n"
@@ -74,7 +78,9 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
     Returns path to the generated .ass file.
     """
     style = caption_style or {}
-    font     = style.get("font", "Baskerville")
+    # Default font is env-overridable so the Linux image can point at a font that
+    # actually ships in it (HOB_CAPTION_FONT), while local macOS keeps Baskerville.
+    font     = style.get("font") or os.environ.get("HOB_CAPTION_FONT", "Baskerville")
     size     = int(style.get("size", 52))
     color    = style.get("color", "white")
     position = style.get("position", "bottom")

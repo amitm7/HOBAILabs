@@ -15,15 +15,16 @@ Public API:
 
 import hashlib
 import os
-import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-LIPSYNC_CACHE_DIR = Path.home() / ".hob_cache" / "lipsync_clips"
-AUDIO_CACHE_DIR   = Path.home() / ".hob_cache" / "lipsync_audio"
-LIPSYNC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+from agents.cache_store import BlobCache
+
+# Paid lip-sync artifacts — FS by default, S3-backed when HOB_CACHE_BACKEND=s3
+# so they survive container redeploys (see agents/cache_store.py).
+_LIPSYNC_CACHE = BlobCache("lipsync_clips", ext=".mp4", min_bytes=10_000)
+_AUDIO_CACHE   = BlobCache("lipsync_audio", ext=".mp3", min_bytes=1_000)
 
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v", ".webm"}
 
@@ -76,15 +77,15 @@ def _generate_audio(caption: str, voice_id: str, audio_dir: str) -> tuple[str, f
     """
     from agents.tts_generator import generate_single_tts, get_audio_duration
 
-    key    = _audio_cache_key(caption, voice_id)
-    cached = AUDIO_CACHE_DIR / f"{key}.mp3"
-    if cached.exists() and cached.stat().st_size > 1000:
-        print(f"[LipsyncAudio] Cache hit → {cached.name}")
-        return str(cached), get_audio_duration(str(cached))
+    key = _audio_cache_key(caption, voice_id)
+    hit = _AUDIO_CACHE.local_path(key)
+    if hit:
+        print(f"[LipsyncAudio] Cache hit → {Path(hit).name}")
+        return hit, get_audio_duration(hit)
 
     tmp_path = os.path.join(audio_dir, f"ls_audio_{key[:8]}.mp3")
     dur = generate_single_tts(caption, tmp_path, voice_id)
-    shutil.copy2(tmp_path, str(cached))
+    _AUDIO_CACHE.put(key, tmp_path)
     return tmp_path, dur
 
 
@@ -130,11 +131,11 @@ def _submit_one(frame: dict, temp_dir: str, audio_dir: str,
     frame["duration"] = round(audio_dur, 2)
 
     # ── 3. Clip cache check ────────────────────────────────────────────────
-    clip_key    = _clip_cache_key(vpath, audio_path)
-    cached_clip = LIPSYNC_CACHE_DIR / f"{clip_key}.mp4"
-    if cached_clip.exists() and cached_clip.stat().st_size > 10_000:
-        print(f"[LipsyncCoordinator] {fid}: clip cache hit → {cached_clip.name}")
-        frame["lipsync_clip_path"] = str(cached_clip)
+    clip_key = _clip_cache_key(vpath, audio_path)
+    cached_clip = _LIPSYNC_CACHE.local_path(clip_key)
+    if cached_clip:
+        print(f"[LipsyncCoordinator] {fid}: clip cache hit → {Path(cached_clip).name}")
+        frame["lipsync_clip_path"] = cached_clip
         return frame
 
     # ── 4. Upload media + audio to CDN ────────────────────────────────────
@@ -204,9 +205,8 @@ def _poll_one(frame: dict) -> dict:
             from agents.hedra import poll_and_download as hedra_poll
             hedra_poll(frame["_ls_job_id"], frame["_ls_output_path"])
 
-        # Cache the result
-        dest = LIPSYNC_CACHE_DIR / f"{frame['_ls_cache_key']}.mp4"
-        shutil.copy2(frame["_ls_output_path"], str(dest))
+        # Cache the result (local + S3 when enabled)
+        _LIPSYNC_CACHE.put(frame["_ls_cache_key"], frame["_ls_output_path"])
         frame["lipsync_clip_path"] = frame["_ls_output_path"]
         print(f"[LipsyncCoordinator] {fid}: ✓ lipsync clip ready")
 

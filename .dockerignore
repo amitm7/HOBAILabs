@@ -1,0 +1,19 @@
+# Never bake secrets or local junk into the image
+.env
+.env.*
+.git
+.gitignore
+.venv
+**/__pycache__
+*.pyc
+.DS_Store
+# Heavy local data — assets are rsync'd to the box / mounted, not baked in
+assets/
+surabhi_assets/
+output/
+temp/
+*.mp3
+*.mp4
+*.mov
+# Plans / local docs not needed at runtime
+.claude/
