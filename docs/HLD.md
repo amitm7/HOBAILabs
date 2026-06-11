@@ -1,7 +1,7 @@
 # HOBAILabs — High-Level Design (HLD)
 
 **Product:** AI story-to-reel pipeline (Instagram Reels / YouTube Shorts)
-**Revision:** 2026-06-09 · derived from the `feat/pipeline-expansion-roadmap` branch
+**Revision:** 2026-06-11 · derived from the `feat/pipeline-expansion-roadmap` branch
 **Companion doc:** [LLD.md](LLD.md) — module-level internals
 **Source of truth for behaviour:** [GUIDE.md](../GUIDE.md) (user view) · [ROADMAP.md](../ROADMAP.md) (forward plan)
 
@@ -22,7 +22,8 @@ in Dev and premium models in Production.
 
 **In scope (today):** single-story render via Web UI or CLI; per-shot model
 routing; AI image gen; image→video animation across 4 video providers; lip-sync;
-content/quality safety gates; cost estimation; aggressive caching.
+content/quality safety gates; cost estimation; aggressive caching; multi-shot B-roll
+coverage; voiceover mode with frame-exact audio synchronization; secure folder uploads.
 
 **Out of scope (today):** multi-tenant accounts, persistent job DB, batch/queue
 production, beat-synced cuts, multi-platform export, CLIP-based scoring — these
@@ -157,8 +158,12 @@ order-dependent (each depends on keys the previous wrote) but internally
         ▼
  6. generate_frame_srt()            ASS captions timed to frame durations
         ▼
- 7. assemble_caption_only()         normalize → xfade/hard-cut concat → captions burn →
-        │                           music (25%, duck to 10% under lip-sync) → 9:16 MP4
+ 7. generate_voiceover_track (opt)      ElevenLabs/OpenAI TTS; frame-exact padding/trim
+        │                           per segment; concatenate aligned to total duration
+        ▼
+ 8. assemble_caption_only()             normalize → xfade/hard-cut concat → captions burn →
+        │                           music (25%, duck to 10% under lip-sync) → voiceover (if is_voiceover)
+        │                           → 9:16 MP4
         ▼
  OUTPUT .mp4
 ```
@@ -181,6 +186,9 @@ order-dependent (each depends on keys the previous wrote) but internally
 | **Two distinct safety gates** | Text moderation (Gate A) cannot catch deformed faces (Gate B); they are different problems. | `agents/safety.py` |
 | **Everything degrades, never crashes** | Creators lose trust on a hard failure far more than on a cheaper fallback. | every stage's `try/except` |
 | **Audio drives lip-sync duration** | A talking face must last exactly as long as the spoken line. | `lipsync_coordinator` duration flip |
+| **Voiceover mode with frame-exact sync** | Spoken segments padded/trimmed to match each frame's duration so voice aligns to captions. | `tts_generator._fit_seg()`, `assembler is_voiceover` |
+| **Multi-shot B-roll coverage** | Spare images assigned to frames via LLM vision; frames split into sub-shots with gentle motions. | `agents/coverage.py` |
+| **Secure media serving** | `/media` endpoint validates all paths against allowed roots to prevent traversal attacks. | `web_app._path_allowed()` |
 
 ---
 
@@ -226,9 +234,10 @@ From [ROADMAP.md](../ROADMAP.md), mapped to the architecture above:
   freeze-extend + face-aware crop in `clip_builder.py`.
 - **P1 — Raw video correctness, image edits, pricing+estimator.** Landed:
   `video_start_sec`, `edit_prompt`, `pricing.py`/`config/pricing.json`, dry-run.
-- **P2 — Lip-sync (done), smart coverage (steps 1–2 done: video matching + prefer
+- **P2 — Lip-sync (done), multi-shot B-roll coverage (done: LLM vision + duration split),
+  voiceover mode (done: frame-exact TTS padding), smart coverage (video matching + prefer
   real footage), multi-platform export, beat-synced cuts (pending).**
-- **P3 — CLIP score-based matching, visual enhancement, voiceover mode.** Pending;
+- **P3 — CLIP score-based matching, visual enhancement.** Pending;
   CLIP is the planned path for top-K multi-shot scoring on AWS GPU.
 
 The two biggest **architectural** gaps before multi-user scale: (1) a durable job

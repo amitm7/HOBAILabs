@@ -67,8 +67,9 @@
   <a href="#camera">5c · Camera Motion — full keyword list</a>
   <a href="#edit">5d · Image Edit — change a photo with words</a>
   <a href="#lipsync">5e · Lip Sync — make a face talk</a>
-  <a href="#duration">5f · Duration & Video Start</a>
-  <a href="#models">5g · Picture & Video "model" pickers</a>
+  <a href="#voiceover">5f · Voice-Over — narration over the video</a>
+  <a href="#duration">5g · Duration & Video Start</a>
+  <a href="#models">5h · Picture & Video "model" pickers</a>
   <a href="#style">6 · Style, Quality, Mood, Captions</a>
   <a href="#music">7 · Music</a>
   <a href="#cost">8 · Cost panel — read before you press Generate</a>
@@ -134,11 +135,12 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <ul>
 <li>Put all the media for one story in <b>a single folder</b> first, then browse to it.</li>
 <li>Supported: JPG, PNG, HEIC, WEBP images and MP4, MOV, M4V, WEBM videos.</li>
+<li>The folder browser works on any device (phone/tablet/desktop) — no file size limit.</li>
 <li>You can still change the picture on any individual shot afterwards (see <b>Picture source</b> below).</li>
 <li>No folder? Leave it empty and the tool will create every visual with AI.</li>
 </ul>
 <div class="box"><b>Tick 🤖 Smart-match</b> after uploading and the tool reads what's <i>in</i> each photo (people, places, even names/text) and places the best photo on each line — instead of just going in order.</div>
-<div class="box"><b>Tick 🎞 Multi-shot coverage</b> to make longer beats richer: instead of one photo for the whole line, the tool covers it with the main shot <b>plus 1–2 supporting B-roll stills</b> (it picks ones that also fit that line), played as quick sub-shots under the same caption. It only does this when a beat is long enough and you have spare matching photos. <b>Note:</b> it uses extra credits (~2× on the beats it covers), so turn it on when you want a more edited, less "slideshow" feel.</div>
+<div class="box"><b>Tick 🎞 Multi-shot coverage</b> to make longer beats richer: instead of one photo for the whole line, the tool covers it with the main shot <b>plus 1–2 supporting B-roll stills</b> (it picks ones that also fit that line), played as quick sub-shots with gentle camera motion under the same caption. <br><br>So a 9-second beat might become three 3-second clips (main photo + two B-roll stills), making the video feel more <i>edited</i> and less like a slideshow. <br><br><b>Note:</b> it only kicks in when a beat is long enough and you have spare matching photos. It uses extra credits (~1.5–2× on the beats it covers), so turn it on when you want that polished, multi-cut feel for important story moments.</div>
 
 <h2 id="card">5 · The Frame Card — every field explained</h2>
 <p>After <span class="kbd">Parse Frames →</span>, each line becomes a card. Top to bottom you choose: <b>the picture</b>, then optionally a <b>mood note</b>, a <b>photo edit</b>, a <b>camera move</b>, a <b>lip-sync</b> toggle, and the <b>length</b>.</p>
@@ -219,14 +221,25 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 </ul>
 <div class="box tip"><b>Use it on 2–4 shots max</b> — the spoken turning point and the closing line. Don't lip-sync everything; mix talking beats with silent cinematic beats.</div>
 
-<h3 id="duration">5f · Duration & Video Start</h3>
+<h3 id="voiceover">5f · Voice-Over — narration over the full video</h3>
+<p>Check <b>☑ Voice-Over Track</b> at the top to make the entire video narrated. Each caption gets read aloud in a chosen voice, creating a full voice-over narration layered under the music.</p>
+<ul>
+<li><b>Every caption is spoken</b> — each line reads exactly as long as the shot lasts, no gaps.</li>
+<li><b>Voice menu</b> — same voices as Lip Sync; pick one or use the default.</li>
+<li><b>Plays over music</b> — narration sits on top; music stays at 25% volume behind the voice.</li>
+<li><b>No lip-sync</b> — the voice is heard but faces don't move. Use this for <b>cinematic storytelling</b>, not dialogue.</li>
+<li><b>Safe:</b> if narration fails, the video still renders with just music.</li>
+</ul>
+<div class="box"><b>Lip Sync vs Voice-Over:</b> Use <b>Lip Sync</b> (☑ on a frame) when you want a <i>character</i> speaking on screen, moving their lips. Use <b>Voice-Over Track</b> when you want a <i>narrator</i> telling the story over cinematic shots — think documentary or portfolio reel.</div>
+
+<h3 id="duration">5g · Duration & Video Start</h3>
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><b>Duration</b></td><td>How long the shot lasts. Leave blank and it's auto-calculated from word count (longer line = longer shot). Lip-sync shots set this themselves.</td></tr>
 <tr><td><b>Video start</b> <span class="muted">(only for video sources)</span></td><td>Skip the first few seconds of a clip. e.g. <code>3</code> starts the clip 3 seconds in — handy when the good part is mid-way.</td></tr>
 </table>
 
-<h3 id="models">5g · Picture & Video "model" pickers</h3>
+<h3 id="models">5h · Picture & Video "model" pickers</h3>
 <p>"Model" = which AI engine makes the picture or the motion. <b>Leave both on <span class="kbd">Auto</span></b> and the tool picks the best one for each shot, cheap while testing and premium for the final. Only override if you want a specific look.</p>
 <h4>Picture models</h4>
 <table>
@@ -281,9 +294,9 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <tr><td><b>No Music</b></td><td>Silent video — add your own later.</td></tr>
 <tr><td><b>Upload Music</b></td><td>Use your own MP3/M4A/WAV. It loops and fades out at the end.</td></tr>
 <tr><td><b>Auto-Generate</b></td><td>Describe a mood and it makes a track (~2–3 min). Wait for <b>✓ Music ready</b> before Generate.</td></tr>
-<tr><td><b>Voice-Over</b></td><td>Reads each caption aloud in a chosen voice.</td></tr>
 </table>
 <p class="muted">Good auto-music prompts: <code>Emotional Bollywood instrumental, struggle to triumph, sitar and tabla, no lyrics</code> · <code>Melancholic Rajasthani folk, raw acoustic</code></p>
+<p><b>Combine music + voice-over:</b> Enable <b>Voice-Over Track</b> (above) to layer narration on top of your music. Music plays at 25% volume, so the voice is clear and the music sits underneath.</p>
 
 <h2 id="cost">8 · The 💰 cost panel — read it before Generate</h2>
 <p>After you parse, a cost estimate appears and updates live as you change settings. <b>Check it before pressing Generate.</b> Want it cheaper? Use <b>Dev</b> tier, prefer <b>real photos/videos</b>, and keep lip-sync to a few shots.</p>
@@ -313,8 +326,8 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <b>Picture models:</b> Seedream (cheap) · Nano Banana (photo-real) · Flux · GPT Image (objects/text)<br>
 <b>Video models:</b> Kling Standard (default) · Kling Pro · Higgsfield · Seedance · Veo · Hailuo · Ken Burns (free)<br><br>
 <b>Quality:</b> Dev (test cheap) → Production (final)<br>
-<b>Lip sync:</b> 2–4 shots max, the spoken beats only<br>
-<b>Edit examples:</b> add thunderstorm · warmer golden light · add rain on the window · morning fog
+<b>Features:</b> Lip sync (2–4 shots) · Voice-Over track (full narration) · Multi-shot coverage (longer beats split into B-roll)
+<br><b>Edit examples:</b> add thunderstorm · warmer golden light · add rain on the window · morning fog
 </div>
 
 <h4>Optional: typing it in the story instead of clicking</h4>

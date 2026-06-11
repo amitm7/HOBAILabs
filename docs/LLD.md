@@ -1,6 +1,6 @@
 # HOBAILabs — Low-Level Design (LLD)
 
-**Revision:** 2026-06-09 · branch `feat/pipeline-expansion-roadmap`
+**Revision:** 2026-06-11 · branch `feat/pipeline-expansion-roadmap`
 **Companion:** [HLD.md](HLD.md) — system context, flow, decisions
 **Audience:** engineers modifying the pipeline. File references are clickable.
 
@@ -15,25 +15,28 @@ web_app.py                Flask server: parse/preview/estimate/run/progress(SSE)
 
 agents/
   script_parser.py        text → frames[]  (Format A/B, annotations, auto-match)
-  image_matcher.py        opt-in LLM content match (describe → assign)
+  image_matcher.py        opt-in LLM content match (describe → assign); SQLite cache
   scene_intelligence.py   LLM director per frame → scene{} (cached)
   llm.py                  pluggable chat()/vision brain (OpenAI|Bedrock|Gemini)
   model_router.py         shot → model id (pure logic over config/models.json)
   image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends)
   image_editor.py         [edit:] pass on a still (gpt-image)
   safety.py               Gate A (moderation) + Gate B (face sanity)
+  coverage.py             multi-shot B-roll: LLM vision assign + duration split
   lipsync_coordinator.py  audio → CDN → Hedra/SyncLabs → lipsync_clip_path
     hedra.py / synclabs.py    vendor clients
-    tts_generator.py          ElevenLabs audio
+    tts_generator.py          ElevenLabs/OpenAI TTS; frame-exact padding/trim (_fit_seg)
   clip_builder.py         still/video → animated clip (kenburns|kling|higgsfield|fal)
     higgsfield.py / fal_video.py / fal_client.py   vendor clients
   caption_writer.py       frames → ASS subtitle file
-  assembler.py            clips → normalize → concat/xfade → captions → music → mp4
+  assembler.py            clips → normalize → concat/xfade → captions → music → voiceover → mp4
   pricing.py              whole-pipeline cost estimate (config/pricing.json)
   style_exemplars.py      opt-in in-context house-style injection (USE_EXEMPLARS=1)
+  _kv.py                  thread-safe SQLite KVStore (WAL mode, per-key writes)
+  cache_store.py          BlobCache abstraction (local FS + optional S3 read-through)
 
 config/  models.json (catalog+routing) · pricing.json (costs) · llm.json (provider)
-~/.hob_cache/  kling_clips · scene_designs · image_descriptions.json · lipsync_clips · lipsync_audio
+~/.hob_cache/  kling_clips · scene_designs · image_descriptions.db (SQLite) · lipsync_clips · lipsync_audio (all BlobCache-backed)
 ```
 
 ---
@@ -202,7 +205,24 @@ Stage 3 loop → [run_caption.py:219](../run_caption.py#L219):
 
 ---
 
-## 7. `lipsync_coordinator.py` — talking faces
+## 7. `coverage.py` — multi-shot B-roll
+
+**Entry:** `assign_coverage(frames, assets_dir, max_extra=2) -> int`
+→ [agents/coverage.py](../agents/coverage.py)
+
+Optional per-frame B-roll expansion:
+- One LLM vision call per frame: "which other images also fit this beat as B-roll?"
+- Sets `frame["extra_media"]` with spare photo paths.
+- **`split_durations(total, n, min_each=2.5)`** evenly splits a beat across N sub-shots (last absorbs rounding).
+- **`expand_assignment(base, frame)`** guards against lipsync/short-beats, else splits duration and assigns gentle camera moves (`slow_pan`, `subtle_zoom`).
+- **`expand_all(assignments, frames)`** expands all 1:1 aligned frames → sub-shots (`f02_1`, `f02_2`, `f02_3`).
+- Each sub-shot uses its own image + proportional duration, preserving total frame time.
+
+Web UI: `multi_shot` checkbox; CLI: `--multi-shot` flag. Covered frames count extras in `pricing.py` animation cost.
+
+---
+
+## 8. `lipsync_coordinator.py` — talking faces
 
 **Entry:** `run_lipsync_pass(frames, temp_dir, default_voice_id) -> frames`
 → [agents/lipsync_coordinator.py:223](../agents/lipsync_coordinator.py#L223)
@@ -212,9 +232,9 @@ Two parallel phases (submit, then poll), mirroring the clip builder.
 **Per frame `_submit_one`** ([:93](../agents/lipsync_coordinator.py#L93)):
 1. Guard: needs caption + existing visual + a voice_id, else clear `lipsync`.
 2. **Audio** via ElevenLabs (`tts_generator.generate_single_tts`), cached by
-   `MD5(caption, voice_id)` in `~/.hob_cache/lipsync_audio/`.
+   `MD5(caption, voice_id)` in `~/.hob_cache/lipsync_audio/` (BlobCache).
 3. **Duration flip:** `frame["duration"] = audio_dur` — audio now drives timing.
-4. **Clip cache** by `MD5(media bytes + audio bytes)` in `~/.hob_cache/lipsync_clips/`.
+4. **Clip cache** by `MD5(media bytes + audio bytes)` in `~/.hob_cache/lipsync_clips/` (BlobCache).
 5. **Upload** media+audio to **Higgsfield CDN** (`_upload_for_lipsync`).
 6. **Vendor route:** video source + `SYNCLABS_API_KEY` → SyncLabs; else
    `HEDRA_API_KEY` → Hedra; else clear `lipsync`.
@@ -226,6 +246,8 @@ to normal animation (Ken Burns). The finished clip later bypasses animation via 
 
 CLI `--lipsync` ([run_caption.py:287](../run_caption.py#L287)) auto-flags all
 video-source frames; `[lipsync: yes]` flags any single frame.
+
+**Voiceover mode (new):** independent of lip-sync; generates a full concatenated TTS/OpenAI track via `tts_generator.generate_voiceover_track()`. Per-segment padding/trimming via `_fit_seg()` (ffmpeg `apad=whole_dur=<seconds>`) ensures voice aligns exactly to each frame's duration. Web UI: voiceover checkbox; CLI: `--voiceover` flag.
 
 ---
 
@@ -333,13 +355,42 @@ CLI (the two entry points share the engine).
 
 ---
 
-## 12. Caching Summary (invalidation rules)
+## 15. `web_app.py` — Flask surface with folder upload
+
+→ [web_app.py](../web_app.py). Server-rendered UI + JSON/SSE endpoints, per-`run_id`
+in-memory state, `_LogCapture` redirecting stdout into an SSE stream.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/` | GET | UI shell |
+| `/parse-script` | POST | `parse_frame_script` → frame cards + matched-photo count |
+| `/preview` , `/preview-result/<run_id>` | POST/GET | generate stills only (fast iteration) |
+| `/pricing` , `/models` , `/voices` | GET | expose `pricing.json`, `model_router.catalog()`, ElevenLabs voices |
+| `/generate-music` | POST | Suno generation |
+| `/browse-dirs` | GET | list folders + media count under `ASSETS_BROWSE_ROOT` |
+| `/upload-folder` | POST | accept multi-file folder upload; save to session assets dir |
+| `/run` | POST | kick off `_execute_pipeline` in a thread |
+| `/progress/<run_id>` | GET (SSE) | stream the run log |
+| `/output/<run_id>` , `/download/<run_id>` | GET | stream / download the MP4 |
+| `/media` | GET | serve asset thumbnails (validates path via `_path_allowed`) |
+| `/upload-photo` | POST | accept single file upload (legacy) |
+
+**Security:** `/media` endpoint validates all paths against `RUNS_DIR` and `ASSETS_BROWSE_ROOT` roots via `_path_allowed()` to prevent path traversal. Only image/video extensions allowed.
+
+`_build_frames_from_payload` ([web_app.py:314](../web_app.py#L314)) converts UI frame
+cards into the same `frames[]` the parser produces; `_run_inner`
+([web_app.py:501](../web_app.py#L501)) reuses the exact router + clip-builder path as the
+CLI (the two entry points share the engine).
+
+---
+
+## 16. Caching Summary (invalidation rules)
 
 | Cache | Key | Location | Invalidated by |
 |---|---|---|---|
 | Animation clips | `MD5(image bytes + motion + duration)`, model-namespaced | `~/.hob_cache/kling_clips/` *(BlobCache; S3-backed when enabled)* | changing image, motion, duration, or model |
 | Scene designs | `MD5(caption, note, type, subject, desc, has_photo)` | `~/.hob_cache/scene_designs/` | changing any of those |
-| Image descriptions | image content hash | `~/.hob_cache/image_descriptions.db` *(SQLite, WAL)* | file content change (rename safe) |
+| Image descriptions | image content hash | `~/.hob_cache/image_descriptions.db` *(SQLite, WAL mode)* | file content change (rename safe) |
 | Lip-sync clips | `MD5(media bytes + audio bytes)` | `~/.hob_cache/lipsync_clips/` *(BlobCache; S3-backed)* | media or audio change |
 | Lip-sync audio | `MD5(caption + voice_id)` | `~/.hob_cache/lipsync_audio/` *(BlobCache; S3-backed)* | caption or voice change |
 | Generated stills | filename `ai_*_<fid>.jpg`, ≥ 50 KB | the **asset folder** | delete file or size < 50 KB |
@@ -355,7 +406,7 @@ regenerate — deliberately not migrated).
 
 ---
 
-## 13. Concurrency & Failure Matrix
+## 17. Concurrency & Failure Matrix
 
 | Stage | Pool | Cap | On failure |
 |---|---|---|---|
@@ -370,7 +421,7 @@ temp dir for debugging; success cleans it unless `--keep-temp`.
 
 ---
 
-## 14. Extension Recipes
+## 18. Extension Recipes
 
 - **Add a video/image model:** add a `models` entry (with `backend`, `pricing_key`,
   `fal_endpoint` if fal-hosted, `max_concurrent`) in `config/models.json`, list its id
@@ -385,7 +436,7 @@ temp dir for debugging; success cleans it unless `--keep-temp`.
 
 ---
 
-## 15. Known Sharp Edges (read before editing)
+## 19. Known Sharp Edges (read before editing)
 
 - Generated stills land in the **user's asset folder**; the parser's `_DERIVED_MARKERS`
   filter is what stops them from corrupting positional auto-match. Touch both together.
