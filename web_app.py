@@ -19,10 +19,29 @@ from flask import Flask, Response, jsonify, render_template, request, send_file
 load_dotenv(override=True)
 
 app = Flask(__name__, template_folder="web/templates", static_folder="web/static")
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB uploads
+# Per-request cap. Folder uploads are sent in small size-batched chunks by the
+# client (see main.js), so each request stays well under this; the ceiling is
+# generous headroom for a single large video.
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024  # 256MB per request
+app.config["MAX_FORM_PARTS"] = 5000
 
 RUNS_DIR = Path(tempfile.gettempdir()) / "hob_runs"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Typed asset paths, the folder browser, and /media file serving are all confined
+# to this root (plus RUNS_DIR). Set ASSETS_BROWSE_ROOT on hosted deploys to the
+# directory that holds user asset folders, e.g. /srv/hob/assets.
+ASSETS_BROWSE_ROOT = Path(os.environ.get("ASSETS_BROWSE_ROOT", str(Path.home()))).resolve()
+
+
+def _path_allowed(p: str) -> bool:
+    """True when p resolves inside RUNS_DIR or ASSETS_BROWSE_ROOT."""
+    try:
+        rp = Path(p).resolve()
+    except (OSError, ValueError):
+        return False
+    return any(rp == root or rp.is_relative_to(root)
+               for root in (RUNS_DIR.resolve(), ASSETS_BROWSE_ROOT))
 
 # In-memory run state: run_id → {status, log, output_path}
 _runs: dict[str, dict] = {}
@@ -70,6 +89,8 @@ def parse_script():
     # Validate assets folder if provided
     if assets_dir and not os.path.isdir(assets_dir):
         return jsonify({"error": f"Assets folder not found: {assets_dir}"}), 400
+    if assets_dir and not _path_allowed(assets_dir):
+        return jsonify({"error": f"Assets folder must be inside {ASSETS_BROWSE_ROOT}"}), 403
 
     tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
     tmp.write(script_text)
@@ -134,10 +155,13 @@ def parse_script():
 def serve_media():
     """
     Serve a matched local photo/video so the UI can show a thumbnail.
-    Safety: only serves existing image/video files by absolute path.
+    Safety: only serves image/video files inside RUNS_DIR or ASSETS_BROWSE_ROOT —
+    never arbitrary filesystem paths.
     """
     path = request.args.get("path", "")
-    if not path or not os.path.isfile(path):
+    if not path or not _path_allowed(path):
+        return "Forbidden", 403
+    if not os.path.isfile(path):
         return "Not found", 404
     ext = os.path.splitext(path)[1].lower()
     allowed = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif",
@@ -145,6 +169,36 @@ def serve_media():
     if ext not in allowed:
         return "Unsupported type", 415
     return send_file(path)
+
+
+@app.route("/browse-dirs")
+def browse_dirs():
+    """List subfolders + media count under ASSETS_BROWSE_ROOT for the folder picker."""
+    req = request.args.get("path", "") or str(ASSETS_BROWSE_ROOT)
+    try:
+        cur = Path(req).resolve()
+    except (OSError, ValueError):
+        return jsonify({"error": "bad path"}), 400
+    if not (cur == ASSETS_BROWSE_ROOT or cur.is_relative_to(ASSETS_BROWSE_ROOT)):
+        return jsonify({"error": "outside the allowed root"}), 403
+    if not cur.is_dir():
+        return jsonify({"error": "not a folder"}), 404
+
+    dirs, media_count = [], 0
+    try:
+        for entry in sorted(os.scandir(cur), key=lambda e: e.name.lower()):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                dirs.append(entry.name)
+            elif os.path.splitext(entry.name)[1].lower() in _MEDIA_UPLOAD_EXTS:
+                media_count += 1
+    except OSError as e:
+        return jsonify({"error": str(e)}), 400
+
+    parent = str(cur.parent) if cur != ASSETS_BROWSE_ROOT else ""
+    return jsonify({"path": str(cur), "parent": parent,
+                    "dirs": dirs, "media_count": media_count})
 
 
 @app.route("/upload-photo", methods=["POST"])
@@ -220,6 +274,42 @@ def list_models():
         return jsonify({"error": str(e), "models": {}}), 500
 
 
+@app.route("/api/estimate", methods=["POST"])
+def api_estimate():
+    """
+    Server-side cost estimate from the UI payload. Single source of truth:
+    agents/pricing.estimate() + the real model router — the UI only renders the
+    returned breakdown, so prices and routing can never drift from billing.
+    """
+    data = request.json or {}
+    try:
+        quality = data.get("quality", "dev")
+        max_frame_dur = 5.0 if quality == "dev" else 9.0
+        frames = _build_frames_from_payload(data, max_frame_dur)
+        music_type = data.get("music_type", "none")
+        voice_chars = (sum(len(f.get("caption") or "") for f in frames
+                           if not f.get("lipsync"))
+                       if music_type == "voiceover" else 0)
+        from agents import model_router
+        from agents.pricing import estimate
+        video_model = data.get("video_model", "auto") or "auto"
+        b = estimate(
+            frames,
+            force_5s=(quality == "dev"),
+            music_type=music_type,
+            voice_chars=voice_chars,
+            provider=("kenburns" if video_model == "kenburns" else "kling"),
+            cost_tier=model_router.cost_tier_from_quality(quality),
+            image_model=data.get("image_model", "auto") or "auto",
+            video_model=video_model,
+            multi_shot=bool(data.get("multi_shot")),
+        )
+        b["multi_shot"] = bool(data.get("multi_shot"))
+        return jsonify(b)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/voices")
 def list_voices():
     try:
@@ -247,9 +337,20 @@ def generate_music_route():
         return jsonify({"error": str(e)}), 500
 
 
+def _check_assets_dir(data: dict):
+    """Reject payloads whose typed assets_dir escapes the allowed roots."""
+    assets_dir = (data.get("assets_dir") or "").strip()
+    if assets_dir and not _path_allowed(assets_dir):
+        return jsonify({"error": f"Assets folder must be inside {ASSETS_BROWSE_ROOT}"}), 403
+    return None
+
+
 @app.route("/run", methods=["POST"])
 def run_pipeline():
     data = request.json or {}
+    err = _check_assets_dir(data)
+    if err:
+        return err
     session_id = data.get("session_id", str(uuid.uuid4()))
 
     run_dir = RUNS_DIR / session_id
@@ -277,6 +378,9 @@ def preview_stills():
     reuses them and only pays for animation.
     """
     data = request.json or {}
+    err = _check_assets_dir(data)
+    if err:
+        return err
     session_id = data.get("session_id", str(uuid.uuid4()))
 
     run_dir = RUNS_DIR / session_id
@@ -409,7 +513,12 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
     import hashlib
     from agents.scene_intelligence import design_all_scenes
     from agents.image_generator import generate_contextual_image, generate_symbolic_image
+    from agents.safety import moderate_frames
     from agents import model_router
+
+    # Gate A: moderate user-editable prompt text before spending any credits.
+    # (Gate B face-sanity runs inside the image generators themselves.)
+    moderate_frames(frames)
 
     os.makedirs(assets_dir, exist_ok=True)
 
@@ -538,7 +647,7 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
     from agents.clip_builder import build_clips
     from agents.image_generator import generate_contextual_image, generate_symbolic_image
     from agents.scene_intelligence import design_all_scenes
-    from agents.assembler import assemble_caption_only
+    from agents.assembler import assemble_caption_only, frame_timecodes
 
     input_assets  = data.get("assets_dir", "").strip()   # user's photo/video folder
     quality      = data.get("quality", "dev")
@@ -582,9 +691,17 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         default_voice = data.get("voice_id", "") or os.environ.get("ELEVENLABS_VOICE_ID", "")
         frames = run_lipsync_pass(frames, clip_temp, default_voice_id=default_voice)
 
+    # ── Multi-shot coverage (opt-in): add B-roll sub-shots to eligible beats ─
+    # After lip-sync (matching run_caption.py) so eligibility sees final
+    # lipsync flags/durations. B-roll candidates come from the USER's folder
+    # (input_assets); the run dir only holds AI stills, which are never B-roll.
+    if data.get("multi_shot"):
+        from agents import coverage
+        coverage.assign_coverage(frames, input_assets or assets_dir)
+
     # ── Build clips ────────────────────────────────────────────────────────
     try:
-        assignments = [
+        base_assignments = [
             {
                 "segment_id":        f["frame_id"],
                 "actual_duration":   f["duration"],
@@ -604,13 +721,21 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
             }
             for f in frames
         ]
+        # Multi-shot coverage splits eligible beats into sub-shots (no-op otherwise).
+        from agents import coverage
+        assignments = coverage.expand_all(base_assignments, frames)
         clips = build_clips(assignments, clip_temp, width, height, fps,
                             force_5s=(quality == "dev"), kling_mode=kling_mode,
                             provider=provider)
 
+        # Effective per-frame windows in the rendered video — crossfade overlaps
+        # clips, so every timing consumer below uses these, not raw durations.
+        frame_times = frame_timecodes(frames, clips, transition)
+
         # ── Captions ───────────────────────────────────────────────────────
         srt_path = os.path.join(clip_temp, "captions.srt")
-        ass_path = generate_frame_srt(frames, srt_path, caption_style=caption_style)
+        ass_path = generate_frame_srt(frames, srt_path, caption_style=caption_style,
+                                      timecodes=frame_times)
 
         # ── Music / Voice-over ────────────────────────────────────────────
         music_path = None
@@ -622,17 +747,30 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
             from agents.tts_generator import generate_voiceover_track
             voice_id = data.get("voice_id", "")
             vo_path  = str(run_dir / "voiceover.mp3")
-            # Exclude lipsync frames — their audio is already embedded in the clip
-            vo_frames = [f for f in frames if not f.get("lipsync_clip_path")]
-            if vo_frames:
-                print(f"[Pipeline] Generating voice-over track ({len(vo_frames)} frames)…")
+            # One slot per frame, sized to the frame's effective stride so the
+            # concatenated track stays aligned with the rendered video. Lipsync
+            # frames keep their slot but as SILENCE (their audio is embedded in
+            # the clip) — dropping the slot would shift all later narration early.
+            vo_frames = []
+            for i, f in enumerate(frames):
+                start = frame_times[i][0]
+                end   = frame_times[i + 1][0] if i + 1 < len(frames) else frame_times[i][1]
+                vo_frames.append({
+                    **f,
+                    "duration": round(max(0.1, end - start), 3),
+                    "caption":  "" if f.get("lipsync_clip_path") else f.get("caption", ""),
+                })
+            spoken = sum(1 for f in vo_frames if (f.get("caption") or "").strip())
+            if spoken:
+                print(f"[Pipeline] Generating voice-over track ({spoken} spoken frames)…")
                 music_path = generate_voiceover_track(vo_frames, vo_path, voice_id)
 
         # ── Assemble ───────────────────────────────────────────────────────
         output_path = str(run_dir / "output.mp4")
         assemble_caption_only(clips, clip_temp, output_path,
                               music_path=music_path, srt_path=ass_path,
-                              transition=transition)
+                              transition=transition,
+                              is_voiceover=(data.get("music_type") == "voiceover"))
 
         total = sum(f["duration"] for f in frames)
         print(f"\n✓ Done! {total:.1f}s → output ready")

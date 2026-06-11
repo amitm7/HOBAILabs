@@ -20,28 +20,10 @@ from agents.script_parser import parse_frame_script
 from agents.scene_intelligence import design_all_scenes
 from agents.clip_builder import build_clips
 from agents.caption_writer import generate_frame_srt
-from agents.assembler import assemble_caption_only
+from agents.assembler import assemble_caption_only, frame_timecodes
 from agents.image_generator import generate_contextual_image, generate_symbolic_image
-from agents.safety import moderate_script, check_face_sanity
+from agents.safety import moderate_script
 from agents.pricing import estimate as estimate_cost, load as load_pricing
-
-
-def _generate_with_sanity_check(generate_fn, frame: dict, assets_dir: str,
-                                max_retries: int = 2, model_id: str = "") -> str:
-    """Run generate_fn; retry up to max_retries times if Gate B sanity check fails."""
-    path = None
-    for attempt in range(max_retries + 1):
-        path = generate_fn(frame, assets_dir, model_id=model_id)
-        if check_face_sanity(path, frame["frame_id"]):
-            return path
-        if attempt < max_retries:
-            print(f"[Safety] Gate B: {frame['frame_id']} — regenerating (attempt {attempt + 2}/{max_retries + 1})")
-            try:
-                os.remove(path)
-            except Exception:
-                pass
-    print(f"[Safety] Gate B: {frame['frame_id']} — using last result after {max_retries + 1} attempts.")
-    return path
 
 
 def _apply_predefined_scenes(frames: list[dict], scenes_module) -> list[dict]:
@@ -84,6 +66,9 @@ def main():
     parser.add_argument("--smart-match", action="store_true",
                         help="Use GPT-4o to content-match folder images to frames (reads names/text "
                              "in photos); only fills unpinned frames, falls back to sort-order")
+    parser.add_argument("--multi-shot", action="store_true",
+                        help="Multi-shot coverage: cover eligible beats with the primary media plus "
+                             "1-2 still B-roll images (opt-in, ~2x video credits on covered beats)")
     parser.add_argument("--image-model", default="auto",
                         help="Image model id from config/models.json, or 'auto' to route per shot")
     parser.add_argument("--video-model", default="auto",
@@ -196,7 +181,8 @@ def main():
             b = estimate_cost(dr_frames, kling_mode="standard",
                               force_5s=args.dev, music_type="none",
                               provider=args.provider, skip_scene_ai=args.skip_scene_ai,
-                              image_model=args.image_model, video_model=args.video_model)
+                              image_model=args.image_model, video_model=args.video_model,
+                              multi_shot=args.multi_shot)
             print(f"[Dry Run] ────────────────────────────────────────────────────────")
             if b["scene"]["count"]:
                 print(f"[Dry Run]  {b['scene']['count']:>2} × Scene AI (GPT-4.1)   ${b['scene']['usd']:.2f}  (cached after 1st run → $0)")
@@ -241,7 +227,7 @@ def main():
                         first_portrait_path = candidate
                 else:
                     print(f"[Pipeline] {f['frame_id']}: {photo_spec} not found → AI portrait fallback")
-                    path = _generate_with_sanity_check(generate_contextual_image, f, args.assets, model_id=mid)
+                    path = generate_contextual_image(f, args.assets, model_id=mid)
                     f["visual_path"] = path
                     if first_portrait_path is None:
                         first_portrait_path = path
@@ -252,18 +238,18 @@ def main():
                     print(f"[FaceConsistency] {f['frame_id']}: reusing locked portrait — same face, different motion.")
                     f["visual_path"] = first_portrait_path
                 else:
-                    path = _generate_with_sanity_check(generate_contextual_image, f, args.assets, model_id=mid)
+                    path = generate_contextual_image(f, args.assets, model_id=mid)
                     f["visual_path"] = path
                     if first_portrait_path is None:
                         first_portrait_path = path
 
             elif photo_spec == "ai_symbolic":
                 # Tier 3: AI symbolic/metaphorical (objects only, no people)
-                f["visual_path"] = _generate_with_sanity_check(generate_symbolic_image, f, args.assets, model_id=mid)
+                f["visual_path"] = generate_symbolic_image(f, args.assets, model_id=mid)
 
             elif not f["visual_path"] or not os.path.exists(f["visual_path"]):
                 # No annotation, no sort-order match → AI contextual fallback
-                path = _generate_with_sanity_check(generate_contextual_image, f, args.assets, model_id=mid)
+                path = generate_contextual_image(f, args.assets, model_id=mid)
                 f["visual_path"] = path
                 if first_portrait_path is None:
                     first_portrait_path = path
@@ -297,15 +283,20 @@ def main():
             voice_id = args.voice_id or os.environ.get("ELEVENLABS_VOICE_ID", "")
             frames = run_lipsync_pass(frames, temp_dir, default_voice_id=voice_id)
 
+        # 3d. Multi-shot coverage (opt-in): add B-roll sub-shots to eligible beats
+        if args.multi_shot:
+            from agents import coverage
+            coverage.assign_coverage(frames, args.assets)
+
         # 4. Build clip assignments (include motion prompt from scene intelligence)
-        assignments = []
+        base_assignments = []
         for f in frames:
             # [motion:] / [camera:] override takes priority over GPT-designed prompt
             motion = (
                 f.get("motion_override")
                 or f.get("scene", {}).get("motion_prompt", "")
             )
-            assignments.append({
+            base_assignments.append({
                 "segment_id":        f["frame_id"],
                 "actual_duration":   f["duration"],
                 "media_path":        f["visual_path"],
@@ -321,13 +312,19 @@ def main():
                     "video", f, cost_tier, override=f.get("video_model_override", "")),
             })
 
+        # Multi-shot coverage splits eligible beats into sub-shots (no-op otherwise).
+        from agents import coverage
+        assignments = coverage.expand_all(base_assignments, frames)
+
         # 5. Build clips — AI provider animates each image with emotion-specific motion
         clips = build_clips(assignments, temp_dir, args.width, args.height, args.fps,
                             provider=args.provider)
 
-        # 6. Generate ASS captions from frame durations
+        # 6. Generate ASS captions from the frames' EFFECTIVE windows in the
+        # rendered video (crossfade overlaps clips, so raw durations drift)
         srt_path = os.path.join(temp_dir, "captions.srt")
-        ass_path = generate_frame_srt(frames, srt_path)  # returns .ass path
+        frame_times = frame_timecodes(frames, clips, "crossfade")
+        ass_path = generate_frame_srt(frames, srt_path, timecodes=frame_times)  # returns .ass path
 
         # 7. Assemble
         assemble_caption_only(

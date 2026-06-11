@@ -109,7 +109,8 @@ def estimate(frames: list[dict], kling_mode: str = "standard",
              force_5s: bool = False, music_type: str = "none",
              voice_chars: int = 0, provider: str = "kling",
              skip_scene_ai: bool = False, cost_tier: str = "",
-             image_model: str = "auto", video_model: str = "auto") -> dict:
+             image_model: str = "auto", video_model: str = "auto",
+             multi_shot: bool = False) -> dict:
     """
     Estimate total render cost across the WHOLE pipeline.
 
@@ -175,8 +176,19 @@ def estimate(frames: list[dict], kling_mode: str = "standard",
             if provider == "kenburns" and not (f.get("video_model_override") or g_vid):
                 pass  # explicit Ken Burns, free
             elif vid_model:
+                from agents.coverage import MAX_EXTRA, split_durations
                 clip_dur = 5.0 if force_5s else dur
-                anim_count += 1;  anim_total += model_cost(vid_model, clip_dur)
+                # Multi-shot coverage: the beat is split into sub-shots, each
+                # billed at its real duration. With extra_media already assigned
+                # we know the count; with multi_shot requested but not yet
+                # assigned, charge the UPPER BOUND (actual picks happen at
+                # render time, so quote the worst case, never less).
+                n_extra = len(f.get("extra_media") or [])
+                if multi_shot and not n_extra and caption:
+                    n_extra = MAX_EXTRA
+                parts = split_durations(clip_dur, 1 + n_extra) if n_extra else [clip_dur]
+                for part_dur in parts:
+                    anim_count += 1;  anim_total += model_cost(vid_model, part_dur)
                 used_models.add(vid_model)
 
     ls_audio_total = voice_cost(ls_audio_chars)

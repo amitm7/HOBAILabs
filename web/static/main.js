@@ -10,82 +10,16 @@ let frameOverrides = {};        // frame_id → {photo_spec, photo_tmp_path, dir
 let generatedMusicPath = null;
 let uploadedMusicPath = null;
 let currentRunId = null;
-let _pricing = null;            // loaded once from /pricing
 
-async function loadPricing() {
-  if (_pricing) return _pricing;
-  try {
-    _pricing = await fetch('/pricing').then(r => r.json());
-  } catch (_) {
-    _pricing = {
-      kling: { standard_5s_usd: 0.08, pro_5s_usd: 0.14 },
-      image_gen: { flux_portrait_usd: 0.05, openai_gpt_image_usd: 0.04, openai_edit_usd: 0.04 },
-      music: { suno_song_usd: 0.05 },
-    };
-  }
-  return _pricing;
-}
-
-// ── Model catalog + client-side router (mirrors agents/model_router.py) ─────
+// ── Model catalog (for the model dropdowns only — routing & pricing live
+//    server-side; the estimate comes from POST /api/estimate) ───────────────
 let _models = null;             // loaded once from /models  {models, routing, defaults}
-const _VIDEO_RE = /\.(mp4|mov|avi|m4v|webm)$/i;
 
 async function loadModels() {
   if (_models) return _models;
   try { _models = await fetch('/models').then(r => r.json()); }
   catch (_) { _models = { models: {}, routing: {}, defaults: {} }; }
   return _models;
-}
-
-function modelField(id, field, dflt) {
-  const m = (_models && _models.models && _models.models[id]) || {};
-  return (field in m) ? m[field] : dflt;
-}
-
-function costTierFromQuality(q) {
-  return (['dev', 'draft', 'preview'].includes((q || 'dev').toLowerCase())) ? 'draft' : 'premium';
-}
-
-function _isRealMedia(shot) {
-  const spec = (shot.photo_spec || '').trim();
-  if (spec.startsWith('ai_')) return false;
-  if (spec) return true;
-  return !!(shot.visual_path);
-}
-function _isVideoSrc(shot) {
-  return _VIDEO_RE.test(shot.visual_path || '') || _VIDEO_RE.test(shot.photo_spec || '');
-}
-function _imageShotType(shot) {
-  return (shot.photo_spec || '').trim() === 'ai_symbolic' ? 'object' : 'face';
-}
-function _videoShotType(shot) {
-  if (shot.lipsync) return 'dialogue';
-  if (_isRealMedia(shot)) return 'real';
-  if ((shot.photo_spec || '').trim() === 'ai_symbolic') return 'landscape';
-  if (shot.is_hero || shot.frame_index === 0) return 'hero';
-  return 'face';
-}
-
-// Returns a model id, or 'passthrough' (image step, real media), '' for none.
-function pickModel(kind, shot, tier, override) {
-  const o = (override || '').trim().toLowerCase();
-  if (o && o !== 'auto' && modelField(o, 'kind') === kind) return o;
-  if (kind === 'image' && (_isRealMedia(shot) || _isVideoSrc(shot))) return 'passthrough';
-  const st = kind === 'image' ? _imageShotType(shot) : _videoShotType(shot);
-  const t = (tier === 'draft' || tier === 'premium') ? tier : 'draft';
-  const prefs = (((_models.routing || {})[kind] || {})[st] || {})[t] || [];
-  for (const mid of prefs) if (_models.models && _models.models[mid]) return mid;
-  return (_models.defaults || {})[kind] || '';
-}
-
-function modelCostJs(id, dur) {
-  const key = modelField(id, 'pricing_key', '');
-  if (!key || !_pricing) return 0;
-  let cur = _pricing;
-  for (const part of key.split('.')) { cur = cur && cur[part]; }
-  const base = (typeof cur === 'number') ? cur : 0;
-  if (modelField(id, 'kind') === 'video') return base * Math.max(1, Math.ceil(dur / 5));
-  return base;
 }
 
 function populateFrameModelSelects() {
@@ -224,25 +158,90 @@ const _MEDIA_RE = /\.(jpe?g|png|webp|bmp|heic|heif|mp4|mov|avi|m4v|webm)$/i;
 
 el('browse-folder-btn')?.addEventListener('click', () => el('folder-input').click());
 
+const _BATCH_BYTES = 40 * 1024 * 1024;   // ~40MB per request — well under the server cap
+
 el('folder-input')?.addEventListener('change', async (e) => {
   const media = Array.from(e.target.files || []).filter(f => _MEDIA_RE.test(f.name));
   if (!media.length) { alert('No images or videos found in that folder.'); return; }
 
-  el('assets-status').innerHTML = `<span class="muted">Uploading ${media.length} files…</span>`;
-  const fd = new FormData();
-  fd.append('session_id', SESSION_ID);
-  media.forEach(f => fd.append('files', f, f.name));
+  // Group files into size-bounded batches so a big folder uploads reliably.
+  const batches = [];
+  let cur = [], curBytes = 0;
+  for (const f of media) {
+    if (cur.length && curBytes + f.size > _BATCH_BYTES) { batches.push(cur); cur = []; curBytes = 0; }
+    cur.push(f); curBytes += f.size;
+  }
+  if (cur.length) batches.push(cur);
 
+  let uploaded = 0, assetsDir = '';
+  el('assets-status').innerHTML = `<span class="muted">Uploading 0/${media.length}…</span>`;
   try {
-    const res = await postForm('/upload-folder', fd);
-    if (res.error) { alert('Upload failed: ' + res.error); el('assets-status').textContent = ''; return; }
-    el('assets-dir').value = res.assets_dir;   // server path used by parse + generate
-    el('assets-status').innerHTML = `<span class="text-green">✓ ${res.count} files uploaded</span>`;
+    for (const batch of batches) {
+      const fd = new FormData();
+      fd.append('session_id', SESSION_ID);
+      batch.forEach(f => fd.append('files', f, f.name));
+      const r = await fetch('/upload-folder', { method: 'POST', body: fd });
+      if (!r.ok) throw new Error(`server returned ${r.status} (file too large or rejected)`);
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      assetsDir = j.assets_dir;
+      uploaded += batch.length;
+      el('assets-status').innerHTML = `<span class="muted">Uploading ${uploaded}/${media.length}…</span>`;
+    }
+    el('assets-dir').value = assetsDir;   // server path used by parse + generate
+    el('assets-status').innerHTML = `<span class="text-green">✓ ${uploaded} files uploaded</span>`;
   } catch (err) {
-    alert('Upload error: ' + err); el('assets-status').textContent = '';
+    el('assets-status').innerHTML = `<span style="color:#b91c1c">Upload failed: ${err.message}</span>`;
   } finally {
     e.target.value = '';   // allow re-selecting the same folder
   }
+});
+
+// ── Server folder browser (typed paths confined to ASSETS_BROWSE_ROOT) ────
+
+let _sbPath = '';   // current folder shown in the browser
+
+async function sbNavigate(path) {
+  const q = path ? `?path=${encodeURIComponent(path)}` : '';
+  let res;
+  try { res = await fetch(`/browse-dirs${q}`).then(r => r.json()); }
+  catch (err) { el('sb-dirs').innerHTML = `<span style="color:#b91c1c">${err.message}</span>`; return; }
+  if (res.error) {
+    if (path) { sbNavigate(''); return; }  // bad start path → fall back to the root
+    el('sb-dirs').innerHTML = `<span style="color:#b91c1c">${res.error}</span>`;
+    return;
+  }
+
+  _sbPath = res.path;
+  el('sb-path').textContent = res.path;
+  el('sb-media-count').textContent = res.media_count ? `${res.media_count} media files` : '';
+  el('sb-up').disabled = !res.parent;
+  el('sb-up').dataset.parent = res.parent || '';
+  el('sb-dirs').innerHTML = res.dirs.length
+    ? res.dirs.map(d =>
+        `<div class="sb-dir" data-dir="${d.replace(/"/g, '&quot;')}"
+              style="padding:4px 6px;cursor:pointer;border-radius:4px">📁 ${d}</div>`
+      ).join('')
+    : '<span class="muted">No subfolders</span>';
+  el('sb-dirs').querySelectorAll('.sb-dir').forEach(div =>
+    div.addEventListener('click', () => sbNavigate(`${_sbPath}/${div.dataset.dir}`)));
+}
+
+el('browse-server-btn')?.addEventListener('click', () => {
+  el('server-browser').style.display = 'block';
+  sbNavigate(el('assets-dir').value.trim() || '');
+});
+el('sb-up')?.addEventListener('click', () => {
+  const parent = el('sb-up').dataset.parent;
+  if (parent) sbNavigate(parent);
+});
+el('sb-use')?.addEventListener('click', () => {
+  el('assets-dir').value = _sbPath;
+  el('server-browser').style.display = 'none';
+  el('assets-status').innerHTML = `<span class="text-green">✓ folder selected — Parse Frames to match</span>`;
+});
+el('sb-close')?.addEventListener('click', () => {
+  el('server-browser').style.display = 'none';
 });
 
 // ── Parse script ──────────────────────────────────────────────────────────
@@ -274,8 +273,7 @@ el('parse-btn').addEventListener('click', async () => {
     if (presetSec > 0) redistributeDurations(presetSec);
     else updateTotalDur();
     el('frames-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Show cost estimate
-    await loadPricing();
+    // Show cost estimate (server-computed)
     await loadModels();
     populateModelSelects();
     populateFrameModelSelects();
@@ -386,101 +384,48 @@ el('redistribute-btn').addEventListener('click', () => {
   }
 });
 
-// ── Cost estimate ─────────────────────────────────────────────────────────
+// ── Cost estimate (server-side — POST /api/estimate is the single source
+//    of truth, backed by agents/pricing.py + the real model router) ─────────
 
-function renderCostEstimate() {
-  if (!parsedFrames.length || !_pricing) return;
-  const p = _pricing;
-  const quality    = el('quality').value;
-  const force5s    = quality === 'dev';
-  const tier       = costTierFromQuality(quality);
-  const musicType  = document.querySelector('input[name="music-type"]:checked')?.value || 'none';
-  const _VIDEO = _VIDEO_RE;
+let _estimateSeq = 0;
+async function renderCostEstimate() {
+  if (!parsedFrames.length) return;
+  const seq = ++_estimateSeq;
+  let b;
+  try { b = await post('/api/estimate', buildPayload()); }
+  catch (_) { return; }
+  if (seq !== _estimateSeq || !b || b.error) return;  // stale or failed — keep last
 
-  const gImg = (el('image-model')?.value || 'auto');
-  const gVid = (el('video-model')?.value || 'auto');
-  const skipScene = false; // UI always runs scene AI
-
-  let sceneCount = 0, sceneTotal = 0;
-  let animCount = 0,  animTotal  = 0;
-  let imgCount = 0,   imgTotal   = 0;
-  let editCount = 0,  editTotal  = 0;
-  let lsCount = 0,    lsTotal    = 0,  lsAudioChars = 0;
-
-  const syncRate    = (p.synclabs && p.synclabs.per_second_usd) || 0.012;
-  const hedraRate   = (p.hedra && p.hedra.per_generation_usd) || 0.10;
-  const sceneRate   = (p.scene_intelligence && p.scene_intelligence.gpt_per_frame_usd) || 0.01;
-  const charsPerUsd = (p.voice && p.voice.elevenlabs_chars_per_dollar) || 25000;
-  const usedModels  = new Set();
-
-  parsedFrames.forEach((f, idx) => {
-    const ov      = frameOverrides[f.frame_id] || {};
-    const spec    = ov.photo_spec !== undefined ? ov.photo_spec : (f.photo_spec || '');
-    const vpath   = f.visual_path || '';
-    const dur     = parseFloat(el(`dur-${f.frame_id}`)?.value || f.duration);
-    const isVid   = _VIDEO.test(vpath) || (spec && _VIDEO.test(spec));
-    const editP   = el(`edit-${f.frame_id}`)?.value?.trim() || f.edit_prompt || '';
-    const caption = (f.caption || '').trim();
-    const lipsyncOn = el(`lipsync-${f.frame_id}`)?.checked ?? (f.lipsync || false);
-    const perFrame  = ov.model_override || '';
-    const shot      = { photo_spec: spec, visual_path: vpath, lipsync: lipsyncOn, frame_index: idx };
-
-    // Scene intelligence — one GPT call per captioned frame
-    if (caption && !skipScene) { sceneCount++; sceneTotal += sceneRate; }
-
-    // Image gen — router picks model per shot (cost-tier aware)
-    if (spec === 'ai_portrait' || spec === 'ai_symbolic') {
-      const im = pickModel('image', shot, tier, (perFrame || gImg));
-      if (im !== 'passthrough') { imgCount++; imgTotal += modelCostJs(im, 0); }
-    }
-
-    if (editP) { editCount++; editTotal += p.image_gen.openai_edit_usd; }
-
-    // Lipsync frames: vendor cost + ElevenLabs audio, skip animation
-    if (lipsyncOn) {
-      lsCount++;
-      lsTotal += isVid ? (syncRate * Math.max(1, dur)) : hedraRate;
-      lsAudioChars += caption.length;
-      return;
-    }
-
-    // Animation — router picks the video model; videos & Ken Burns are free
-    if (!isVid && (spec || vpath)) {
-      const useKenburns = (gVid === 'kenburns' && !perFrame);
-      if (!useKenburns) {
-        const vm = pickModel('video', shot, tier, (perFrame || gVid));
-        if (vm) {
-          const clipDur = force5s ? 5 : dur;
-          animCount++; animTotal += modelCostJs(vm, clipDur); usedModels.add(vm);
-        }
-      }
-    }
-  });
-
-  const lsAudioTotal = lsAudioChars / charsPerUsd;
-  const musicTotal   = musicType === 'generate' ? p.music.suno_song_usd : 0;
-  const total = sceneTotal + animTotal + imgTotal + editTotal + lsTotal + lsAudioTotal + musicTotal;
-
-  const animName = usedModels.size ? [...usedModels].sort().join(', ') : 'Ken Burns';
   const pad = (s) => s + '&nbsp;'.repeat(Math.max(1, 26 - s.length));
   const lines = [];
-  if (sceneCount) lines.push(`${pad(`${sceneCount} × Scene AI (GPT-4.1)`)}<b>$${sceneTotal.toFixed(2)}</b>`);
-  if (imgCount)   lines.push(`${pad(`${imgCount} × Image gen (fal.ai/GPT)`)}<b>$${imgTotal.toFixed(2)}</b>`);
-  if (editCount)  lines.push(`${pad(`${editCount} × Image edits`)}<b>$${editTotal.toFixed(2)}</b>`);
-  if (animCount)  lines.push(`${pad(`${animCount} × ${animName} clips`)}<b>$${animTotal.toFixed(2)}</b>`);
-  if (lsCount)  { lines.push(`${pad(`${lsCount} × Lip sync (Hedra/Sync)`)}<b>$${lsTotal.toFixed(2)}</b>`);
-                  lines.push(`${pad('   + lip-sync voice (11Labs)')}<b>$${lsAudioTotal.toFixed(2)}</b>`); }
-  if (musicTotal) lines.push(`${pad('1 × Suno music')}<b>$${musicTotal.toFixed(2)}</b>`);
+  if (b.scene?.count)  lines.push(`${pad(`${b.scene.count} × Scene AI (GPT-4.1)`)}<b>$${b.scene.usd.toFixed(2)}</b>`);
+  if (b.images?.count) lines.push(`${pad(`${b.images.count} × Image gen (fal.ai/GPT)`)}<b>$${b.images.usd.toFixed(2)}</b>`);
+  if (b.edits?.count)  lines.push(`${pad(`${b.edits.count} × Image edits`)}<b>$${b.edits.usd.toFixed(2)}</b>`);
+  if (b.animation?.count) lines.push(`${pad(`${b.animation.count} × ${b.animation.provider || 'video'} clips`)}<b>$${b.animation.usd.toFixed(2)}</b>`);
+  if (b.lipsync?.count) {
+    lines.push(`${pad(`${b.lipsync.count} × Lip sync (Hedra/Sync)`)}<b>$${b.lipsync.usd.toFixed(2)}</b>`);
+    lines.push(`${pad('   + lip-sync voice (11Labs)')}<b>$${(b.lipsync_audio?.usd || 0).toFixed(2)}</b>`);
+  }
+  if (b.music?.usd) lines.push(`${pad('1 × Suno music')}<b>$${b.music.usd.toFixed(2)}</b>`);
+  if (b.voice?.usd) lines.push(`${pad('Voice-over (11Labs)')}<b>$${b.voice.usd.toFixed(2)}</b>`);
   lines.push('─'.repeat(34));
-  lines.push(`${pad('Total')}<b>~$${total.toFixed(2)} USD</b>`);
+  lines.push(`${pad('Total')}<b>~$${b.total.toFixed(2)} USD</b>`);
+  if (b.multi_shot) lines.push(`<span style="color:var(--text-dim)">Multi-shot: upper bound — B-roll is picked at render time, so the real cost can only be lower.</span>`);
 
   el('cost-breakdown').innerHTML = lines.join('<br>');
   el('cost-card').style.display = 'block';
-  if (p._updated) el('cost-updated').textContent = `prices as of ${p._updated}`;
 }
 
-// Recompute cost when quality/model/kling-mode/music changes
-['quality', 'image-model', 'video-model', 'kling-mode'].forEach(id => el(id)?.addEventListener('change', renderCostEstimate));
+// Debounced variant for high-frequency inputs (duration typing etc.)
+let _estTimer = null;
+function scheduleCostEstimate() {
+  clearTimeout(_estTimer);
+  _estTimer = setTimeout(renderCostEstimate, 350);
+}
+
+// Recompute cost when quality/model/kling-mode/music/multi-shot changes
+['quality', 'image-model', 'video-model', 'kling-mode', 'multi-shot'].forEach(id =>
+  el(id)?.addEventListener('change', renderCostEstimate));
 document.querySelectorAll('input[name="music-type"]').forEach(r =>
   r.addEventListener('change', renderCostEstimate)
 );
@@ -682,9 +627,9 @@ function renderFrameCards(frames) {
       });
     });
 
-    // Live total update when user edits a duration
+    // Live total + cost update when user edits a duration
     const durInp = el(`dur-${f.frame_id}`);
-    if (durInp) durInp.addEventListener('input', updateTotalDur);
+    if (durInp) durInp.addEventListener('input', () => { updateTotalDur(); scheduleCostEstimate(); });
 
     // Lipsync checkbox wiring
     const lipsyncCb = el(`lipsync-${f.frame_id}`);
@@ -794,6 +739,7 @@ function buildPayload() {
     assets_dir:          el('assets-dir').value.trim(),
     script:              el('script-input').value,
     frames,
+    multi_shot:          el('multi-shot')?.checked || false,
     mood:                el('mood').value,
     quality:             el('quality').value,
     music_type:          musicType,

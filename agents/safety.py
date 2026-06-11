@@ -39,6 +39,21 @@ def moderate_script(script_text: str) -> None:
         print(f"[Safety] Gate A: Moderation API unavailable ({e}) — skipping.")
 
 
+def moderate_frames(frames: list[dict]) -> None:
+    """
+    Gate A for frame-based entry points: moderate every user-editable text field
+    that feeds a generation prompt (caption, director note, edit prompt).
+    Raises ValueError if flagged, same as moderate_script.
+    """
+    text = "\n".join(
+        " ".join(filter(None, (f.get("caption", ""), f.get("director_note", ""),
+                               f.get("edit_prompt", ""))))
+        for f in frames
+    ).strip()
+    if text:
+        moderate_script(text)
+
+
 def check_face_sanity(image_path: str, frame_id: str) -> bool:
     """
     Gate B: Validate a generated image before it enters the clip-build step.

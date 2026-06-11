@@ -45,13 +45,30 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
             <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">📁 Browse folder…</button>
+            <button type="button" class="btn-secondary btn-small" id="browse-server-btn">🗂 Server folder…</button>
             <input type="text" id="assets-dir" style="flex:1;min-width:220px"
               placeholder="Choose a folder of your photos/videos (or leave blank for AI-only)">
           </div>
-          <small>Pick the folder with your photos &amp; videos — they're uploaded and matched to frames. You can still override any frame individually.</small>
+          <div id="server-browser" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+              <button type="button" class="btn-secondary btn-small" id="sb-up">⬆ Up</button>
+              <code id="sb-path" style="flex:1;overflow-wrap:anywhere"></code>
+              <span id="sb-media-count" style="color:var(--text-dim);white-space:nowrap"></span>
+            </div>
+            <div id="sb-dirs" style="max-height:180px;overflow-y:auto;margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn-primary btn-small" id="sb-use">✓ Use this folder</button>
+              <button type="button" class="btn-secondary btn-small" id="sb-close">Close</button>
+            </div>
+          </div>
+          <small>Pick the folder with your photos &amp; videos — they're uploaded and matched to frames. Or browse a folder already on the server. You can still override any frame individually.</small>
           <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;cursor:pointer">
             <input type="checkbox" id="smart-match">
             🤖 Smart-match images (AI) — reads names/text in photos &amp; matches by meaning (uses GPT-4o; first parse on a new folder is slower)
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="multi-shot">
+            🎞 Multi-shot coverage — cover longer beats with extra B-roll (the matched photo + 1–2 supporting stills). Opt-in; ~2× video cost on covered beats.
           </label>
         </div>
         <span id="assets-status"></span>

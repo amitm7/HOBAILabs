@@ -10,6 +10,7 @@ generate_symbolic_image: objects/settings, no people (ai_symbolic frames)
 Requires env vars: FAL_API_KEY, OPENAI_API_KEY
 """
 import base64
+import hashlib
 import os
 import requests
 from openai import OpenAI
@@ -131,6 +132,29 @@ def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str) ->
         raise
 
 
+def _generate_image_checked(model_id: str, prompt: str, out_path: str,
+                            fallback: str, frame_id: str,
+                            max_retries: int = 2) -> str:
+    """
+    Generate, then run the Gate B sanity check (agents/safety); regenerate up to
+    max_retries times on failure. Living here makes sanity a property of image
+    generation itself — every entry point (CLI, web, future) gets it.
+    """
+    from agents.safety import check_face_sanity
+    for attempt in range(max_retries + 1):
+        _generate_image(model_id, prompt, out_path, fallback)
+        if check_face_sanity(out_path, frame_id):
+            return out_path
+        if attempt < max_retries:
+            print(f"[Safety] Gate B: {frame_id} — regenerating (attempt {attempt + 2}/{max_retries + 1})")
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+    print(f"[Safety] Gate B: {frame_id} — using last result after {max_retries + 1} attempts.")
+    return out_path
+
+
 _MIN_IMAGE_BYTES = 50_000  # files smaller than this are assumed corrupt/incomplete
 
 
@@ -139,20 +163,20 @@ def _image_cached(path: str) -> bool:
     return os.path.exists(path) and os.path.getsize(path) >= _MIN_IMAGE_BYTES
 
 
+def _prompt_hash(model_id: str, prompt: str) -> str:
+    """Short hash of model + prompt for the cache filename — a changed mood,
+    director note, or model produces a new file instead of serving a stale one."""
+    return hashlib.md5(f"{model_id}|{prompt}".encode()).hexdigest()[:8]
+
+
 def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "") -> str:
     """
     Generate an age/era-accurate portrait for a story beat.
     model_id selects the image model (router-chosen); defaults to Flux 2 Pro.
     Falls back to gpt-image-2 if the chosen model errors.
-    Skips generation if a valid image already exists on disk.
+    Skips generation if a valid image for this exact prompt already exists on disk.
     """
     frame_id = frame["frame_id"]
-    out_path = os.path.join(assets_dir, f"ai_portrait_{frame_id}.jpg")
-
-    if _image_cached(out_path):
-        print(f"[ImageGen] Portrait ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
-        return out_path
-
     scene  = frame.get("scene", {})
     prompt = scene.get("image_prompt", "")
     if not prompt:
@@ -167,8 +191,15 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "") 
         )
 
     chosen = model_id or "flux"
+    out_path = os.path.join(
+        assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, prompt)}.jpg")
+
+    if _image_cached(out_path):
+        print(f"[ImageGen] Portrait ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
+        return out_path
+
     print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
-    _generate_image(chosen, prompt, out_path, fallback="gpt_image")
+    _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path
 
@@ -180,12 +211,6 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
     Skips generation if a valid image already exists on disk.
     """
     frame_id = frame["frame_id"]
-    out_path = os.path.join(assets_dir, f"ai_symbolic_{frame_id}.jpg")
-
-    if _image_cached(out_path):
-        print(f"[ImageGen] Symbolic ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
-        return out_path
-
     scene  = frame.get("scene", {})
     prompt = scene.get("image_prompt", "")
     if not prompt:
@@ -200,7 +225,14 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
         )
 
     chosen = model_id or "gpt_image"
+    out_path = os.path.join(
+        assets_dir, f"ai_symbolic_{frame_id}_{_prompt_hash(chosen, prompt)}.jpg")
+
+    if _image_cached(out_path):
+        print(f"[ImageGen] Symbolic ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
+        return out_path
+
     print(f"[ImageGen] Symbolic ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
-    _generate_image(chosen, prompt, out_path, fallback="gpt_image")
+    _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path

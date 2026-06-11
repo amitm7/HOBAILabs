@@ -64,11 +64,13 @@ def _model_cache_key(model_id: str, media: str, motion: str,
     """
     suffix = "_5s" if force_5s else ""
     if model_id == "higgsfield":
-        token = f"hf_{motion}"                 # legacy — preserves existing cache
+        # v2: clips are now trimmed to the requested duration; v1 entries could
+        # hold an untrimmed 5s clip under a shorter-duration key, so they must miss.
+        token = f"hf2_{motion}"
     elif model_id in ("kling_std", "kling_pro"):
-        token = motion + suffix                # legacy — preserves existing cache
+        token = motion + suffix                # legacy — preserves existing cache (always trimmed)
     else:
-        token = f"{model_id}|{motion}{suffix}"  # new fal models, namespaced
+        token = f"{model_id}|v2|{motion}{suffix}"  # fal models — v2: trimmed to duration
     return _clip_cache_key(media, token, duration)
 
 
@@ -422,6 +424,26 @@ def _kling_poll_and_download(task_id: str, duration: float, output_path: str,
     raise TimeoutError(f"Kling task {task_id} timed out after {KLING_TIMEOUT}s")
 
 
+def _fit_clip_to_duration(raw_path: str, duration: float, output_path: str,
+                          width: int, height: int, fps: int = 30):
+    """
+    Make a downloaded provider clip exactly `duration` long: extend short clips
+    with a Ken Burns freeze, TRIM long ones (providers like Higgsfield return a
+    fixed 5s regardless of the request — coverage sub-shots are 2.5–4s), and
+    move as-is when already within tolerance. Removes raw_path.
+    """
+    import shutil
+    raw_dur = _get_video_duration(raw_path)
+    if raw_dur and duration > raw_dur + 0.1:
+        _extend_clip(raw_path, duration, output_path, width, height, fps)
+        os.remove(raw_path)
+    elif raw_dur and raw_dur > duration + 0.15:
+        _video_trim(raw_path, duration, output_path, width, height, fps)
+        os.remove(raw_path)
+    else:
+        shutil.move(raw_path, output_path)
+
+
 def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
                     fps: int, use_kling: bool, force_5s: bool = False,
                     kling_mode: str = "pro", provider: str = "kling") -> dict:
@@ -572,14 +594,8 @@ def build_clips(assignments: list[dict], temp_dir: str,
 
                     raw = item["_clip_path"].replace(".mp4", "_hf_raw.mp4")
                     hf.poll_and_download(item["_hf_gen_id"], raw)
-                    # Higgsfield always 5s — extend to target duration
-                    if item["actual_duration"] > 5.1:
-                        _extend_clip(raw, item["actual_duration"],
-                                     item["_clip_path"], width, height)
-                        os.remove(raw)
-                    else:
-                        import shutil
-                        shutil.move(raw, item["_clip_path"])
+                    _fit_clip_to_duration(raw, item["actual_duration"],
+                                          item["_clip_path"], width, height, fps)
 
                 elif prov == "fal":
                     from agents import fal_video
@@ -590,14 +606,8 @@ def build_clips(assignments: list[dict], temp_dir: str,
                             aspect_ratio=item["_fal_aspect"], duration=item["_fal_duration"])
                     raw = item["_clip_path"].replace(".mp4", "_fal_raw.mp4")
                     fal_video.poll_and_download(item["_fal_handle"], raw)
-                    # fal clips are ~_fal_duration long — extend to target if needed
-                    if item["actual_duration"] > item.get("_fal_duration", 5) + 0.1:
-                        _extend_clip(raw, item["actual_duration"],
-                                     item["_clip_path"], width, height)
-                        os.remove(raw)
-                    else:
-                        import shutil
-                        shutil.move(raw, item["_clip_path"])
+                    _fit_clip_to_duration(raw, item["actual_duration"],
+                                          item["_clip_path"], width, height, fps)
 
                 else:
                     # Submit inside the capped pool so we never exceed Kling's

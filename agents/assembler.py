@@ -16,6 +16,46 @@ def _run(cmd: list[str]):
         raise RuntimeError(f"FFmpeg error:\n{result.stderr[-2000:]}")
 
 
+def effective_timecodes(durations: list[float],
+                        transition: str = "crossfade") -> list[tuple[float, float]]:
+    """
+    (start, end) of each clip in the RENDERED video.
+
+    Crossfade overlaps consecutive clips by TRANSITION_DUR at every junction
+    (see _build_video_with_transitions: offset += dur - TRANSITION_DUR), so each
+    clip after the first starts that much earlier than the raw cumulative sum.
+    Every consumer of timeline positions (lipsync adelay, ducking windows,
+    captions, voiceover) must use these, not raw cumulative durations.
+    """
+    overlap = 0.0 if transition == "none" else TRANSITION_DUR
+    times, t = [], 0.0
+    for d in durations:
+        times.append((t, t + d))
+        t += d - overlap
+    return times
+
+
+def frame_timecodes(frames: list[dict], clips: list[dict],
+                    transition: str = "crossfade") -> list[tuple[float, float]]:
+    """
+    Effective (start, end) per FRAME in the rendered video. Multi-shot coverage
+    splits a frame into clips named '<frame_id>_<n>'; a frame's window spans all
+    of its sub-clips.
+    """
+    times = effective_timecodes([c["actual_duration"] for c in clips], transition)
+    out = []
+    for f in frames:
+        fid = f["frame_id"]
+        spans = [t for c, t in zip(clips, times)
+                 if c["segment_id"] == fid or c["segment_id"].startswith(fid + "_")]
+        if spans:
+            out.append((spans[0][0], spans[-1][1]))
+        else:
+            prev_end = out[-1][1] if out else 0.0
+            out.append((prev_end, prev_end + float(f.get("duration", 0.0))))
+    return out
+
+
 def _concat_clips_hard(clips: list[dict], output_path: str):
     """Hard cut: normalize all clips to one resolution/format, then stream-copy concat.
     Concat demuxer with -c copy requires identical codec params across inputs;
@@ -208,14 +248,9 @@ def _assemble_with_lipsync(clips: list[dict], temp: Path, output_path: str,
     else:
         _build_video_with_transitions(prepped, raw_video)
 
-    # ── Compute timecodes per clip ────────────────────────────────────────────
-    timecodes: list[tuple[float, float]] = []
-    t = 0.0
-    for c in clips:
-        dur = c["actual_duration"]
-        timecodes.append((t, t + dur))
-        t += dur
-    total_dur = t
+    # ── Compute timecodes per clip (accounting for crossfade overlap) ─────────
+    timecodes = effective_timecodes([c["actual_duration"] for c in clips], transition)
+    total_dur = timecodes[-1][1] if timecodes else 0.0
 
     # ── Extract lipsync audio files with positional delay ─────────────────────
     ls_audio_files: list[tuple[str, float]] = []  # (path, start_time)
@@ -297,10 +332,14 @@ def _assemble_with_lipsync(clips: list[dict], temp: Path, output_path: str,
 
 def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
                           music_path: str = None, srt_path: str = None,
-                          transition: str = "crossfade"):
+                          transition: str = "crossfade", is_voiceover: bool = False):
     """
-    Caption-only assembly: visuals + captions + optional music (no voiceover).
+    Caption-only assembly: visuals + captions + optional music or voiceover.
     Accepts either .srt or .ass path; .ass is used when present.
+
+    is_voiceover=True means `music_path` is a full-length narration track that is
+    already timed to the video — play it ONCE at full volume (no loop, no ducking).
+    Background music (is_voiceover=False) loops and is ducked under the video.
     Automatically routes to lipsync-aware assembly when any clip has embedded audio.
     """
     temp = Path(temp_dir)
@@ -331,7 +370,22 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
     print("[Assembler] Final merge...")
     vf_str = _subtitle_filter(sub_path) if sub_path else "null"
 
-    if music_path and os.path.exists(music_path):
+    if music_path and os.path.exists(music_path) and is_voiceover:
+        # Voiceover: already timed to the video — play once, full volume, NO loop.
+        # apad guards against a track a hair shorter than the video; -shortest trims.
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", raw_video,
+            "-i", music_path,
+            "-filter_complex",
+            f"[0:v]{vf_str}[vout];[1:a]apad,volume=1.0[aout]",
+            "-map", "[vout]",
+            "-map", "[aout]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k", "-shortest",
+            output_path,
+        ]
+    elif music_path and os.path.exists(music_path):
         total_dur = sum(c["actual_duration"] for c in clips)
         cmd = [
             "ffmpeg", "-y",

@@ -31,8 +31,10 @@ Script:
 Format:
 [{{"id": "s1", "text": "...", "duration_sec": 4}}, ...]"""
 
+    # The response echoes the whole script back as JSON — llm.chat's default
+    # max_tokens (1024) truncates long scripts, so request generous headroom.
     raw = llm.chat([{"role": "user", "content": prompt}],
-                   temperature=0.3, model_tier="reasoning")
+                   temperature=0.3, model_tier="reasoning", max_tokens=8192)
     return llm.json_loads_lenient(raw)
 
 

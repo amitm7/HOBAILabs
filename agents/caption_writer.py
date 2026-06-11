@@ -71,10 +71,14 @@ def _build_ass_header(font: str, size: int, color: str, position: str,
 
 def generate_frame_srt(frames: list[dict], srt_path: str,
                        fade_gap: float = 0.3,
-                       caption_style: dict = None) -> str:
+                       caption_style: dict = None,
+                       timecodes: list[tuple[float, float]] = None) -> str:
     """
     Build an ASS subtitle file from frame list.
     caption_style keys: font, size, color, position
+    timecodes: optional per-frame (start, end) in the RENDERED video (see
+    assembler.frame_timecodes) — pass these whenever clips are joined with a
+    crossfade, since the overlap makes raw cumulative durations drift.
     Returns path to the generated .ass file.
     """
     style = caption_style or {}
@@ -92,12 +96,16 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
 
     entries = []
     cursor = 0.0
-    for f in frames:
+    for i, f in enumerate(frames):
         dur     = f["duration"]
         caption = f.get("caption", "").strip()
+        if timecodes is not None:
+            frame_start, frame_end = timecodes[i]
+        else:
+            frame_start, frame_end = cursor, cursor + dur
         if caption:
-            start = cursor + fade_gap
-            end   = cursor + dur - fade_gap
+            start = frame_start + fade_gap
+            end   = frame_end - fade_gap
             if end > start:
                 entries.append((start, end, caption))
         cursor += dur

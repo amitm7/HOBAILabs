@@ -110,29 +110,50 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
     tmp_dir = tempfile.mkdtemp(prefix="hob_vo_")
     segment_files = []
 
+    def _silence_seg(seconds: float, path: str):
+        """Exact-length silence at uniform params (44.1k stereo mp3)."""
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "lavfi", "-t", f"{seconds:.3f}",
+            "-i", "anullsrc=r=44100:cl=stereo",
+            "-c:a", "libmp3lame", "-q:a", "4", path,
+        ], check=True, capture_output=True)
+
+    def _fit_seg(raw: str, path: str, seconds: float):
+        """Pad spoken audio with trailing silence (or trim) to EXACTLY `seconds`
+        so the voice for each frame lines up with that frame's caption + visuals."""
+        subprocess.run([
+            "ffmpeg", "-y", "-i", raw,
+            "-af", f"apad=whole_dur={seconds:.3f},atrim=0:{seconds:.3f}",
+            "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-q:a", "4", path,
+        ], check=True, capture_output=True)
+
     for i, frame in enumerate(frames):
-        caption = (frame.get("caption") or "").strip()
-        duration = frame.get("duration", 5.0)
+        caption  = (frame.get("caption") or "").strip()
+        duration = float(frame.get("duration", 5.0))
         seg_path = os.path.join(tmp_dir, f"seg_{i:03d}.mp3")
 
         if not caption:
-            _generate_silence(duration, seg_path)
+            _silence_seg(duration, seg_path)
             print(f"  {frame.get('frame_id','?')} → silence ({duration:.1f}s)")
         else:
+            raw_path = os.path.join(tmp_dir, f"raw_{i:03d}.mp3")
             try:
                 if use_elevenlabs:
-                    _generate_elevenlabs(caption, seg_path, voice_id)
+                    _generate_elevenlabs(caption, raw_path, voice_id)
                 else:
-                    _generate_openai(caption, seg_path)
-                actual = get_audio_duration(seg_path)
-                print(f"  {frame.get('frame_id','?')} → {actual:.1f}s spoken")
+                    _generate_openai(caption, raw_path)
+                spoken = get_audio_duration(raw_path)
+                _fit_seg(raw_path, seg_path, duration)   # pad/trim to frame length
+                note = "trimmed" if spoken > duration + 0.05 else "padded"
+                print(f"  {frame.get('frame_id','?')} → {spoken:.1f}s spoken, {note} to {duration:.1f}s")
             except Exception as e:
                 print(f"  {frame.get('frame_id','?')} → TTS failed ({e}), using silence")
-                _generate_silence(duration, seg_path)
+                _silence_seg(duration, seg_path)
 
         segment_files.append(seg_path)
 
-    # Concatenate all segments into one track
+    # Concatenate (segments are uniform params + exact-length → safe stream copy).
+    # Total track length == sum of frame durations == the caption timeline.
     list_file = os.path.join(tmp_dir, "concat.txt")
     with open(list_file, "w") as f:
         for sf in segment_files:
