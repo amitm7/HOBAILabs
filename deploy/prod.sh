@@ -10,7 +10,7 @@ AWS_PROFILE="new"  # Use the 'new' profile from aws configure
 AWS_REGION="ap-south-1"
 AWS_ACCOUNT_ID="117572456595"
 ECR_REPO="hobailabs"
-EC2_INSTANCE_ID="i-0b3e0d5c5b3dd37b0"  # Update if different
+EC2_INSTANCE_ID="i-0813ff001cc8cc694"  # HOBAILabs instance
 EC2_USER="ec2-user"
 IMAGE_TAG="prod-$(date +%Y%m%d-%H%M%S)"
 LATEST_TAG="prod-latest"
@@ -103,65 +103,22 @@ echo ""
 
 echo "[4/5] Updating EC2 instance ($EC2_INSTANCE_ID)..."
 
-# Command to run on EC2 (pulled from SSM Parameter Store during user-data)
-EC2_COMMAND="
-set -e
-export AWS_REGION=$AWS_REGION
-export ECR_REGISTRY=$ECR_REGISTRY
-export ECR_REPO=$ECR_REPO
-export IMAGE_TAG=$IMAGE_TAG
+# Build commands as a JSON array
+CMD_PULL="docker pull $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
+CMD_STOP="docker rm -f hob_prod || true"
+CMD_RUN="docker run -d --name hob_prod --restart unless-stopped -p 7860:7860 -e AWS_REGION=$AWS_REGION -e BEDROCK_REGION=us-east-1 -e LLM_PROVIDER=bedrock --env-file /etc/hobailabs.env -v /srv/hob:/data $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
+CMD_WAIT="sleep 3"
+CMD_LOG="docker logs hob_prod | tail -10"
 
-# Pull latest image from ECR
-aws ecr get-login-password --region \$AWS_REGION | \
-    docker login --username AWS --password-stdin \$ECR_REGISTRY
-
-docker pull \$ECR_REGISTRY/\$ECR_REPO:$IMAGE_TAG
-
-# Stop and remove old container
-docker rm -f hob_prod || true
-
-# Load environment from SSM Parameter Store
-export \$(aws ssm get-parameters-by-path \
-    --path /hobailabs \
-    --with-decryption \
-    --query 'Parameters[*].[Name,Value]' \
-    --output text \
-    --region \$AWS_REGION | \
-    awk '{print \$1\"=\"\$2}' | sed 's|/hobailabs/||g')
-
-# Launch new container
-docker run -d \
-    --name hob_prod \
-    --restart unless-stopped \
-    -p 7860:7860 \
-    -e AWS_REGION=\$AWS_REGION \
-    -e BEDROCK_REGION=us-east-1 \
-    -e LLM_PROVIDER=bedrock \
-    -e ELEVENLABS_API_KEY \
-    -e SYNCLABS_API_KEY \
-    -e HEDRA_API_KEY \
-    -e FAL_KEY \
-    -e KLING_API_KEY \
-    -e HIGGSFIELD_API_KEY \
-    -e SUNO_API_KEY \
-    -e OPENAI_API_KEY \
-    -e GOOGLE_API_KEY \
-    -e ASSETS_BROWSE_ROOT=/srv/hob/assets \
-    -v /srv/hob:/data \
-    \$ECR_REGISTRY/\$ECR_REPO:$IMAGE_TAG
-
-# Wait for container to be ready
-sleep 3
-docker logs hob_prod | tail -20
-
-echo 'Container running. Visit https://creative.kevat.ai'
-"
+# Create properly escaped JSON parameters
+PARAMS=$(jq -n --arg cmd1 "$CMD_PULL" --arg cmd2 "$CMD_STOP" --arg cmd3 "$CMD_RUN" --arg cmd4 "$CMD_WAIT" --arg cmd5 "$CMD_LOG" \
+  '{commands: [$cmd1, $cmd2, $cmd3, $cmd4, $cmd5]}')
 
 # Send command to EC2 via SSM
 CMD_ID=$(aws ssm send-command \
     --document-name "AWS-RunShellScript" \
     --targets "Key=InstanceIds,Values=$EC2_INSTANCE_ID" \
-    --parameters "commands=['$EC2_COMMAND']" \
+    --parameters "$PARAMS" \
     --region "$AWS_REGION" \
     --profile "$AWS_PROFILE" \
     --query 'Command.CommandId' \
