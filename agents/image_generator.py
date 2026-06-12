@@ -134,16 +134,20 @@ def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str) ->
 
 def _generate_image_checked(model_id: str, prompt: str, out_path: str,
                             fallback: str, frame_id: str,
-                            max_retries: int = 2) -> str:
+                            max_retries: int = 2, generator=None) -> str:
     """
-    Generate, then run the Gate B sanity check (agents/safety); regenerate up to
-    max_retries times on failure. Living here makes sanity a property of image
-    generation itself — every entry point (CLI, web, future) gets it.
+    Generate, then run Gate B (fast sanity check) and Gate B2 (vision-LLM
+    critique: anachronisms, wrong age, deformed anatomy, baked-in text);
+    regenerate up to max_retries times on failure. Living here makes quality
+    gating a property of image generation itself — every entry point gets it.
+    generator: optional zero-arg callable replacing the default model dispatch
+    (used by reference-guided generation).
     """
-    from agents.safety import check_face_sanity
+    from agents.safety import check_face_sanity, critique_image
+    gen = generator or (lambda: _generate_image(model_id, prompt, out_path, fallback))
     for attempt in range(max_retries + 1):
-        _generate_image(model_id, prompt, out_path, fallback)
-        if check_face_sanity(out_path, frame_id):
+        gen()
+        if check_face_sanity(out_path, frame_id) and critique_image(out_path, frame_id, prompt):
             return out_path
         if attempt < max_retries:
             print(f"[Safety] Gate B: {frame_id} — regenerating (attempt {attempt + 2}/{max_retries + 1})")
@@ -169,11 +173,23 @@ def _prompt_hash(model_id: str, prompt: str) -> str:
     return hashlib.md5(f"{model_id}|{prompt}".encode()).hexdigest()[:8]
 
 
-def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "") -> str:
+def _file_hash(path: str) -> str:
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()[:8]
+
+
+def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
+                              reference_path: str = "") -> str:
     """
     Generate an age/era-accurate portrait for a story beat.
     model_id selects the image model (router-chosen); defaults to Flux 2 Pro.
     Falls back to gpt-image-2 if the chosen model errors.
+    reference_path: optional portrait of the SAME person — generation then goes
+    through the image-edit API ("keep this exact face, re-imagine the scene"),
+    so the character stays consistent across frames/ages instead of being
+    re-invented from a text description each time.
     Skips generation if a valid image for this exact prompt already exists on disk.
     """
     frame_id = frame["frame_id"]
@@ -190,16 +206,27 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "") 
             "9:16 vertical, no text, no watermarks, shallow depth of field, 85mm lens."
         )
 
-    chosen = model_id or "flux"
+    use_ref = bool(reference_path) and os.path.exists(reference_path)
+    chosen  = "gpt_image_ref" if use_ref else (model_id or "flux")
+    hash_src = prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "")
     out_path = os.path.join(
-        assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, prompt)}.jpg")
+        assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, hash_src)}.jpg")
 
     if _image_cached(out_path):
         print(f"[ImageGen] Portrait ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
         return out_path
 
-    print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
-    _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
+    if use_ref:
+        from agents.image_editor import edit_image
+        ref_prompt = ("Keep this EXACT person's face and identity — same person, "
+                      "photorealistic. Re-imagine the photograph as: " + prompt)
+        print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via reference edit "
+              f"(face from {os.path.basename(reference_path)})…")
+        _generate_image_checked("", prompt, out_path, "", frame_id,
+                                generator=lambda: edit_image(reference_path, ref_prompt, out_path))
+    else:
+        print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
+        _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path
 

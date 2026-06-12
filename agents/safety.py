@@ -108,3 +108,51 @@ def check_face_sanity(image_path: str, frame_id: str) -> bool:
 
     print(f"[Safety] Gate B: {frame_id} — image passed sanity check. ✓")
     return True
+
+
+_CRITIQUE_PROMPT = (
+    "You are a strict QC reviewer for a photorealistic Indian documentary reel "
+    "set in the specified era. This image was generated from the prompt below. "
+    "Check ONLY for these failure modes:\n"
+    "1. ANACHRONISMS vs the era in the prompt (smartphones, earbuds, modern "
+    "cars/logos/clothing in a period scene)\n"
+    "2. Deformed anatomy: malformed hands/fingers, warped faces, extra/missing limbs\n"
+    "3. Any rendered text, watermark, or logo in the image\n"
+    "4. GROSS prompt mismatch: clearly wrong age for an age-specific prompt, "
+    "people present when the prompt demands none, or a blank/abstract/empty "
+    "image when the prompt requires a real subject or scene\n"
+    "Minor stylistic deviations are fine — only flag real failures.\n\n"
+    'GENERATION PROMPT:\n"{prompt}"\n\n'
+    'Reply with ONLY JSON: {{"ok": true|false, "reason": "short reason when not ok"}}'
+)
+
+
+def critique_image(image_path: str, frame_id: str, prompt: str) -> bool:
+    """
+    Gate B2: vision-LLM critique on the cheap 'fast' tier — catches what the
+    OpenCV check can't (anachronisms, wrong age, malformed hands, baked-in text).
+    Returns True (pass) on any API failure so the gate degrades, never blocks.
+    Disable with HOB_VISION_QC=0.
+    """
+    if os.environ.get("HOB_VISION_QC", "1") == "0":
+        return True
+    try:
+        from agents import llm
+        text = llm.chat(
+            [{"role": "user", "content": [
+                {"type": "text", "text": _CRITIQUE_PROMPT.format(prompt=prompt[:600])},
+                {"type": "image", "path": image_path},
+            ]}],
+            json_mode=True, max_tokens=120, model_tier="fast",
+        )
+        verdict = llm.json_loads_lenient(text)
+        ok = bool(verdict.get("ok", True))
+        if not ok:
+            print(f"[Safety] Gate B2: {frame_id} — vision QC failed: "
+                  f"{verdict.get('reason', 'unspecified')}")
+        else:
+            print(f"[Safety] Gate B2: {frame_id} — vision QC passed. ✓")
+        return ok
+    except Exception as e:
+        print(f"[Safety] Gate B2: vision QC unavailable ({e}) — skipping.")
+        return True

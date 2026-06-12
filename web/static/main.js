@@ -124,8 +124,9 @@ el('music-file-input').addEventListener('change', async (e) => {
 });
 
 el('generate-music-btn').addEventListener('click', async () => {
-  const prompt = el('music-prompt').value.trim() ||
-    'Emotional Bollywood instrumental, struggle to triumph, sitar and tabla';
+  // Empty prompt → the server composes a proper Suno brief from the story
+  // beats (genre + tempo + instruments + emotion arc).
+  const prompt = el('music-prompt').value.trim();
 
   el('generate-music-btn').disabled = true;
   el('music-gen-status').innerHTML = '<span class="spinner"></span> Generating with Suno V5.5… (2–3 min)';
@@ -134,12 +135,18 @@ el('generate-music-btn').addEventListener('click', async () => {
     const res = await fetch('/generate-music', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ prompt, session_id: SESSION_ID }),
+      body: JSON.stringify({
+        prompt,
+        session_id: SESSION_ID,
+        captions: parsedFrames.map(f => f.caption || ''),
+        mood: el('mood')?.value || '',
+      }),
     }).then(r => r.json());
 
     if (res.music_path) {
       generatedMusicPath = res.music_path;
-      el('music-gen-status').innerHTML = '<span class="text-green">✓ Music ready</span>';
+      el('music-gen-status').innerHTML = '<span class="text-green">✓ Music ready</span>' +
+        (prompt ? '' : ` <span class="muted" style="font-size:11px">brief: ${(res.prompt_used || '').slice(0, 90)}…</span>`);
       // Preview via /output route isn't ideal — just confirm it's ready
       el('music-preview').style.display = 'none';
     } else {
@@ -740,6 +747,7 @@ function buildPayload() {
     script:              el('script-input').value,
     frames,
     multi_shot:          el('multi-shot')?.checked || false,
+    face_ref:            el('face-ref')?.checked || false,
     mood:                el('mood').value,
     quality:             el('quality').value,
     music_type:          musicType,

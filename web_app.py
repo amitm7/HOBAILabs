@@ -322,7 +322,7 @@ def list_voices():
 @app.route("/generate-music", methods=["POST"])
 def generate_music_route():
     data = request.json or {}
-    prompt = data.get("prompt", "Emotional Bollywood instrumental, struggle to triumph")
+    prompt = (data.get("prompt") or "").strip()
     session_id = data.get("session_id", str(uuid.uuid4()))
 
     run_dir = RUNS_DIR / session_id
@@ -330,9 +330,16 @@ def generate_music_route():
     music_path = str(run_dir / "music.mp3")
 
     try:
-        from agents.music_generator import generate_story_music
-        generate_story_music(prompt, music_path)
-        return jsonify({"music_path": music_path, "session_id": session_id})
+        from agents.music_generator import generate_music, compose_music_brief
+        if not prompt:
+            # No user prompt — compose a proper Suno brief from the story itself
+            # (genre + tempo + instruments + emotion arc, 15-30 descriptors).
+            prompt = compose_music_brief(data.get("captions") or [],
+                                         mood=data.get("mood", ""))
+            print(f"[MusicGen] Composed brief: {prompt}")
+        generate_music(prompt, music_path)
+        return jsonify({"music_path": music_path, "session_id": session_id,
+                        "prompt_used": prompt})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -503,7 +510,7 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
 
 def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                      subject_description: str, mood: str,
-                     cost_tier: str = "draft") -> list[dict]:
+                     cost_tier: str = "draft", face_ref: bool = False) -> list[dict]:
     """
     Scene intelligence + image generation + edit pass — everything BEFORE animation.
     Mutates frames to set visual_path to the final still for each frame.
@@ -522,9 +529,9 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
 
     os.makedirs(assets_dir, exist_ok=True)
 
-    # Scene intelligence (parallel, cached)
+    # Scene intelligence (parallel, cached; treatment pass plans the whole reel)
     frames = design_all_scenes(frames, subject_name=subject_name,
-                               subject_description=subject_description)
+                               subject_description=subject_description, mood=mood)
 
     # Apply mood to every AI image prompt
     mood_suffix = MOOD_MAP.get(mood, "")
@@ -537,17 +544,25 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
     # Image generation (cache-aware via generate_* file checks).
     # The router picks the image model per shot (cost-tier aware); real photos
     # return "passthrough" and are never sent to an image model.
+    # face_ref: the first generated portrait becomes the identity REFERENCE for
+    # every later portrait (same person across frames/ages, via gpt-image edit).
+    first_portrait = None
     for f in frames:
         ps = f.get("photo_spec", "")
         img_model = model_router.select_model(
             "image", f, cost_tier, override=f.get("image_model_override", ""))
         mid = "" if img_model == model_router.PASSTHROUGH else img_model
+        ref = first_portrait if face_ref else ""
         if ps == "ai_portrait":
-            f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid)
+            f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid,
+                                                         reference_path=ref)
+            first_portrait = first_portrait or f["visual_path"]
         elif ps == "ai_symbolic":
             f["visual_path"] = generate_symbolic_image(f, assets_dir, model_id=mid)
         elif not f["visual_path"] or not os.path.exists(f["visual_path"]):
-            f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid)
+            f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid,
+                                                         reference_path=ref)
+            first_portrait = first_portrait or f["visual_path"]
 
     # Edit pass — prompt-hashed filename so identical edits are reused (no re-pay)
     for f in frames:
@@ -569,6 +584,12 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                     f["visual_path"] = edit_image(src, prompt, edited)
                 except Exception as e:
                     print(f"[Pipeline] Image edit failed for {f['frame_id']} ({e}) — using original")
+
+    # Motion grounding — rewrite each motion prompt by LOOKING at the final
+    # still (fast tier, cached), so animation prompts never reference things
+    # that aren't in the frame.
+    from agents.scene_intelligence import ground_all_motions
+    ground_all_motions(frames)
 
     return frames
 
@@ -624,7 +645,8 @@ def _preview_inner(run_id: str, data: dict, run_dir: Path):
     print("[Preview] Generating still images (no animation — cheap pre-check)…")
     frames = _build_frames_from_payload(data, max_frame_dur)
     assets_dir = str(run_dir / "assets")
-    frames = _generate_stills(frames, assets_dir, subject_name, subject_desc, mood)
+    frames = _generate_stills(frames, assets_dir, subject_name, subject_desc, mood,
+                              face_ref=bool(data.get("face_ref")))
 
     _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v", ".webm"}
     stills = []
@@ -682,7 +704,8 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
 
     assets_dir = str(run_dir / "assets")
     frames = _generate_stills(frames, assets_dir, subject_name, subject_description,
-                              mood, cost_tier=cost_tier)
+                              mood, cost_tier=cost_tier,
+                              face_ref=bool(data.get("face_ref")))
 
     # ── Lip sync pass (between edit and build_clips) ────────────────────────
     clip_temp = tempfile.mkdtemp(prefix="hob_clips_")

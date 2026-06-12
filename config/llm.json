@@ -1,22 +1,25 @@
 {
-  "_note": "Pluggable LLM 'brain' for reasoning/vision calls (scene intelligence, image matcher, segmenter). Default provider is openai (current behaviour). Switch with env LLM_PROVIDER=openai|bedrock|gemini, or change 'provider' here. Per-tier models overridable via env LLM_REASONING_MODEL / LLM_VISION_MODEL. Image generation and audio are separate axes and not controlled here.",
+  "_note": "Pluggable LLM 'brain' for reasoning/vision calls (scene intelligence, image matcher, segmenter). Default provider is openai (current behaviour). Switch with env LLM_PROVIDER=openai|bedrock|gemini, or change 'provider' here. Per-tier models overridable via env LLM_REASONING_MODEL / LLM_VISION_MODEL / LLM_FAST_MODEL. Tiers: reasoning (creative direction), vision (high-quality vision), fast (cheap vision-capable model for bulk describes + image QC). Image generation and audio are separate axes and not controlled here.",
   "provider": "openai",
 
   "openai": {
     "reasoning": "gpt-4.1",
-    "vision":    "gpt-4o"
+    "vision":    "gpt-4o",
+    "fast":      "gpt-4o-mini"
   },
 
   "bedrock": {
     "reasoning": "us.anthropic.claude-sonnet-4-6",
     "vision":    "us.anthropic.claude-sonnet-4-6",
+    "fast":      "us.anthropic.claude-haiku-4-5",
     "region":    "us-east-1",
-    "_note": "Sonnet 4.6 via the us.* cross-region inference profile (verified live 2026-06-10). Claude 4.x requires an inference profile for on-demand; the bare foundation-model id is rejected. The profile routes across us-east-1/us-east-2/us-west-2, so the IAM policy must allow foundation-model ARNs in all those regions + the inference-profile ARN. Override via BEDROCK_REGION / LLM_REASONING_MODEL / LLM_VISION_MODEL. Bedrock uses IAM (instance role / AWS profile) — no API key."
+    "_note": "Sonnet 4.6 via the us.* cross-region inference profile (verified live 2026-06-10). Claude 4.x requires an inference profile for on-demand; the bare foundation-model id is rejected. The profile routes across us-east-1/us-east-2/us-west-2, so the IAM policy must allow foundation-model ARNs in all those regions + the inference-profile ARN. The 'fast' Haiku profile id follows the same us.* convention — verify once live (override via LLM_FAST_MODEL if it differs). Bedrock uses IAM (instance role / AWS profile) — no API key."
   },
 
   "gemini": {
-    "reasoning": "gemini-2.0-flash",
-    "vision":    "gemini-2.0-flash",
-    "_note": "Uses GEMINI_API_KEY."
+    "reasoning": "gemini-2.5-flash",
+    "vision":    "gemini-2.5-flash",
+    "fast":      "gemini-2.5-flash-lite",
+    "_note": "Uses GEMINI_API_KEY. Bumped from gemini-2.0-flash (2026-06-12)."
   }
 }

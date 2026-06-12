@@ -2,7 +2,7 @@
 
 **Product:** AI story-to-reel pipeline (Instagram Reels / YouTube Shorts)
 **Revision:** 2026-06-11 · derived from the `feat/pipeline-expansion-roadmap` branch
-**Companion doc:** [LLD.md](LLD.md) — module-level internals
+**Companion docs:** [LLD.md](LLD.md) — module-level internals · [SCALE_PLAN.md](SCALE_PLAN.md) — multi-user scale phasing
 **Source of truth for behaviour:** [GUIDE.md](../GUIDE.md) (user view) · [ROADMAP.md](../ROADMAP.md) (forward plan)
 
 ---

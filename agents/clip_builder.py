@@ -240,12 +240,13 @@ def _image_to_base64(path: str) -> str:
 
 
 def _kling_motion_prompt(segment_text: str, motion_prompt: str = "") -> str:
+    # Image-to-video prompts must describe MOTION only — the reference image
+    # already carries appearance/lighting, and re-describing the subject in text
+    # (e.g. echoing the caption) creates competing instructions and drift.
     if motion_prompt:
         return motion_prompt
-    return (
-        f"Cinematic slow motion, natural ambient movement, emotional atmosphere. "
-        f"Subject: {segment_text[:80]}"
-    )
+    return ("Slow gentle push-in, natural ambient movement — hair, fabric and "
+            "foliage stirring softly, subtle light shift, cinematic and calm")
 
 
 # Map our plain-English camera vocabulary → Kling's structured camera_control.
@@ -299,7 +300,8 @@ def _kling_submit(image_path: str, segment_text: str, duration: float,
         "model_name": "kling-v3",
         "image": _image_to_base64(image_path),
         "prompt": _kling_motion_prompt(segment_text, motion_prompt),
-        "negative_prompt": "blurry, distorted, text, watermark, subtitles, captions, logo, low quality, static",
+        "negative_prompt": "blurry, distorted, text, watermark, subtitles, captions, logo, "
+                           "low quality, static, morphing faces, extra limbs, flickering",
         "cfg_scale": 0.5,
         "mode": kling_mode,
         "duration": kling_dur,

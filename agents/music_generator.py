@@ -112,3 +112,40 @@ def generate_story_music(story_emotion: str, output_path: str,
         "No lyrics, pure instrumental. Cinematic, 2-4 minutes."
     )
     return generate_music(prompt, output_path, model=model)
+
+
+def compose_music_brief(captions: list[str], mood: str = "") -> str:
+    """
+    LLM-composed Suno prompt derived from the STORY itself. Suno responds best
+    to 15-30 comma-separated descriptors covering style + mood + tempo +
+    instruments + an explicit emotion ARC; short generic prompts (<10 words)
+    produce generic music. Falls back to the house default on any failure.
+    """
+    fallback = ("emotional Indian cinematic instrumental, documentary score, "
+                "sitar, tabla, bansuri, warm strings, soft piano, slow tempo "
+                "building gradually, starts sparse and melancholic, swells to "
+                "warm triumphant strings, organic, intimate, instrumental only, no vocals")
+    story = " / ".join(c.strip() for c in captions if c and c.strip())[:1500]
+    if not story:
+        return fallback
+    try:
+        from agents import llm
+        text = llm.chat(
+            [{"role": "user", "content": (
+                "Compose ONE Suno music prompt for the background score of an "
+                "emotional Indian documentary reel.\n"
+                f"Story beats, in order: {story}\n"
+                f"Mood hint: {mood or 'derive from the story'}\n"
+                "Rules: 15-30 comma-separated descriptors. Include: genre, tempo "
+                "feel, 3-4 core instruments (prefer Indian textures — sitar, tabla, "
+                "bansuri, harmonium, strings), production style, and an explicit "
+                "emotion ARC phrased like 'starts sparse and melancholic, builds to "
+                "warm triumphant strings' matched to THIS story's journey. End with "
+                "'instrumental only, no vocals'. Reply with ONLY the prompt."
+            )}],
+            max_tokens=140, model_tier="fast",
+        ).strip().strip('"')
+        return text if 40 <= len(text) <= 600 else fallback
+    except Exception as e:
+        print(f"[MusicGen] brief composition failed ({e}) — using default brief")
+        return fallback

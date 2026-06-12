@@ -132,7 +132,7 @@ def _describe_video(path: str) -> str:
         for f in frames:
             content.append({"type": "image", "path": f})
         desc = llm.chat([{"role": "user", "content": content}],
-                        max_tokens=160, model_tier="vision").strip()
+                        max_tokens=160, model_tier="fast").strip()
         return "(real video clip) " + desc
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -172,7 +172,7 @@ def describe_images(paths: list[str]) -> dict:
                         {"type": "text", "text": _DESCRIBE_PROMPT},
                         {"type": "image", "path": p},
                     ]}],
-                    max_tokens=150, model_tier="vision",
+                    max_tokens=150, model_tier="fast",
                 ).strip()
         except Exception as e:
             # Do NOT cache failures — use the filename as a weak signal for THIS
@@ -250,7 +250,9 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
     False (caller falls back to positional matching). Respects [photo:] pins,
     ai_* specs, and videos (those frames are left untouched).
     """
-    if not os.environ.get("OPENAI_API_KEY") or not assets_dir:
+    # No provider key gate here: all calls go through the pluggable llm brain
+    # (bedrock uses IAM, not OPENAI_API_KEY); failures fall back gracefully below.
+    if not assets_dir:
         return False
 
     need = [f for f in frames

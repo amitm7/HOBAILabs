@@ -60,6 +60,10 @@ def main():
     parser.add_argument("--face-lock", action="store_true",
                         help="V1 face consistency: generate first ai_portrait once, reuse same still "
                              "for all subsequent ai_portrait frames (different motion per frame)")
+    parser.add_argument("--face-ref", action="store_true",
+                        help="V2 face consistency: first portrait becomes the identity REFERENCE; "
+                             "later portraits are generated via gpt-image edit (same person, new "
+                             "scene/age). Costs one image-edit per portrait frame.")
     parser.add_argument("--provider", default="kling",
                         choices=["kling", "higgsfield", "kenburns"],
                         help="Legacy global animation provider (used as router fallback)")
@@ -217,6 +221,8 @@ def main():
             img_model = model_router.select_model(
                 "image", f, cost_tier, override=f.get("image_model_override", ""))
             mid = "" if img_model == model_router.PASSTHROUGH else img_model
+            # --face-ref: later portraits keep the FIRST portrait's identity
+            ref = first_portrait_path if args.face_ref else ""
 
             if photo_spec and not photo_spec.startswith("ai_"):
                 # Tier 1: explicit real photo
@@ -227,7 +233,8 @@ def main():
                         first_portrait_path = candidate
                 else:
                     print(f"[Pipeline] {f['frame_id']}: {photo_spec} not found → AI portrait fallback")
-                    path = generate_contextual_image(f, args.assets, model_id=mid)
+                    path = generate_contextual_image(f, args.assets, model_id=mid,
+                                                     reference_path=ref)
                     f["visual_path"] = path
                     if first_portrait_path is None:
                         first_portrait_path = path
@@ -238,7 +245,8 @@ def main():
                     print(f"[FaceConsistency] {f['frame_id']}: reusing locked portrait — same face, different motion.")
                     f["visual_path"] = first_portrait_path
                 else:
-                    path = generate_contextual_image(f, args.assets, model_id=mid)
+                    path = generate_contextual_image(f, args.assets, model_id=mid,
+                                                     reference_path=ref)
                     f["visual_path"] = path
                     if first_portrait_path is None:
                         first_portrait_path = path
@@ -249,7 +257,8 @@ def main():
 
             elif not f["visual_path"] or not os.path.exists(f["visual_path"]):
                 # No annotation, no sort-order match → AI contextual fallback
-                path = generate_contextual_image(f, args.assets, model_id=mid)
+                path = generate_contextual_image(f, args.assets, model_id=mid,
+                                                 reference_path=ref)
                 f["visual_path"] = path
                 if first_portrait_path is None:
                     first_portrait_path = path
@@ -267,6 +276,11 @@ def main():
                     f["visual_path"] = edit_image(src, f["edit_prompt"], edited)
                 except Exception as e:
                     print(f"[Pipeline] Image edit failed for {f['frame_id']} ({e}) — using original")
+
+        # 3b2. Motion grounding — rewrite motion prompts by LOOKING at the final
+        # stills (fast tier, cached) so animation prompts match what's in frame.
+        from agents.scene_intelligence import ground_all_motions
+        ground_all_motions(frames)
 
         # 3c. Lip sync pass — audio-driven duration + talking portrait / video sync
         _VIDEO_EXTS_LS = {".mp4", ".mov", ".avi", ".m4v", ".webm"}

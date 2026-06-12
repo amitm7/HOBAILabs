@@ -39,28 +39,71 @@ def get_voices() -> list[dict]:
         return []
 
 
-def _generate_elevenlabs(text: str, path: str, voice_id: str):
+def _generate_elevenlabs(text: str, path: str, voice_id: str,
+                         voice_settings: dict | None = None,
+                         previous_text: str | None = None):
+    """
+    voice_settings: optional {stability, similarity_boost, style} — lower
+    stability = more expressive delivery (mapped from the beat's emotion).
+    previous_text: the preceding narration line — gives the model prosody
+    context so consecutive segments flow as one read, not isolated clips.
+    Both degrade gracefully on older SDKs (retried without).
+    """
     from elevenlabs import ElevenLabs
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     client = ElevenLabs(api_key=api_key)
-    for output_format in ["mp3_44100_128", "mp3_44100_64"]:
+
+    extras = {}
+    if voice_settings:
         try:
-            audio = client.text_to_speech.convert(
-                voice_id=voice_id,
-                text=text,
-                model_id="eleven_multilingual_v2",
-                output_format=output_format,
-            )
-            break
-        except Exception as e:
-            if "output_format_not_allowed" in str(e) or "subscription_required" in str(e):
+            from elevenlabs import VoiceSettings
+            extras["voice_settings"] = VoiceSettings(**voice_settings)
+        except Exception:
+            pass
+    if previous_text:
+        extras["previous_text"] = previous_text[:600]
+
+    audio, last_err = None, None
+    for output_format in ["mp3_44100_128", "mp3_44100_64"]:
+        for ex in ([extras, {}] if extras else [{}]):
+            try:
+                audio = client.text_to_speech.convert(
+                    voice_id=voice_id,
+                    text=text,
+                    model_id="eleven_multilingual_v2",
+                    output_format=output_format,
+                    **ex,
+                )
+                break
+            except TypeError as e:
+                last_err = e   # older SDK without these kwargs — retry plain
                 continue
-            raise
-    else:
-        raise RuntimeError("ElevenLabs: no supported output format for this subscription tier")
+            except Exception as e:
+                if "output_format_not_allowed" in str(e) or "subscription_required" in str(e):
+                    last_err = e
+                    break      # try the next output format
+                raise
+        if audio is not None:
+            break
+    if audio is None:
+        raise RuntimeError(
+            f"ElevenLabs: no supported output format for this subscription tier ({last_err})")
     with open(path, "wb") as f:
         for chunk in audio:
             f.write(chunk)
+
+
+def _voice_settings_for(emotion: str) -> dict:
+    """Map a beat's emotion to delivery settings: expressive for heavy beats,
+    steady for neutral narration. Conservative ranges — never theatrical."""
+    e = (emotion or "").lower()
+    if e in {"grief", "sadness", "sad", "loss", "pain", "despair", "fear",
+             "lonely", "loneliness", "heartbreak", "struggle"}:
+        return {"stability": 0.35, "similarity_boost": 0.8, "style": 0.5}
+    if e in {"triumph", "joy", "hope", "hopeful", "pride", "excitement",
+             "determination", "victory", "relief"}:
+        return {"stability": 0.45, "similarity_boost": 0.8, "style": 0.4}
+    return {"stability": 0.55, "similarity_boost": 0.8, "style": 0.25}
 
 
 def _generate_openai(text: str, path: str):
@@ -127,6 +170,7 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
             "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-q:a", "4", path,
         ], check=True, capture_output=True)
 
+    prev_caption = ""   # prosody continuity: each segment knows the line before it
     for i, frame in enumerate(frames):
         caption  = (frame.get("caption") or "").strip()
         duration = float(frame.get("duration", 5.0))
@@ -139,7 +183,10 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
             raw_path = os.path.join(tmp_dir, f"raw_{i:03d}.mp3")
             try:
                 if use_elevenlabs:
-                    _generate_elevenlabs(caption, raw_path, voice_id)
+                    emotion = frame.get("scene", {}).get("emotion", "")
+                    _generate_elevenlabs(caption, raw_path, voice_id,
+                                         voice_settings=_voice_settings_for(emotion),
+                                         previous_text=prev_caption or None)
                 else:
                     _generate_openai(caption, raw_path)
                 spoken = get_audio_duration(raw_path)
@@ -149,6 +196,7 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
             except Exception as e:
                 print(f"  {frame.get('frame_id','?')} → TTS failed ({e}), using silence")
                 _silence_seg(duration, seg_path)
+            prev_caption = caption
 
         segment_files.append(seg_path)
 

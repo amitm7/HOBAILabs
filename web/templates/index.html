@@ -70,6 +70,10 @@
             <input type="checkbox" id="multi-shot">
             🎞 Multi-shot coverage — cover longer beats with extra B-roll (the matched photo + 1–2 supporting stills). Opt-in; ~2× video cost on covered beats.
           </label>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="face-ref">
+            👤 Consistent face — the first AI portrait becomes the identity reference; later portraits keep the same person across scenes/ages (one image-edit per portrait frame).
+          </label>
         </div>
         <span id="assets-status"></span>
       </div>
@@ -253,7 +257,7 @@ Caption:
             <div class="music-option-sub" id="generate-music-sub" style="display:none">
               <div class="row">
                 <input type="text" class="flex-1" id="music-prompt"
-                  placeholder="e.g. struggle to triumph, Bollywood sitar and tabla, Indian classical">
+                  placeholder="Leave empty to auto-compose from your story (genre + instruments + emotion arc), or describe it yourself">
                 <button class="btn-secondary btn-small" id="generate-music-btn">Generate →</button>
               </div>
               <div id="music-gen-status" style="font-size:12px;margin-top:6px;color:var(--text-dim)"></div>

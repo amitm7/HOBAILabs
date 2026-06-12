@@ -9,8 +9,13 @@ are NOT routed here.
 
 Public API:
     chat(messages, *, json_mode=False, max_tokens=1024, temperature=None,
-         model_tier="reasoning") -> str
+         model_tier="reasoning", json_schema=None) -> str
     json_loads_lenient(text) -> obj    # tolerant JSON parse (strips code fences)
+
+Model tiers: "reasoning" (default), "vision", "fast" (cheap vision-capable model
+for bulk describe/QC calls). Unknown tiers fall back to "reasoning".
+json_schema: optional dict {"name": str, "schema": {...}} — enforced strictly on
+OpenAI (structured outputs); injected as a system directive on Bedrock/Gemini.
 
 Message format (provider-agnostic):
     messages = [{"role": "system"|"user"|"assistant", "content": <str | parts>}]
@@ -44,6 +49,26 @@ def _config() -> dict:
 
 def _provider() -> str:
     return (os.environ.get("LLM_PROVIDER") or _config().get("provider") or "openai").lower()
+
+
+# Clients are expensive to build (TLS pools, botocore service models) and chat()
+# is called per frame/image — construct once per process and reuse.
+_CLIENTS: dict = {}
+
+
+def _openai_client():
+    if "openai" not in _CLIENTS:
+        from openai import OpenAI
+        _CLIENTS["openai"] = OpenAI()
+    return _CLIENTS["openai"]
+
+
+def _bedrock_client(region: str):
+    key = f"bedrock:{region}"
+    if key not in _CLIENTS:
+        import boto3
+        _CLIENTS[key] = boto3.client("bedrock-runtime", region_name=region)
+    return _CLIENTS[key]
 
 
 def _model_for(provider: str, tier: str) -> str:
@@ -103,24 +128,25 @@ def _norm_content(content):
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def chat(messages, *, json_mode: bool = False, max_tokens: int = 1024,
-         temperature: float | None = None, model_tier: str = "reasoning") -> str:
+         temperature: float | None = None, model_tier: str = "reasoning",
+         json_schema: dict | None = None) -> str:
     """Run a chat/vision completion on the configured provider. Returns text."""
     provider = _provider()
     model = _model_for(provider, model_tier)
     if provider == "openai":
-        return _openai_chat(messages, model, json_mode, max_tokens, temperature)
+        return _openai_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
     if provider == "bedrock":
-        return _bedrock_chat(messages, model, json_mode, max_tokens, temperature)
+        return _bedrock_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
     if provider == "gemini":
-        return _gemini_chat(messages, model, json_mode, max_tokens, temperature)
+        return _gemini_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
     raise RuntimeError(f"Unknown LLM_PROVIDER '{provider}' (use openai|bedrock|gemini)")
 
 
 # ── OpenAI backend (default; behaviour-identical to prior code) ───────────────
 
-def _openai_chat(messages, model, json_mode, max_tokens, temperature) -> str:
-    from openai import OpenAI
-    client = OpenAI()
+def _openai_chat(messages, model, json_mode, max_tokens, temperature,
+                 json_schema=None) -> str:
+    client = _openai_client()
 
     oai_msgs = []
     for m in messages:
@@ -138,7 +164,14 @@ def _openai_chat(messages, model, json_mode, max_tokens, temperature) -> str:
         oai_msgs.append({"role": m["role"], "content": content})
 
     kwargs = {"model": model, "messages": oai_msgs, "max_tokens": max_tokens}
-    if json_mode:
+    if json_schema:
+        # Structured outputs: the schema is ENFORCED — no truncated/invalid JSON.
+        kwargs["response_format"] = {"type": "json_schema", "json_schema": {
+            "name": json_schema.get("name", "response"),
+            "schema": json_schema["schema"],
+            "strict": True,
+        }}
+    elif json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     if temperature is not None:
         kwargs["temperature"] = temperature
@@ -148,15 +181,15 @@ def _openai_chat(messages, model, json_mode, max_tokens, temperature) -> str:
 
 # ── Bedrock backend (Claude via Converse; IAM, no API key) ────────────────────
 
-def _bedrock_chat(messages, model, json_mode, max_tokens, temperature) -> str:
-    import boto3
+def _bedrock_chat(messages, model, json_mode, max_tokens, temperature,
+                  json_schema=None) -> str:
     # Bedrock region is decoupled from the app's AWS_REGION: Claude may not be
     # available where the app runs (e.g. ap-south-1). Precedence:
     #   BEDROCK_REGION env  >  config/llm.json bedrock.region  >  AWS_REGION  >  us-east-1
     region = (os.environ.get("BEDROCK_REGION")
               or (_config().get("bedrock", {}) or {}).get("region")
               or os.environ.get("AWS_REGION", "us-east-1"))
-    client = boto3.client("bedrock-runtime", region_name=region)
+    client = _bedrock_client(region)
 
     # Converse: system messages go in a separate `system` list; messages only
     # carry user/assistant roles with content blocks.
@@ -178,7 +211,11 @@ def _bedrock_chat(messages, model, json_mode, max_tokens, temperature) -> str:
         conv_msgs.append({"role": m["role"], "content": blocks})
 
     # Claude has no response_format — instruct JSON via a system directive.
-    if json_mode:
+    if json_schema:
+        system_blocks.append({"text": "Respond with ONLY valid JSON matching exactly this "
+                                      f"JSON Schema (no prose, no code fences):\n"
+                                      f"{json.dumps(json_schema['schema'])}"})
+    elif json_mode:
         system_blocks.append({"text": "Respond with ONLY valid JSON. No prose, no code fences."})
 
     inference = {"maxTokens": max_tokens}
@@ -196,7 +233,8 @@ def _bedrock_chat(messages, model, json_mode, max_tokens, temperature) -> str:
 
 # ── Gemini backend ────────────────────────────────────────────────────────────
 
-def _gemini_chat(messages, model, json_mode, max_tokens, temperature) -> str:
+def _gemini_chat(messages, model, json_mode, max_tokens, temperature,
+                 json_schema=None) -> str:
     import google.generativeai as genai
     from PIL import Image
     import io
@@ -222,8 +260,13 @@ def _gemini_chat(messages, model, json_mode, max_tokens, temperature) -> str:
     gen_cfg = {"max_output_tokens": max_tokens}
     if temperature is not None:
         gen_cfg["temperature"] = temperature
-    if json_mode:
+    if json_mode or json_schema:
         gen_cfg["response_mime_type"] = "application/json"
+    if json_schema:
+        # Gemini's typed response_schema rejects plain JSON Schema dicts on some
+        # SDK versions — inject as an instruction instead (mime type still set).
+        parts.insert(0, "Respond with ONLY valid JSON matching exactly this JSON Schema:\n"
+                        + json.dumps(json_schema["schema"]))
 
     resp = gmodel.generate_content(parts, generation_config=gen_cfg)
     return resp.text
