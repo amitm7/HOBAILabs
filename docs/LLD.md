@@ -323,6 +323,19 @@ Results stored in `frame["suggestions"]`. UI renders them as clickable chips bel
 the relevant input boxes. Clicking a chip fills the box but leaves it fully editable —
 not locked.
 
+**Vision-grounded per-frame suggestion** — `suggest_from_image(image_path, caption, options) -> {camera, note}`.
+The chips above are *text-only* (no image exists at parse). Once a still exists, this
+**looks at the actual frame** (fast-tier vision call) and returns the single best camera
+move (snapped to `CAMERA_MOVES`, the UI dropdown vocabulary) + one director note.
+**Triggered** per-frame from the UI (`POST /suggest-frame`, not automatic) and **cached**
+by `MD5(image bytes + caption)` in `~/.hob_cache/frame_suggestions.db`, so re-clicks never
+re-pay. Image edits are deliberately NOT suggested (operator's creative call). Returns `{}`
+on any failure → UI no-op. The route validates the client-sent still path via `_path_allowed`.
+
+UI: **camera is a dropdown** (pre-selected to the AI's auto pick from `auto_director`), and
+the **✨ Suggest from image** button (post-Preview, in the frame-iter row) sets that dropdown
++ offers the note as an apply-or-discard chip.
+
 ---
 
 ## 9. `safety.py` — safety gates
@@ -529,6 +542,7 @@ The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 | `/` | GET | Story mode UI shell |
 | `/brand` | GET | Brand / Ad mode UI shell |
 | `/parse-script` | POST | `parse_frame_script` → frame cards + cast + suggestion chips |
+| `/suggest-frame` | POST | Vision-grounded per-frame suggestion (`suggest_from_image`) → best camera + director note; validates the still path, cached, no-op on failure |
 | `/preview` , `/preview-result/<run_id>` | POST/GET | Generate stills only (fast iteration); brand-safe critique if `is_brand` |
 | `/api/estimate` | POST | Server-side cost estimate (no client-side cost logic) |
 | `/pricing` , `/models` , `/voices` | GET | Expose `pricing.json`, `model_router.catalog()`, ElevenLabs voices |

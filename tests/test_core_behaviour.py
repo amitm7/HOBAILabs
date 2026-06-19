@@ -245,6 +245,19 @@ Full social caption.
             apply_brand_overlay(src, out, watermark_path=wm, width=108, height=192)
             self.assertTrue(os.path.exists(out) and os.path.getsize(out) > 1000)
 
+    def test_vision_suggest_degrades_and_route_validates(self):
+        from agents.suggestions import suggest_from_image, CAMERA_MOVES
+        # No image / missing file → {} (caller treats as no-op), never raises.
+        self.assertEqual(suggest_from_image("", "caption"), {})
+        self.assertEqual(suggest_from_image("/no/such/file.jpg", "caption"), {})
+        self.assertIn("static", CAMERA_MOVES)
+        # Route rejects a missing/​disallowed still path with 400 (no LLM spend).
+        with app.test_client() as client:
+            r = client.post("/suggest-frame", json={"image_path": "/etc/passwd", "caption": "x"})
+            self.assertEqual(r.status_code, 400)
+            r2 = client.post("/suggest-frame", json={"caption": "x"})
+            self.assertEqual(r2.status_code, 400)
+
     def test_fcpxml_and_srt_handoff(self):
         import xml.etree.ElementTree as ET
         from agents.fcpxml import build_fcpxml, build_srt

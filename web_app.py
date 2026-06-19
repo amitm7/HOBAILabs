@@ -473,6 +473,23 @@ def get_pricing():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/suggest-frame", methods=["POST"])
+def suggest_frame():
+    """Vision-grounded suggestion for ONE frame (triggered post-Preview): looks at
+    the generated still + caption → {camera, note}. Cached by image. The client
+    sends the still's path (from Preview); we validate it against allowed roots."""
+    data = request.json or {}
+    image_path = (data.get("image_path") or "").strip()
+    caption = data.get("caption", "")
+    if not image_path or not _path_allowed(image_path) or not os.path.exists(image_path):
+        return jsonify({"error": "No still for this frame yet — run Preview Stills first."}), 400
+    try:
+        from agents.suggestions import suggest_from_image
+        return jsonify(suggest_from_image(image_path, caption))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/ips")
 def get_ips():
     """HOB IP/property list for the watermark dropdown (both modes)."""

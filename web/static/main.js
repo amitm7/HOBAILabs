@@ -11,6 +11,24 @@ let parsedCast = [];            // [{id, label, gender, age_bracket}] from /pars
 let speakerVoices = {};         // speaker_id → ElevenLabs voice_id (Cast voices panel)
 let frameApprovals = {};        // frame_id → bool (approval gate; default approved)
 let previewReady = false;       // true once Preview Stills has produced images
+let framePreviewPath = {};      // frame_id → still server-path (for vision suggest)
+
+// Camera vocabulary for the per-frame dropdown (matches agents/suggestions.CAMERA_MOVES).
+const CAMERA_MOVES = [
+  'static', 'slow push in', 'dolly in', 'dolly out', 'crane up', 'crane down',
+  'tilt up', 'tilt down', 'arc left', 'arc right', '360 orbit', 'crash zoom in',
+  'crash zoom out', 'overhead', 'dutch angle', 'Hitchcock zoom',
+  'extreme close on eyes', 'handheld', 'bullet time', 'super 8mm', 'whip pan',
+];
+function cameraSelectHtml(f) {
+  const cur = (f.motion_override || '').trim();
+  let opts = CAMERA_MOVES.slice();
+  if (cur && !opts.includes(cur)) opts = [cur, ...opts];   // preserve a custom/auto pick
+  const optHtml = ['<option value="">✨ Auto (AI chooses at render)</option>']
+    .concat(opts.map(m => `<option value="${escHtml(m)}" ${m === cur ? 'selected' : ''}>${escHtml(m)}</option>`))
+    .join('');
+  return `<select id="motion-${f.frame_id}" class="camera-select" style="font-size:13px">${optHtml}</select>`;
+}
 let postingCaption = '';        // Format B Caption: block for story-mode posting kit
 
 // Live per-frame override setter (used by brand.js, which is a separate script).
@@ -292,6 +310,7 @@ el('parse-btn').addEventListener('click', async () => {
     speakerVoices = {};
     frameApprovals = {};
     previewReady = false;
+    framePreviewPath = {};
     renderCastPanel(parsedCast);
     renderFrameCards(parsedFrames);
     renderPostingKitPanel();
@@ -599,6 +618,7 @@ function renderFrameCards(frames) {
         <div class="frame-iter-row" id="iter-${f.frame_id}" style="display:none">
           <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}">🔄 Redo still</button>
           <button type="button" class="btn-secondary btn-small redo-motion-btn" data-frame="${f.frame_id}">Redo motion</button>
+          <button type="button" class="btn-secondary btn-small suggest-frame-btn" data-frame="${f.frame_id}" title="Look at this frame's image and suggest the best camera move + director note">✨ Suggest from image</button>
           <label class="approval-toggle" data-frame="${f.frame_id}" title="Untick to skip paid animation — this frame uses free Ken Burns instead">
             <input type="checkbox" class="approval-cb" data-frame="${f.frame_id}" checked>
             <span class="approval-label">✓ Approved for animation</span>
@@ -665,13 +685,10 @@ function renderFrameCards(frames) {
         ${suggestionChips(f.suggestions?.edits, 'edit-' + f.frame_id)}
 
         <div class="director-note-row" style="margin-top:6px">
-          <input type="text"
-            placeholder="🎥 Camera motion (optional): e.g. 360 orbit, dolly in, crash zoom, crane up, bullet time"
-            id="motion-${f.frame_id}" value="${escHtml(f.motion_override || '')}"
-            style="border-color: ${f.motion_override ? '#a78bfa' : ''}">
-          ${f.camera_auto ? `<span style="font-size:11px;color:#a78bfa;white-space:nowrap">✨ auto: ${f.camera_reason || 'chosen for you'} — edit to change</span>` : ''}
+          <label style="font-size:12px;color:var(--text-dim);min-width:70px">🎥 Camera</label>
+          ${cameraSelectHtml(f)}
+          ${f.camera_auto ? `<span style="font-size:11px;color:#a78bfa;white-space:nowrap">✨ auto: ${f.camera_reason || 'best for this beat'}</span>` : ''}
         </div>
-        ${suggestionChips(f.suggestions?.camera, 'motion-' + f.frame_id)}
 
         ${isSilent ? '' : `
         <div class="caption-style-row" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -744,6 +761,8 @@ function renderFrameCards(frames) {
     if (redoBtn) redoBtn.addEventListener('click', () => redoStill(f.frame_id, redoBtn));
     const redoMotionBtn = card.querySelector('.redo-motion-btn');
     if (redoMotionBtn) redoMotionBtn.addEventListener('click', () => redoMotion(f.frame_id, redoMotionBtn));
+    const suggestBtn = card.querySelector('.suggest-frame-btn');
+    if (suggestBtn) suggestBtn.addEventListener('click', () => suggestFromImage(f.frame_id, suggestBtn));
 
     // Approval toggle: untick → frame uses free Ken Burns instead of paid animation.
     const apprCb = card.querySelector('.approval-cb');
@@ -1069,6 +1088,7 @@ function applyPreviewStills(stills) {
     const frame = parsedFrames.find(f => f.frame_id === s.frame_id);
     if (frame && s.exists) {
       frame.visual_path = s.path;
+      framePreviewPath[s.frame_id] = s.path;   // for the ✨ vision suggest button
     }
     const prev = el(`preview-${s.frame_id}`);
     if (prev && s.exists) {
@@ -1106,6 +1126,53 @@ async function redoStill(frameId, btn) {
     alert('Redo error: ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Redo still'; }
+  }
+}
+
+// Vision-grounded per-frame suggestion (post-Preview, triggered, cached server-side).
+// Looks at THIS frame's still → sets the best camera in the dropdown + offers a
+// director-note chip to apply or ignore. Image edits stay the operator's call.
+async function suggestFromImage(frameId, btn) {
+  const f = parsedFrames.find(x => x.frame_id === frameId);
+  const imgPath = framePreviewPath[frameId] || f?.visual_path;
+  if (!imgPath) { alert("Run 👁 Preview Stills first — there's no image to look at yet."); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Looking…'; }
+  try {
+    const res = await post('/suggest-frame', { image_path: imgPath, caption: f?.caption || '' });
+    if (res.error) { alert(res.error); return; }
+    // Best camera → straight into the dropdown (user can still alter it).
+    if (res.camera) {
+      const sel = el(`motion-${frameId}`);
+      if (sel) {
+        if (![...sel.options].some(o => o.value === res.camera)) sel.add(new Option(res.camera, res.camera));
+        sel.value = res.camera;
+        sel.style.outline = '2px solid #a78bfa';
+        setTimeout(() => { sel.style.outline = ''; }, 1500);
+      }
+    }
+    // Director note → a chip the operator can click to apply (then edit) or ignore (discard).
+    if (res.note) {
+      const noteInput = el(`note-${frameId}`);
+      let row = el(`vsug-${frameId}`);
+      if (!row && noteInput) {
+        row = document.createElement('div');
+        row.id = `vsug-${frameId}`;
+        row.className = 'sug-row';
+        noteInput.parentElement.insertAdjacentElement('afterend', row);
+      }
+      if (row) {
+        row.innerHTML = `<span class="sug-chip" title="Click to use (then edit), or ignore to discard">✨ ${escHtml(res.note)}</span>`;
+        row.querySelector('.sug-chip').addEventListener('click', () => {
+          if (noteInput) { noteInput.value = res.note; noteInput.dispatchEvent(new Event('input')); }
+          row.remove();
+        });
+      }
+    }
+    if (!res.camera && !res.note) alert('No suggestion returned for this frame.');
+  } catch (e) {
+    alert('Suggest error: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Suggest from image'; }
   }
 }
 

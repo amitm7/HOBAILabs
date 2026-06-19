@@ -359,11 +359,12 @@ Each row top-to-bottom: pick the **source**, then optionally add a **director no
 - Free text instruction for the AI director (GPT)
 - Affects: what to generate, how to animate, the emotional tone
 - Most powerful field in the UI — see [Section 6](#6-director-notes--how-to-write-them)
+- **Suggestions:** clickable chips appear below it; click one to fill (then edit), or ignore. After Preview, the **✨ Suggest from image** button proposes an image-aware note as a chip you apply or discard.
 
-### 🎥 Camera Motion Field
-- Type a camera move in plain English: `360 orbit`, `crane up`, `dolly in`, `crash zoom`
-- Box border turns **purple** when filled
-- Leave blank → the AI director picks the motion automatically from the emotion
+### 🎥 Camera Motion (dropdown)
+- A **dropdown**, not a text box — pick the camera move; **no typing**. It's **pre-set to the AI's best pick** for that beat (shown with a ✨ auto note).
+- Change it any time by choosing another move from the list (`360 orbit`, `crane up`, `dolly in`, `crash zoom`, `static`, …). Leave it on **✨ Auto** to let the director choose at render.
+- **✨ Suggest from image** (after Preview Stills): looks at the actual generated still + caption and sets the dropdown to the best move for *what's really in the frame* — you can still change it.
 - Full list and meanings — see [Section 7](#7-camera-angles--motion)
 
 ### 🎙 Lip Sync Toggle
