@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOBAILabs — Brand / Ad Mode</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>HOBAILabs</h1>
+  <span>Brand / Ad Mode — <a href="/" style="color:var(--accent2,#6cf)">↩ Story mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
+</header>
+
+<main>
+
+  <!-- ── Brand brief ─────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Brand brief</h2></div>
+    <div class="card-body">
+      <div class="box" style="margin-bottom:12px">
+        <b>You supply all ad copy &amp; claims.</b> The AI never writes or rephrases
+        marketing claims — it only helps with visuals. Paste the brand's brief to
+        pre-fill the fields, then edit anything.
+      </div>
+      <div class="field">
+        <label>Paste the brand brief (optional)</label>
+        <textarea id="b-paste" rows="4" placeholder="Paste the brand's brief here…"></textarea>
+        <button class="btn-secondary btn-small" id="b-extract" style="margin-top:6px">Extract fields →</button>
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="field"><label>Brand name</label><input id="b-name" type="text" placeholder="Enter the brand name"></div>
+        <div class="field"><label>Product</label><input id="b-product" type="text" placeholder="e.g. cooking oil, skincare cream"></div>
+        <div class="field"><label>Objective</label><input id="b-objective" type="text" placeholder="e.g. product awareness, trial drive"></div>
+        <div class="field"><label>Key message</label><input id="b-key" type="text" placeholder="Brand's exact words — copied verbatim, not rephrased"></div>
+        <div class="field"><label>Call-to-action text <span class="text-dim">(required)</span></label><input id="b-cta" type="text" placeholder="e.g. Try it now · Shop the link"></div>
+        <div class="field"><label>CTA link</label><input id="b-url" type="text" placeholder="Link in bio (optional)"></div>
+        <div class="field"><label>Tagline</label><input id="b-tagline" type="text" placeholder="Brand tagline (optional)"></div>
+        <div class="field"><label>Brand colour (hex)</label><input id="b-color" type="text" placeholder="#hex colour (optional)"></div>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Announcer / voice-over script <span class="text-dim">(brand-supplied; read over the music)</span></label>
+        <textarea id="b-announcer" rows="3" placeholder="Enter the exact line(s) the announcer will say — brand-supplied, read aloud as-is"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Brand kit / assets ──────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Brand kit &amp; assets <span class="text-dim" style="font-size:13px">(real-only — never AI-generated)</span></h2></div>
+    <div class="card-body">
+      <div class="settings-row">
+        <div class="field" style="flex:1">
+          <label>Logo <span class="text-dim">(required)</span></label>
+          <label class="upload-label">📁 Choose logo<input id="b-logo-input" type="file" accept="image/*"></label>
+          <span id="b-logo-status" style="font-size:12px"></span>
+        </div>
+        <div class="field" style="flex:1">
+          <label>Product shots <span class="text-dim">(real photos/clips)</span></label>
+          <label class="upload-label">📁 Choose product files<input id="b-product-input" type="file" accept="image/*,video/*" multiple></label>
+          <span id="b-product-status" style="font-size:12px"></span>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="b-logobug"> Show a small logo in the corner for the whole video
+      </label>
+      <div class="field" style="margin-top:6px;max-width:200px">
+        <label>Logo corner</label>
+        <select id="b-logo-corner">
+          <option value="tr">Top-right</option><option value="tl">Top-left</option>
+          <option value="br">Bottom-right</option><option value="bl">Bottom-left</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Audio (per-project) ─────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Audio</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Announcer voice-over</label>
+        <label><input type="radio" name="vo-mode" value="ai_draft" checked> AI announcer (draft) — reads your script</label><br>
+        <label><input type="radio" name="vo-mode" value="brand_audio"> Brand-supplied VO audio (final)</label>
+        <div id="b-vo-upload" style="display:none;margin-top:6px">
+          <label class="upload-label">📁 Choose VO audio<input id="b-vo-input" type="file" accept="audio/*"></label>
+          <span id="b-vo-status" style="font-size:12px"></span>
+        </div>
+        <input id="b-vo-voice" type="text" placeholder="ElevenLabs voice ID (optional — leave blank to use default)"
+               style="margin-top:6px;font-size:12px">
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Background music</label>
+        <label><input type="radio" name="music-mode" value="ai" checked> AI music (auto-composed)</label><br>
+        <label><input type="radio" name="music-mode" value="brand_audio"> Brand-supplied music (cleared rights)</label>
+        <div id="b-music-upload" style="display:none;margin-top:6px">
+          <label class="upload-label">📁 Choose music<input id="b-music-input" type="file" accept="audio/*"></label>
+          <span id="b-music-status" style="font-size:12px"></span>
+        </div>
+      </div>
+      <div class="box" style="margin-top:10px">The announcer plays <b>over</b> the background music (music ducks underneath).</div>
+    </div>
+  </div>
+
+  <!-- ── Subject (optional) ──────────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>People <span class="text-dim" style="font-size:13px">(optional)</span></h2></div>
+    <div class="card-body grid-2">
+      <div class="field"><label>Name <span class="text-dim">(optional)</span></label><input type="text" id="subject-name" placeholder="Leave blank to infer"></div>
+      <div class="field"><label>Description <span class="text-dim">(optional)</span></label><input type="text" id="subject-description" placeholder="e.g. home cook, 30s"></div>
+    </div>
+  </div>
+
+  <!-- ── Script + assets (shared engine) ─────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Ad script (beats)</h2>
+      <button class="btn-secondary btn-small" id="parse-btn">Parse Frames →</button>
+    </div>
+    <div class="card-body">
+      <div class="assets-folder-row">
+        <div class="assets-folder-icon">📁</div>
+        <div style="flex:1">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+            <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">📁 Browse folder…</button>
+            <button type="button" class="btn-secondary btn-small" id="browse-server-btn">🗂 Server folder…</button>
+            <input type="text" id="assets-dir" style="flex:1;min-width:220px" placeholder="Lifestyle photos/videos folder (optional)">
+          </div>
+          <div id="server-browser" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+              <button type="button" class="btn-secondary btn-small" id="sb-up">⬆ Up</button>
+              <code id="sb-path" style="flex:1;overflow-wrap:anywhere"></code>
+              <span id="sb-media-count" style="color:var(--text-dim);white-space:nowrap"></span>
+            </div>
+            <div id="sb-dirs" style="max-height:180px;overflow-y:auto;margin-bottom:8px"></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn-primary btn-small" id="sb-use">✓ Use this folder</button>
+              <button type="button" class="btn-secondary btn-small" id="sb-close">Close</button>
+            </div>
+          </div>
+          <small>Each beat's caption is the brand-supplied on-screen line. Tick 🛍 Product beat on the shots that show the real product.</small>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="smart-match"> 🤖 Smart-match images (AI)</label>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="multi-shot"> 🎞 Multi-shot coverage</label>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="face-ref"> 👤 Consistent face</label>
+        </div>
+        <span id="assets-status"></span>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <textarea id="script-input" placeholder="One beat per Frame. The caption is the on-screen line (brand-supplied).
+
+Reels
+
+Frame 1
+[lifestyle scene — brand's opening line here]
+
+Frame 2
+[claim or message — brand's exact words]
+
+Frame 3
+[product shot — tick 🛍 Product beat on the card after parsing]"></textarea>
+        <small>Mark product shots with 🛍 on the frame card after parsing.</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Mandatories (hard-block) ────────────────────────── -->
+  <div id="b-mandatories" class="card" style="display:none;border-color:var(--red,#b91c1c)"></div>
+
+  <!-- ── Frame cards (shared) ────────────────────────────── -->
+  <div class="card" id="frames-card" style="display:none">
+    <div class="card-header">
+      <h2>Beats</h2>
+      <div class="dur-controls">
+        <span class="text-dim" id="frames-count"></span>
+        <div class="dur-target-row">
+          <label class="text-dim">Target length</label>
+          <div class="dur-presets">
+            <button class="dur-preset-btn" data-sec="15">15s</button>
+            <button class="dur-preset-btn" data-sec="30">30s</button>
+            <button class="dur-preset-btn" data-sec="0">Auto</button>
+          </div>
+          <input type="number" id="target-sec" placeholder="custom s" min="10" max="120" step="5">
+          <button class="btn-secondary btn-small" id="redistribute-btn">Apply →</button>
+          <span id="total-dur-display"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="cast-panel" style="display:none;margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px"></div>
+      <div id="frames-container"></div>
+    </div>
+  </div>
+
+  <!-- ── Style & Quality (shared) ────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>Style &amp; Quality</h2></div>
+    <div class="card-body">
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="field"><label>Mood / Palette</label>
+          <select id="mood">
+            <option value="">Default</option>
+            <option value="warm nostalgic">Warm Nostalgic</option>
+            <option value="cold struggle">Cold Struggle</option>
+            <option value="triumphant">Triumphant</option>
+          </select></div>
+        <div class="field"><label>Orientation</label>
+          <select id="orientation">
+            <option value="portrait">Portrait 1080×1920</option>
+            <option value="landscape">Landscape 1920×1080</option>
+          </select></div>
+        <div class="field"><label>Quality</label>
+          <select id="quality">
+            <option value="dev">Dev — fast/cheap</option>
+            <option value="production">Production</option>
+          </select></div>
+        <div class="field"><label>Image Model</label><select id="image-model"><option value="auto">Auto</option></select></div>
+        <div class="field"><label>Video Model</label><select id="video-model"><option value="auto">Auto</option><option value="kenburns">Ken Burns (free)</option></select></div>
+        <div class="field"><label>Kling Mode</label><select id="kling-mode"><option value="pro">Pro</option><option value="std">Standard</option></select></div>
+        <div class="field"><label>Transition</label><select id="transition"><option value="crossfade">Crossfade</option><option value="none">Hard Cut</option></select></div>
+        <div class="field"><label>Caption Position <span class="text-dim">(default — override per frame)</span></label><select id="caption-position"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select></div>
+        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="caption-enabled" checked> Burn captions</label></div>
+        <div class="field"><label>Max lines per caption <span class="text-dim">(default)</span></label><select id="caption-max-lines"><option value="0">No limit</option><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option></select></div>
+      </div>
+      <div class="settings-row">
+        <div class="field" style="flex:2"><label>Caption Font</label>
+          <select id="caption-font">
+            <option value="Montserrat">Montserrat (modern)</option>
+            <option value="Satoshi">Satoshi (needs licensed file)</option>
+            <option value="Baskerville">Baskerville</option>
+            <option value="Arial">Arial</option>
+          </select></div>
+        <div class="field" style="flex:1"><label>Font Size</label><input type="number" id="caption-size" value="62" min="24" max="96" step="2"></div>
+        <div class="field" style="flex:1"><label>Colour</label><select id="caption-color"><option value="white">White</option><option value="yellow">Yellow</option><option value="black">Black</option></select></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden music stub: brand audio is handled above; this keeps the shared
+       main.js bindings happy (it expects these elements + a checked music-type). -->
+  <div style="display:none">
+    <input type="radio" name="music-type" value="none" checked>
+    <input type="file" id="music-file-input">
+    <button id="generate-music-btn"></button>
+    <span id="music-upload-name"></span><span id="music-gen-status"></span>
+    <input id="music-prompt"><audio id="music-preview"></audio>
+    <div id="upload-music-sub"></div><div id="generate-music-sub"></div>
+    <div id="voiceover-sub"></div><select id="voice-select"></select><span id="voice-load-status"></span>
+  </div>
+
+  <!-- ── Cost ────────────────────────────────────────────── -->
+  <div class="card" id="cost-card" style="display:none">
+    <div class="card-header"><h2>💰 Estimated Cost</h2><span id="cost-updated" style="font-size:11px;color:var(--text-dim)"></span></div>
+    <div class="card-body"><div id="cost-breakdown" style="font-family:monospace;font-size:13px;line-height:1.8"></div></div>
+  </div>
+
+  <!-- ── Preview + Run ───────────────────────────────────── -->
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button class="btn-secondary" id="preview-btn">👁 Preview Stills</button>
+    <button class="btn-primary" id="run-btn">▶ Generate Ad</button>
+  </div>
+  <div id="preview-status" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
+
+  <!-- ── Progress + Output ───────────────────────────────── -->
+  <div class="card" id="progress-panel">
+    <div class="card-header"><h2>Progress</h2><span id="progress-status" style="font-size:12px;color:var(--text-dim)"></span></div>
+    <div class="card-body"><div id="progress-log"></div></div>
+  </div>
+  <div class="card" id="output-panel">
+    <div class="card-header"><h2>Output</h2></div>
+    <div class="card-body">
+      <video id="output-video" controls playsinline></video>
+      <div class="output-actions">
+        <a id="download-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">⬇ Download .mp4</a>
+      </div>
+      <div class="box" style="margin-top:10px">Remember to set Instagram's native <b>Paid partnership</b> label when you post.</div>
+    </div>
+  </div>
+
+</main>
+
+<script>window.HOB_MODE = 'brand';</script>
+<script src="/static/main.js"></script>
+<script src="/static/brand.js"></script>
+</body>
+</html>

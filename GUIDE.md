@@ -202,21 +202,74 @@ A 10-word caption → 5.0s. A 20-word caption → 9.0s.
 
 ---
 
+## 3c. Brand / Ad Mode (`/brand`)
+
+A separate page for **branded collaborations and advertisements**, sharing the
+same engine (parse, scene intelligence, animation, captions, assembly) plus a
+brand layer. Open it from the **🛍 Brand / Ad mode** link in the header. See
+[docs/BRAND_PLAN.md](docs/BRAND_PLAN.md) for the full design.
+
+**What's different from story mode:**
+- **Brand brief** — fill the structured fields, or paste the brand's brief and
+  click *Extract fields →* to pre-fill them. **You supply all ad copy and claims;
+  the AI never writes or rephrases a marketing claim** (legal safety). Each beat's
+  caption is the brand-supplied on-screen line.
+- **Brand kit & assets** — upload the logo (required) and real product shots.
+  **Product/logo shots are real-only — never AI-generated.** Mark each product
+  shot with the **🛍 Product beat** toggle on its frame card.
+- **Audio** — per-project toggles: announcer VO = *AI draft* (reads your script)
+  or *brand-supplied audio* (final); background music = *AI* or *brand-supplied*.
+  The announcer plays **over** the music (music ducks underneath).
+- **Mandatories (hard-block)** — the ad will **not render** until it has: a logo,
+  CTA text, the sponsored disclosure, and at least one product beat. Missing items
+  are listed before any credits are spent.
+- **Output** — an auto **CTA end-card** (logo + tagline + CTA), a burned-in
+  *"Paid partnership with {brand}"* disclosure on the first ~3s, and an optional
+  corner logo bug. Remember to also set Instagram's native *Paid partnership* label.
+
+Bold animated/ kinetic on-screen text (price tags, badges, word-by-word callouts)
+and product picture-in-picture are **Phase B2** — B1 uses bold static captions as
+the on-screen text.
+
 ## 4. Web UI — Step by Step
 
-### Step 1: Subject
-- **Name**: Subject's first name — used in scene intelligence prompts ("design a shot of Lalita…")
-- **Description**: Physical description for AI portrait consistency across frames
-  - Example: `Rajasthani woman, 30s, strong features, sun-kissed skin, traditional clothing`
-  - Leave blank if using only real photos
+### Step 1: Subject (optional)
+- **Both fields are optional.** Leave them blank and the director **infers who is
+  on screen — their age, gender, and look — from the story itself.** There is no
+  default "stock person"; the story decides.
+- **Name**: the main subject's first name, if you want to pin it.
+- **Description**: physical description to steer AI portrait consistency (e.g.
+  `woman, 30s, strong features, traditional clothing`). Helps most with the
+  **Consistent face** toggle; safe to leave empty.
 
 ### Step 2: Paste Script + Set Assets Folder
 - **Script box**: Paste your Format B script
-- **Assets folder**: Full path to your photos/videos folder
-  - Example: `/Users/amitmishra/Downloads/lalita`
+- **Assets folder**: Full path to your photos/videos folder, or use **Browse
+  folder…** / **Server folder…**
   - Leave blank for AI-only generation
 - Click **Parse Frames →**
 - After parsing: check `✓ N photos matched` — this confirms auto-matching worked
+- On parse the app also **detects who speaks each beat** and **suggests** a camera
+  move, image edit, and director note per frame (see below).
+
+### Speakers & cast (multiple voices in one story)
+A story usually has one narrator, but a beat may **quote someone else** —
+*"My son asked, 'Mom, where is father gone?'"*. The app reads the script and tags
+that beat with the **right speaker**, so it shows the **kid's face** (correct
+gender/age) and, when lip-sync or voice-over is on, the **kid's voice** — not the
+narrator's.
+- When more than one speaker is found, each frame card gets a **🎭 Speaker**
+  dropdown — change it if a line was attributed wrong.
+- A **🎭 Cast voices** panel appears above the frames: pick an ElevenLabs voice
+  per speaker (optional; otherwise voices fall back by gender/age, then to your
+  global voice). An explicit `[voice: id]` in the script always wins.
+- CLI: speaker detection is on by default; pass `--no-speakers` to disable.
+
+### Pickable suggestions (you can always edit)
+After parsing, each frame card shows small **clickable chips** under the **camera
+move**, **image edit**, and **director note** fields. Click one to fill that field
+— then edit it freely, or ignore the chips and type your own. Nothing is applied
+automatically; they're just a starting point so you don't face a blank box.
 
 ### Step 3: Frame Assignment
 See [Section 5](#5-frame-assignment--all-options) for full details.
@@ -239,8 +292,18 @@ The **💰 Estimated Cost** panel appears after parsing. Shows a per-category br
 ### Step 8: Generate
 - Click **▶ Generate Video**
 - Watch the progress log — each step is logged in real time
+- **Clips appear in each frame card as they finish** (progressive reveal) — you don't wait for the whole render
 - Video plays automatically when done
 - Click **⬇ Download .mp4** to save
+
+### Step 7b: Iterate without re-rendering (after Preview Stills)
+
+Once you've clicked **👁 Preview Stills**, each frame card gains two controls so you can steer the output instead of re-rendering blindly:
+
+- **🔄 Redo still** — change a frame's note/photo/edit/camera, click 🔄, and *only that one image* regenerates (cache-aware, a few seconds, no animation spend). It swaps into the card; nothing else is touched.
+- **✓ Approved for animation** — ticked by default. Untick frames you're not happy with: on Generate, approved frames get full AI animation while unticked frames fall back to **free Ken Burns**, so the video still assembles complete. The **cost estimate drops** as you untick frames.
+
+Recommended loop: **Preview Stills → 🔄 fix the images you don't like → untick the frames you're unsure about → Generate in Dev → watch clips appear live.** Approve more frames on the next pass. This is the cheap way to test direction — you're never forced to pay for every frame at once.
 
 ---
 
@@ -541,10 +604,27 @@ Applied on top of every AI-generated image prompt:
 ### Caption Styling
 | Setting | Options | Recommendation |
 |---|---|---|
-| **Font** | Baskerville, Arial, Georgia, Helvetica | Baskerville for storytelling |
+| **Burn captions** | On / Off | Off = clean video, no subtitles burned (voice-over still plays if enabled) |
+| **Font** | Baskerville, **Montserrat**, Satoshi*, Arial, Georgia, Helvetica | Baskerville for storytelling; Montserrat for modern/clean |
 | **Size** | 24–96 pt | 52 default; 60–70 for dramatic |
 | **Color** | White, Yellow, Black | White — always readable |
-| **Position** | Bottom, Middle, Top | Bottom for Reels standard |
+| **Position** *(default)* | Bottom, Middle, Top | Bottom for Reels standard |
+| **Max lines per caption** *(default)* | No limit, 1, 2, 3 | 1–2 keeps captions clean; long text auto-shrinks to fit |
+
+**Captions are optional and per-frame-controllable** (story **and** brand mode):
+- **Burn captions** toggle (global) — turn all on-screen subtitles off for a clean cut.
+- **Position** and **Max lines** in *Style & Quality* are the **global defaults**.
+- Every captioned frame card has a **💬 Caption** row with its own **Position** and **Lines**
+  dropdowns. Set them to override just that frame (e.g. push a caption to **Top** when the
+  face sits low in the shot, or force a hero line to **1 line**). Leave on "default" to
+  inherit the global setting.
+- **Max lines** caps the line count; if a caption is too long the **font auto-shrinks**
+  (to ~60% of the base size) so it fits without overflowing — nothing is truncated.
+
+\* **Satoshi** is a commercial font (free for personal use; commercial/hosted use
+needs an Indian Type Foundry license). It is **not bundled** — drop a licensed
+`Satoshi-Regular.ttf` into `deploy/fonts/` and rebuild to enable it; until then it
+falls back to the system default. **Montserrat** ships with the app (OFL).
 
 ---
 
@@ -635,7 +715,12 @@ Modern Indian cinematic, emotional flashback, piano with sitar
 - Each frame's caption text is read aloud in the selected voice
 - Silent frames get silence (no audio gap)
 - Requires ElevenLabs credits
-- Choose voice from the dropdown (loads from your ElevenLabs account)
+- Choose the **narrator** voice from the dropdown (loads from your ElevenLabs account)
+- **Per-speaker voices:** when the script has more than one speaker, the **🎭 Cast
+  voices** panel lets a quoted line be read in a different voice (the kid, the
+  father). Unassigned speakers fall back by gender/age, then to the narrator voice.
+- Leave the music/voice-over prompt **empty** to auto-compose a Suno brief from the
+  story (genre + instruments + emotion arc); or type your own.
 
 ---
 
@@ -658,7 +743,8 @@ Run from the project root with the venv Python:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--subject NAME` | `the subject` | Subject name for scene intelligence | 
+| `--subject NAME` | _(empty)_ | Optional subject name/description; leave empty to let the director infer who's on screen from the story | 
+| `--no-speakers` | off | Disable per-line speaker/cast detection (every beat becomes the narrator) |
 | `--output PATH` | `output/caption_video.mp4` | Output file path |
 | `--music PATH` | None | Path to background music MP3 |
 | `--provider` | `kling` | Legacy global provider used as router fallback: `kling`, `higgsfield`, `kenburns` |

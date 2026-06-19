@@ -110,7 +110,7 @@ def estimate(frames: list[dict], kling_mode: str = "standard",
              voice_chars: int = 0, provider: str = "kling",
              skip_scene_ai: bool = False, cost_tier: str = "",
              image_model: str = "auto", video_model: str = "auto",
-             multi_shot: bool = False) -> dict:
+             multi_shot: bool = False, approved_ids: set | None = None) -> dict:
     """
     Estimate total render cost across the WHOLE pipeline.
 
@@ -173,7 +173,11 @@ def estimate(frames: list[dict], kling_mode: str = "standard",
         if not is_video and (spec.startswith("ai_") or vpath):
             vid_model = model_router.select_model(
                 "video", f, tier, override=f.get("video_model_override", "") or g_vid)
-            if provider == "kenburns" and not (f.get("video_model_override") or g_vid):
+            # Approval gate: unapproved frames fall back to free Ken Burns, so they
+            # contribute no animation cost (mirrors web_app._video_model_for).
+            if approved_ids is not None and f.get("frame_id") not in approved_ids:
+                pass  # unapproved → free Ken Burns
+            elif provider == "kenburns" and not (f.get("video_model_override") or g_vid):
                 pass  # explicit Ken Burns, free
             elif vid_model:
                 from agents.coverage import MAX_EXTRA, split_durations

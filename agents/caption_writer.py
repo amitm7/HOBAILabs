@@ -42,6 +42,37 @@ def _wrap_text(text: str, max_chars: int = 28) -> str:
     return r"\N".join(lines)
 
 
+def _max_chars_for(size: int) -> int:
+    """Characters per line that fit at a given font size (28 chars at 52pt)."""
+    return max(12, int(28 * 52 / size))
+
+
+def _fit_caption(text: str, base_size: int, max_lines: int) -> tuple[str, int]:
+    """
+    Wrap `text` and pick a font size so it fits in at most `max_lines` lines.
+
+    max_lines<=0 → no cap: wrap at the base size (legacy behaviour).
+    Otherwise → cap at max_lines; if the text still overflows, shrink the font
+    (down to ~60% of base) so nothing is lost and it never spills the frame.
+    Returns (wrapped_text, font_size).
+    """
+    if not max_lines or max_lines <= 0:
+        return _wrap_text(text, _max_chars_for(base_size)), base_size
+
+    size  = base_size
+    floor = max(20, int(base_size * 0.6))
+    while size >= floor:
+        wrapped = _wrap_text(text, _max_chars_for(size))
+        if wrapped.count("\\N") + 1 <= max_lines:
+            return wrapped, size
+        size -= 2
+
+    # Floor reached and still over: force into exactly max_lines by widening the
+    # line length (longer lines beat invisible/overflowing text).
+    forced_chars = max(_max_chars_for(floor), (len(text) // max_lines) + 8)
+    return _wrap_text(text, forced_chars), floor
+
+
 def _build_ass_header(font: str, size: int, color: str, position: str,
                       play_res_x: int = 1080, play_res_y: int = 1920) -> str:
     alignment  = _ALIGNMENT.get(position, 2)
@@ -84,13 +115,11 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
     style = caption_style or {}
     # Default font is env-overridable so the Linux image can point at a font that
     # actually ships in it (HOB_CAPTION_FONT), while local macOS keeps Baskerville.
-    font     = style.get("font") or os.environ.get("HOB_CAPTION_FONT", "Baskerville")
-    size     = int(style.get("size", 52))
-    color    = style.get("color", "white")
-    position = style.get("position", "bottom")
-
-    # Wrap width scales inversely with font size so text fits the frame
-    max_chars = max(18, int(28 * 52 / size))
+    font       = style.get("font") or os.environ.get("HOB_CAPTION_FONT", "Baskerville")
+    size       = int(style.get("size", 52))
+    color      = style.get("color", "white")
+    g_position = style.get("position", "bottom")          # global default
+    g_max_lines = int(style.get("max_lines", 0) or 0)     # 0 = unlimited
 
     ass_path = srt_path.replace(".srt", ".ass") if srt_path.endswith(".srt") else srt_path + ".ass"
 
@@ -107,17 +136,29 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
             start = frame_start + fade_gap
             end   = frame_end - fade_gap
             if end > start:
-                entries.append((start, end, caption))
+                # Per-frame overrides fall back to the global defaults.
+                pos = (f.get("caption_position") or "").strip() or g_position
+                ml_raw = f.get("caption_max_lines")
+                try:
+                    ml = int(ml_raw) if ml_raw not in (None, "", 0, "0") else g_max_lines
+                except (TypeError, ValueError):
+                    ml = g_max_lines
+                wrapped, fs = _fit_caption(caption, size, ml)
+                align    = _ALIGNMENT.get(pos, 2)
+                margin_v = _MARGIN_V.get(pos, 100)
+                # Inline override: alignment per line (+ shrunk size when capped).
+                tag = f"{{\\an{align}" + (f"\\fs{fs}" if fs != size else "") + "}"
+                entries.append((start, end, margin_v, tag + wrapped))
         cursor += dur
 
     with open(ass_path, "w", encoding="utf-8") as fp:
-        fp.write(_build_ass_header(font, size, color, position))
-        for start, end, text in entries:
-            wrapped = _wrap_text(text, max_chars)
+        fp.write(_build_ass_header(font, size, color, g_position))
+        for start, end, margin_v, text in entries:
             fp.write(
                 f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},"
-                f"Main,,0,0,0,,{wrapped}\n"
+                f"Main,,0,0,{margin_v},,{text}\n"
             )
 
-    print(f"[CaptionWriter] {len(entries)} captions | {font} {size}pt {color} {position} → {ass_path}")
+    print(f"[CaptionWriter] {len(entries)} captions | {font} {size}pt {color} "
+          f"{g_position} | max_lines={g_max_lines or '∞'} → {ass_path}")
     return ass_path

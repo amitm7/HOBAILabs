@@ -10,7 +10,7 @@
 
 <header>
   <h1>HOBAILabs</h1>
-  <span>Story → Reel Pipeline</span>
+  <span>Story → Reel Pipeline — <a href="/brand" style="color:var(--accent2,#6cf)">🛍 Brand / Ad mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
 </header>
 
 <main>
@@ -20,13 +20,13 @@
     <div class="card-header"><h2>Subject</h2></div>
     <div class="card-body grid-2">
       <div class="field">
-        <label>Name</label>
-        <input type="text" id="subject-name" placeholder="Surabhi">
+        <label>Name <span class="text-dim">(optional)</span></label>
+        <input type="text" id="subject-name" placeholder="Leave blank to infer from the story">
       </div>
       <div class="field">
-        <label>Description <span class="text-dim">(for face consistency across AI frames)</span></label>
+        <label>Description <span class="text-dim">(optional — helps face consistency; leave blank and the story decides)</span></label>
         <input type="text" id="subject-description"
-          placeholder="Assamese woman, 28, humble background, warm brown skin, traditional features">
+          placeholder="e.g. woman, 28, humble background — or leave empty">
       </div>
     </div>
   </div>
@@ -120,6 +120,7 @@ Caption:
       </div>
     </div>
     <div class="card-body">
+      <div id="cast-panel" style="display:none;margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px"></div>
       <div id="frames-container"></div>
     </div>
   </div>
@@ -187,7 +188,7 @@ Caption:
           </select>
         </div>
         <div class="field">
-          <label>Caption Position</label>
+          <label>Caption Position <span class="text-dim">(default — override per frame)</span></label>
           <select id="caption-position">
             <option value="bottom">Bottom</option>
             <option value="middle">Middle</option>
@@ -196,11 +197,33 @@ Caption:
         </div>
       </div>
 
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="caption-enabled" checked>
+            Burn captions on the video
+          </label>
+          <small class="text-dim">Untick for a clean video with no on-screen subtitles. (Voice-over, if on, still plays.)</small>
+        </div>
+        <div class="field">
+          <label>Max lines per caption <span class="text-dim">(default — override per frame)</span></label>
+          <select id="caption-max-lines">
+            <option value="0">No limit (wrap as needed)</option>
+            <option value="1">1 line</option>
+            <option value="2">2 lines</option>
+            <option value="3">3 lines</option>
+          </select>
+          <small class="text-dim">Caps lines; long text auto-shrinks to fit.</small>
+        </div>
+      </div>
+
       <div class="settings-row">
         <div class="field" style="flex:2">
           <label>Caption Font</label>
           <select id="caption-font">
             <option value="Baskerville">Baskerville (italic, storytelling)</option>
+            <option value="Montserrat">Montserrat (modern, geometric)</option>
+            <option value="Satoshi">Satoshi (clean — needs licensed font file)</option>
             <option value="Arial">Arial (clean, modern)</option>
             <option value="Georgia">Georgia (editorial, warm)</option>
             <option value="Helvetica">Helvetica (minimal)</option>

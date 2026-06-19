@@ -156,3 +156,43 @@ def critique_image(image_path: str, frame_id: str, prompt: str) -> bool:
     except Exception as e:
         print(f"[Safety] Gate B2: vision QC unavailable ({e}) — skipping.")
         return True
+
+
+def critique_brand(image_path: str, frame_id: str, brand: dict) -> bool:
+    """
+    Brand-safety gate for GENERATED frames in a branded ad: catch the things that
+    embarrass a brand. Product/logo shots are real-only (never generated), so
+    this guards the AI stills around them. Returns True (pass) on any API failure
+    so it degrades, never blocks. Disable with HOB_VISION_QC=0.
+    """
+    if os.environ.get("HOB_VISION_QC", "1") == "0" or not brand:
+        return True
+    brand_name = (brand.get("name") or "the advertised brand").strip()
+    product    = (brand.get("product") or "").strip()
+    try:
+        from agents import llm
+        rules = (
+            f"This frame is part of a paid ad for {brand_name}"
+            + (f" ({product})" if product else "") + ". Flag ONLY:\n"
+            "1. A visible COMPETITOR brand/logo/product.\n"
+            "2. A fabricated or inaccurate depiction of the advertised product "
+            "(it should NOT be invented here — real product shots are separate).\n"
+            "3. Any rendered text, claim, price, or logo baked into the image "
+            "(ad copy is added separately and must be brand-supplied).\n"
+            'Reply ONLY as JSON: {"ok": true|false, "reason": "short reason if not ok"}'
+        )
+        text = llm.chat(
+            [{"role": "user", "content": [
+                {"type": "text", "text": rules},
+                {"type": "image", "path": image_path},
+            ]}],
+            json_mode=True, max_tokens=120, model_tier="fast",
+        )
+        verdict = llm.json_loads_lenient(text)
+        ok = bool(verdict.get("ok", True))
+        if not ok:
+            print(f"[Safety] Brand gate: {frame_id} — {verdict.get('reason','flagged')}")
+        return ok
+    except Exception as e:
+        print(f"[Safety] Brand gate: unavailable ({e}) — skipping.")
+        return True

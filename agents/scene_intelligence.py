@@ -62,8 +62,8 @@ Your job: read a story beat and design ONE cinematic shot that EMOTIONALLY repre
 Filmmaking rules:
 - Think like a filmmaker, not a photographer. What shot tells this EMOTION, not this action?
 - Use visual metaphors: "I was alone" = person motionless on a packed Assam bus stand, everyone rushing past, shallow focus.
-- Ground every scene in real India: bamboo homes, auto stands, chawls, Assam tea estates, government school classrooms, Guwahati streets.
-- Subject: Assamese Indian woman, late 20s, natural features — not glamorous.
+- Ground every scene in authentic, specific real-world detail. Infer the setting, era, and region FROM THE STORY (a chawl, an auto stand, a tea estate, a classroom — whatever the beat implies); never impose a fixed place.
+- Subject: honor the gender, age, and description given in the user message exactly (a quoted child = a child, a father = a man). If no subject is given, INFER who is on screen — their age and gender — from the story beat itself. Never fall back to a fixed stock character.
 - For real photos (motion only): design how the camera moves across the existing photo.
 {_SHARED_IMAGE_RULES}
 Respond in this EXACT JSON:
@@ -80,9 +80,10 @@ CONTEXTUAL_SYSTEM_PROMPT = f"""You are a cinematic director for an Indian storyt
 Your job: design an AGE-ACCURATE, ERA-ACCURATE portrait that EMOTIONALLY represents this story moment.
 
 Age and era rules:
-- Infer exact age: "8th grade" = 13 years old, "12th grade" = 17, "college" = 19-21, "teaching kids" = 17.
-- Era: early 2000s India — no smartphones, no earphones, cotton salwar or school uniform, simple bindi.
-- Location: Assam/Northeast India — bamboo, corrugated iron roofs, handloom textures, red soil.
+- Infer exact age from the story: "8th grade" = 13 years old, "12th grade" = 17, "college" = 19-21.
+- Infer the ERA from the story (clothing, technology, props must match it) — do not assume a fixed decade.
+- Infer the LOCATION/region from the story and ground it in authentic local detail — do not impose a fixed place.
+- Honor any subject gender/age/description in the user message exactly; if none is given, infer the person from the beat.
 - Body language conveys emotion — don't just put a person in a setting, show how they FEEL.
 - The face should look innocent, determined, or vulnerable — matching the story beat.
 {_SHARED_IMAGE_RULES}
@@ -104,8 +105,8 @@ Symbolic composition rules:
 - One or two HERO OBJECTS that carry the entire emotional weight of the story beat.
 - Examples: crumpled newspaper audition ad on a concrete floor, ₹500 notes fanned out under a kerosene lamp, a worn textbook with someone else's name crossed out on the cover, chalk dust settling on a dark slate board, an auto's side mirror reflecting an empty road at dusk.
 - Objects must SUGGEST the emotion — never literally illustrate the caption.
-- Ground in India: handloom fabric, red oxide floors, banana leaf, jute, iron trunk, government school items.
-- Light is the emotion: kerosene warmth = struggle, morning blue-grey = uncertainty, golden hour = hope.
+- Ground objects in the story's own world and era (infer the region/period from the beat) with authentic, specific, lived-in detail.
+- Light is the emotion: warm lamplight = struggle, morning blue-grey = uncertainty, golden hour = hope.
 {_SHARED_IMAGE_RULES}
 Respond in this EXACT JSON:
 {{
@@ -162,7 +163,8 @@ Keep every choice grounded in real India (the platform's house style). Respond w
 
 
 def design_treatment(frames: list[dict], subject_name: str = "",
-                     subject_description: str = "", mood: str = "") -> dict | None:
+                     subject_description: str = "", mood: str = "",
+                     extra_context: str = "") -> dict | None:
     """
     ONE LLM call over ALL beats → a whole-reel plan (arc, palette progression,
     motif, per-frame shot plan). Cached by the full beat list. Returns
@@ -176,7 +178,7 @@ def design_treatment(frames: list[dict], subject_name: str = "",
     h = hashlib.md5()
     for fid, cap in beats:
         h.update(f"{fid}|{cap}".encode())
-    h.update(f"{subject_name}|{subject_description}|{mood}".encode())
+    h.update(f"{subject_name}|{subject_description}|{mood}|{extra_context}".encode())
     cache_path = SCENE_CACHE_DIR / f"treatment_{h.hexdigest()}.json"
     if cache_path.exists():
         try:
@@ -187,11 +189,14 @@ def design_treatment(frames: list[dict], subject_name: str = "",
 
     beat_list = "\n".join(f"{fid}: {cap or '(silent frame — visual only)'}"
                           for fid, cap in beats)
-    user_msg = f"Subject: {subject_name}"
-    if subject_description:
-        user_msg += f" — {subject_description}"
+    if subject_name or subject_description:
+        user_msg = "Subject: " + " — ".join(x for x in (subject_name, subject_description) if x)
+    else:
+        user_msg = "No subject given — infer the people and world from the story itself."
     if mood:
         user_msg += f"\nRequested overall mood: {mood}"
+    if extra_context:
+        user_msg += f"\n\n{extra_context}"
     user_msg += f"\n\nStory beats in order:\n{beat_list}"
 
     try:
@@ -238,19 +243,20 @@ def _treatment_note(treatment: dict | None, frame_id: str,
     return "\n".join(lines)
 
 
-def design_scene(story_beat: str, subject_name: str = "Surabhi",
+def design_scene(story_beat: str, subject_name: str = "",
                  has_real_photo: bool = False, director_note: str = "",
                  visual_type: str = "portrait", subject_description: str = "",
-                 treatment_note: str = "") -> dict:
+                 treatment_note: str = "", extra_context: str = "") -> dict:
     """
     Given a story beat, return cinematic visual + motion design.
     Results are cached to disk — identical inputs return instantly on re-runs.
     treatment_note: optional whole-reel plan slice (see design_treatment).
+    extra_context: optional brand/campaign framing context (BRAND_PLAN).
     """
     # ── Cache lookup ──────────────────────────────────────────────────────────
     key    = _cache_key(story_beat, director_note, visual_type,
                         subject_name, subject_description, has_real_photo,
-                        treatment_note)
+                        treatment_note + "|" + extra_context)
     cached = _cache_load(key)
     if cached:
         return cached
@@ -273,12 +279,18 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
 
     subj = subject_name
     if subject_description:
-        subj += f" — {subject_description}"
-    user_msg = f'Story beat: "{story_beat}"\nSubject: {subj}.\n'
+        subj = f"{subj} — {subject_description}" if subj else subject_description
+    user_msg = f'Story beat: "{story_beat}"\n'
+    if subj.strip():
+        user_msg += f'Subject: {subj}.\n'
+    else:
+        user_msg += 'No subject given — infer who is on screen (age, gender, look) from the beat itself.\n'
     if director_note:
         user_msg += f'\nDirector note: {director_note}\n'
     if treatment_note:
         user_msg += f'\n{treatment_note}\n'
+    if extra_context:
+        user_msg += f'\n{extra_context}\n'
     if has_real_photo:
         user_msg += "A real photo exists. Only design the MOTION (how it should move/animate). Skip image_prompt details."
 
@@ -298,11 +310,14 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
 
     except Exception as e:
         print(f"[SceneIntelligence] Error: {e} — using fallback")
+        # No fixed stock subject — use the operator's description if given, else
+        # let the beat imply who/what is on screen.
+        who = (subject_description or subject_name or "the person in this story moment").strip()
         fallback_prompt = (
             f"Cinematic symbolic objects, no people, {story_beat[:60]}, "
             "warm natural lighting, shallow depth of field, photorealistic, vertical 9:16"
             if visual_type == "symbolic" else
-            f"Cinematic portrait of a young Assamese Indian woman, {story_beat[:60]}, "
+            f"Cinematic portrait of {who}, {story_beat[:60]}, "
             "warm natural lighting, shallow depth of field, photorealistic, vertical 9:16"
         )
         return {
@@ -314,8 +329,9 @@ def design_scene(story_beat: str, subject_name: str = "Surabhi",
         }
 
 
-def design_all_scenes(frames: list[dict], subject_name: str = "Surabhi",
-                      subject_description: str = "", mood: str = "") -> list[dict]:
+def design_all_scenes(frames: list[dict], subject_name: str = "",
+                      subject_description: str = "", mood: str = "",
+                      extra_context: str = "") -> list[dict]:
     """
     Add scene intelligence to all frames in parallel (ThreadPoolExecutor).
     A whole-reel TREATMENT pass runs first (one call, cached) so per-frame
@@ -325,9 +341,10 @@ def design_all_scenes(frames: list[dict], subject_name: str = "Surabhi",
     """
     if not frames:
         return frames
-    print(f"[SceneIntelligence] Designing {len(frames)} scenes for {subject_name} (parallel)…")
+    print(f"[SceneIntelligence] Designing {len(frames)} scenes"
+          f"{f' for {subject_name}' if subject_name else ''} (parallel)…")
 
-    treatment = design_treatment(frames, subject_name, subject_description, mood)
+    treatment = design_treatment(frames, subject_name, subject_description, mood, extra_context)
     # Previous CAPTIONED frame's plan per frame — for shot-variety pressure.
     prev_plans: dict[str, dict | None] = {}
     last_plan = None
@@ -359,13 +376,24 @@ def design_all_scenes(frames: list[dict], subject_name: str = "Surabhi",
             "portrait"
         )
 
-        scene = design_scene(caption, subject_name,
+        # Speaker-aware subject: a quoted speaker (kid, father) is depicted as
+        # THAT person; narrator frames keep the operator's subject description.
+        spk_name, spk_desc = subject_name, subject_description
+        if f.get("speaker_id", "narrator") != "narrator":
+            from agents import cast as cast_mod
+            descriptor = cast_mod.subject_descriptor(f, subject_description)
+            spk_name = f.get("speaker_label") or "speaker"
+            spk_desc = (f"ON SCREEN: {descriptor}. Depict THIS person — their stated "
+                        "gender and age — a quoted/secondary speaker, NOT the narrator.")
+
+        scene = design_scene(caption, spk_name,
                              has_real_photo=has_photo,
                              director_note=note,
                              visual_type=visual_type,
-                             subject_description=subject_description,
+                             subject_description=spk_desc,
                              treatment_note=_treatment_note(
-                                 treatment, f["frame_id"], prev_plans[f["frame_id"]]))
+                                 treatment, f["frame_id"], prev_plans[f["frame_id"]]),
+                             extra_context=extra_context)
         return f, scene
 
     with ThreadPoolExecutor(max_workers=min(len(frames), 10)) as pool:

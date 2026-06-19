@@ -44,7 +44,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--script",   required=True)
     parser.add_argument("--assets",   required=True)
-    parser.add_argument("--subject",  default="the subject")
+    parser.add_argument("--subject",  default="",
+                        help="Optional subject name/description; leave empty to let the "
+                             "director infer who's on screen from the story itself")
     parser.add_argument("--music",    default=None)
     parser.add_argument("--output",   default="output/caption_video.mp4")
     parser.add_argument("--width",    type=int, default=1080)
@@ -70,6 +72,9 @@ def main():
     parser.add_argument("--smart-match", action="store_true",
                         help="Use GPT-4o to content-match folder images to frames (reads names/text "
                              "in photos); only fills unpinned frames, falls back to sort-order")
+    parser.add_argument("--no-speakers", action="store_true",
+                        help="Disable per-line speaker/cast detection (default on): without it every "
+                             "beat is the narrator (single-subject behaviour)")
     parser.add_argument("--multi-shot", action="store_true",
                         help="Multi-shot coverage: cover eligible beats with the primary media plus "
                              "1-2 still B-roll images (opt-in, ~2x video credits on covered beats)")
@@ -102,6 +107,13 @@ def main():
         # 1. Parse script frames
         frames = parse_frame_script(args.script, args.assets, max_frame_dur=max_frame_dur,
                                     smart_match=args.smart_match)
+
+        # 1a. Cast / per-line speaker detection (auto; --no-speakers to disable).
+        # Tags each beat with who's speaking so quoted lines (a kid, the father)
+        # get the right face + voice instead of the narrator's.
+        if not args.no_speakers:
+            from agents import cast as cast_mod
+            cast_mod.detect_cast(frames, args.subject, "")
 
         # 2. Scene Intelligence — emotion-specific cinematic design per frame
         if not args.skip_scene_ai:
@@ -216,13 +228,16 @@ def main():
                 args.video_model if args.video_model != "auto" else "")
 
         first_portrait_path = None
+        first_portrait_by_speaker = {}   # --face-ref: per-speaker identity reference
         for f in frames:
             photo_spec = f.get("photo_spec", "")
             img_model = model_router.select_model(
                 "image", f, cost_tier, override=f.get("image_model_override", ""))
             mid = "" if img_model == model_router.PASSTHROUGH else img_model
-            # --face-ref: later portraits keep the FIRST portrait's identity
-            ref = first_portrait_path if args.face_ref else ""
+            # --face-ref: later portraits keep the first portrait's identity,
+            # per speaker (narrator and a quoted kid keep separate faces)
+            sid = f.get("speaker_id", "narrator")
+            ref = first_portrait_by_speaker.get(sid, "") if args.face_ref else ""
 
             if photo_spec and not photo_spec.startswith("ai_"):
                 # Tier 1: explicit real photo
@@ -262,6 +277,11 @@ def main():
                 f["visual_path"] = path
                 if first_portrait_path is None:
                     first_portrait_path = path
+
+            # Record this speaker's first on-screen face (not symbolic stills) as
+            # their --face-ref identity reference for later frames.
+            if photo_spec != "ai_symbolic" and f.get("visual_path"):
+                first_portrait_by_speaker.setdefault(sid, f["visual_path"])
 
         # 3b. Image edit pass — applied between generation and Kling
         for f in frames:

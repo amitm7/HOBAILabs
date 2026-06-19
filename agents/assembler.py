@@ -332,7 +332,8 @@ def _assemble_with_lipsync(clips: list[dict], temp: Path, output_path: str,
 
 def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
                           music_path: str = None, srt_path: str = None,
-                          transition: str = "crossfade", is_voiceover: bool = False):
+                          transition: str = "crossfade", is_voiceover: bool = False,
+                          bg_music_path: str = None):
     """
     Caption-only assembly: visuals + captions + optional music or voiceover.
     Accepts either .srt or .ass path; .ass is used when present.
@@ -370,7 +371,27 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
     print("[Assembler] Final merge...")
     vf_str = _subtitle_filter(sub_path) if sub_path else "null"
 
-    if music_path and os.path.exists(music_path) and is_voiceover:
+    if music_path and os.path.exists(music_path) and is_voiceover \
+            and bg_music_path and os.path.exists(bg_music_path):
+        # Brand/ad mode: announcer VO (full) mixed OVER looped background music
+        # ducked underneath — both play at once (Tata-style spot).
+        total_dur = sum(c["actual_duration"] for c in clips)
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", raw_video,
+            "-i", music_path,
+            "-stream_loop", "-1", "-i", bg_music_path,
+            "-filter_complex",
+            f"[0:v]{vf_str}[vout];"
+            f"[1:a]apad,volume=1.0[vo];"
+            f"[2:a]volume=0.18,afade=t=out:st={max(0,total_dur-3):.1f}:d=3[bg];"
+            f"[vo][bg]amix=inputs=2:normalize=0[aout]",
+            "-map", "[vout]", "-map", "[aout]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k", "-shortest",
+            output_path,
+        ]
+    elif music_path and os.path.exists(music_path) and is_voiceover:
         # Voiceover: already timed to the video — play once, full volume, NO loop.
         # apad guards against a track a hair shorter than the video; -shortest trims.
         cmd = [
@@ -415,6 +436,66 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
 
     _run(cmd)
     print(f"[Assembler] Output → {output_path}")
+
+
+def apply_brand_overlay(in_path: str, out_path: str, disclosure_text: str = "",
+                        logo_path: str = "", logo_corner: str = "tr",
+                        disclosure_secs: float = 3.0):
+    """
+    Brand post-pass (isolated re-encode, so the 4 assembly branches stay untouched):
+      · burns a small "Paid partnership with …" disclosure top-centre for the
+        first `disclosure_secs`
+      · optionally overlays a brand logo bug in a corner for the whole video
+    No-op (plain copy) when neither is requested. Degrades to copy on ffmpeg error.
+    """
+    import shutil
+    has_logo = bool(logo_path) and os.path.exists(logo_path)
+    has_disc = bool(disclosure_text)
+    if not has_logo and not has_disc:
+        shutil.copy2(in_path, out_path)
+        return out_path
+
+    inputs = ["-i", in_path]
+    if has_logo:
+        inputs += ["-i", logo_path]
+
+    chain, last = [], "[0:v]"
+    if has_logo:
+        margin = 40
+        pos = {"tr": f"W-w-{margin}:{margin}", "tl": f"{margin}:{margin}",
+               "br": f"W-w-{margin}:H-h-{margin}", "bl": f"{margin}:H-h-{margin}"}.get(
+               logo_corner, f"W-w-{margin}:{margin}")
+        chain.append(f"[1:v]scale=-1:90[lg]")
+        chain.append(f"{last}[lg]overlay={pos}[v1]")
+        last = "[v1]"
+    if has_disc:
+        font = _brand_font_arg()
+        safe = disclosure_text.replace("'", r"\'").replace(":", r"\:")
+        chain.append(
+            f"{last}drawtext={font}text='{safe}':fontcolor=white:fontsize=34:"
+            f"box=1:boxcolor=black@0.45:boxborderw=14:x=(w-text_w)/2:y=60:"
+            f"enable='lte(t,{disclosure_secs})'[vout]")
+        last = "[vout]"
+
+    try:
+        _run(["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(chain),
+              "-map", last, "-map", "0:a?",
+              "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
+              "-c:a", "copy", out_path])
+    except Exception as e:
+        print(f"[Assembler] brand overlay failed ({e}) — using clean output")
+        shutil.copy2(in_path, out_path)
+    return out_path
+
+
+def _brand_font_arg() -> str:
+    """fontfile= for drawtext, preferring the bundled Montserrat; '' to let ffmpeg
+    pick a default (some builds need fontconfig)."""
+    here = os.path.dirname(__file__)
+    cand = os.path.abspath(os.path.join(here, "..", "deploy", "fonts", "Montserrat-Regular.ttf"))
+    if os.path.exists(cand):
+        return f"fontfile='{cand}':"
+    return ""
 
 
 def assemble(clips: list[dict], temp_dir: str, output_path: str,

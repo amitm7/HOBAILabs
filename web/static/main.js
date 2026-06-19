@@ -7,6 +7,16 @@ const SESSION_ID = crypto.randomUUID();
 // State
 let parsedFrames = [];          // [{frame_id, caption, duration, photo_spec, director_note}]
 let frameOverrides = {};        // frame_id → {photo_spec, photo_tmp_path, director_note}
+let parsedCast = [];            // [{id, label, gender, age_bracket}] from /parse-script
+let speakerVoices = {};         // speaker_id → ElevenLabs voice_id (Cast voices panel)
+let frameApprovals = {};        // frame_id → bool (approval gate; default approved)
+let previewReady = false;       // true once Preview Stills has produced images
+
+// Live per-frame override setter (used by brand.js, which is a separate script).
+window.setFrameOverride = (frameId, key, value) => {
+  if (!frameOverrides[frameId]) frameOverrides[frameId] = {};
+  frameOverrides[frameId][key] = value;
+};
 let generatedMusicPath = null;
 let uploadedMusicPath = null;
 let currentRunId = null;
@@ -264,14 +274,23 @@ el('parse-btn').addEventListener('click', async () => {
 
   try {
     const smartMatch = el('smart-match')?.checked || false;
-    const res = await post('/parse-script', { script, assets_dir: assetsDir, smart_match: smartMatch });
+    const res = await post('/parse-script', {
+      script, assets_dir: assetsDir, smart_match: smartMatch,
+      subject_name: el('subject-name')?.value.trim() || '',
+      subject_description: el('subject-description')?.value.trim() || '',
+    });
     if (res.error) { alert('Parse error: ' + res.error); return; }
     if (assetsDir) {
       const matched = (res.frames || []).filter(f => f.visual_path).length;
       el('assets-status').innerHTML = `<span class="text-green">✓ ${matched} photos matched</span>`;
     }
     parsedFrames = res.frames || [];
+    parsedCast = res.cast || [];
     frameOverrides = {};
+    speakerVoices = {};
+    frameApprovals = {};
+    previewReady = false;
+    renderCastPanel(parsedCast);
     renderFrameCards(parsedFrames);
     el('frames-card').style.display = 'block';
     el('frames-count').textContent = `${parsedFrames.length} frames`;
@@ -458,11 +477,61 @@ async function _populateLipsyncVoices(frame_id, selectedVoiceId = '') {
   } catch (_) {}
 }
 
+// ── Cast voices (per-speaker voice assignment) ─────────────────────────────
+
+let _voicesCache = null;
+async function getVoices() {
+  if (_voicesCache) return _voicesCache;
+  try { _voicesCache = (await fetch('/voices').then(r => r.json())).voices || []; }
+  catch (_) { _voicesCache = []; }
+  return _voicesCache;
+}
+
+async function renderCastPanel(cast) {
+  const panel = el('cast-panel');
+  if (!panel) return;
+  // Only worth showing when the script has more than one speaker.
+  if (!cast || cast.length <= 1) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+
+  const voices = await getVoices();
+  const opts = ['<option value="">— default / auto by gender·age —</option>']
+    .concat(voices.map(v => `<option value="${v.voice_id}">${v.name}</option>`)).join('');
+
+  panel.style.display = 'block';
+  panel.innerHTML =
+    `<div style="font-size:13px;font-weight:600;margin-bottom:6px">🎭 Cast voices `
+    + `<span class="muted" style="font-weight:400">— used for lip-sync & voice-over; pick a voice per speaker (optional)</span></div>`
+    + cast.map(m => `
+        <div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px">
+          <span style="min-width:140px">${m.label} <span class="muted">(${m.gender}/${m.age_bracket})</span></span>
+          <select data-speaker="${m.id}" style="flex:1;font-size:12px">${opts}</select>
+        </div>`).join('');
+
+  panel.querySelectorAll('select[data-speaker]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const sid = sel.dataset.speaker;
+      if (sel.value) speakerVoices[sid] = sel.value; else delete speakerVoices[sid];
+    });
+  });
+}
+
+// Build clickable suggestion chips that fill (and leave editable) a target input.
+function suggestionChips(items, targetId) {
+  if (!items || !items.length) return '';
+  const chips = items.map(s =>
+    `<button type="button" class="sug-chip" data-target="${targetId}" data-val="${escHtml(s)}">${escHtml(s)}</button>`
+  ).join('');
+  return `<div class="sug-row">${chips}</div>`;
+}
+
 // ── Render frame cards ────────────────────────────────────────────────────
 
 function renderFrameCards(frames) {
   const container = el('frames-container');
   container.innerHTML = '';
+
+  // Speaker <option>s from the detected cast (shown only when >1 speaker).
+  const castForSelect = (parsedCast && parsedCast.length > 1) ? parsedCast : null;
 
   frames.forEach(f => {
     const isSilent = !f.caption;
@@ -518,6 +587,14 @@ function renderFrameCards(frames) {
 
         ${previewHtml}
 
+        <div class="frame-iter-row" id="iter-${f.frame_id}" style="display:none">
+          <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}">🔄 Redo still</button>
+          <label class="approval-toggle" data-frame="${f.frame_id}" title="Untick to skip paid animation — this frame uses free Ken Burns instead">
+            <input type="checkbox" class="approval-cb" data-frame="${f.frame_id}" checked>
+            <span class="approval-label">✓ Approved for animation</span>
+          </label>
+        </div>
+
         <div class="visual-selector" data-frame="${f.frame_id}">
           <label class="vis-opt ${initType === 'auto' ? 'active' : ''}" data-type="auto">
             <input type="radio" name="vis-${f.frame_id}" value="auto" ${initType === 'auto' ? 'checked' : ''}>
@@ -549,10 +626,21 @@ function renderFrameCards(frames) {
           <span class="upload-filename" id="fname-${f.frame_id}"></span>
         </div>
 
+        ${castForSelect ? `
+        <div class="director-note-row" style="margin-top:6px">
+          <label style="font-size:12px;color:var(--text-dim);min-width:70px">🎭 Speaker</label>
+          <select id="speaker-${f.frame_id}" style="font-size:12px;flex:1">
+            ${castForSelect.map(m =>
+              `<option value="${m.id}" ${m.id === (f.speaker_id || 'narrator') ? 'selected' : ''}>`
+              + `${m.label} (${m.gender}/${m.age_bracket})</option>`).join('')}
+          </select>
+        </div>` : ''}
+
         <div class="director-note-row">
           <input type="text" placeholder="Director note (optional): e.g. show anger not just sadness"
             id="note-${f.frame_id}" value="${escHtml(f.director_note || '')}">
         </div>
+        ${suggestionChips(f.suggestions?.notes, 'note-' + f.frame_id)}
 
         <div class="director-note-row" style="margin-top:6px">
           <input type="text"
@@ -560,6 +648,7 @@ function renderFrameCards(frames) {
             id="edit-${f.frame_id}" value="${escHtml(f.edit_prompt || '')}"
             style="border-color: ${f.edit_prompt ? 'var(--orange)' : ''}">
         </div>
+        ${suggestionChips(f.suggestions?.edits, 'edit-' + f.frame_id)}
 
         <div class="director-note-row" style="margin-top:6px">
           <input type="text"
@@ -568,6 +657,24 @@ function renderFrameCards(frames) {
             style="border-color: ${f.motion_override ? '#a78bfa' : ''}">
           ${f.camera_auto ? `<span style="font-size:11px;color:#a78bfa;white-space:nowrap">✨ auto: ${f.camera_reason || 'chosen for you'} — edit to change</span>` : ''}
         </div>
+        ${suggestionChips(f.suggestions?.camera, 'motion-' + f.frame_id)}
+
+        ${isSilent ? '' : `
+        <div class="caption-style-row" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text-dim);min-width:70px">💬 Caption</span>
+          <select id="cappos-${f.frame_id}" style="font-size:12px" title="Caption position for this frame">
+            <option value="">Position: default</option>
+            <option value="bottom">Bottom</option>
+            <option value="middle">Middle</option>
+            <option value="top">Top</option>
+          </select>
+          <select id="caplines-${f.frame_id}" style="font-size:12px" title="Max caption lines for this frame">
+            <option value="">Lines: default</option>
+            <option value="1">1 line</option>
+            <option value="2">2 lines</option>
+            <option value="3">3 lines</option>
+          </select>
+        </div>`}
 
         <div class="director-note-row" style="margin-top:6px">
           <select id="model-${f.frame_id}" style="font-size:12px">
@@ -609,6 +716,35 @@ function renderFrameCards(frames) {
     `;
 
     container.appendChild(card);
+
+    // Suggestion chips → fill the target input (still fully editable after)
+    card.querySelectorAll('.sug-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const inp = el(chip.dataset.target);
+        if (inp) { inp.value = chip.dataset.val; inp.dispatchEvent(new Event('input')); }
+      });
+    });
+
+    // Per-frame redo: regenerate just this still with the current card settings.
+    const redoBtn = card.querySelector('.redo-still-btn');
+    if (redoBtn) redoBtn.addEventListener('click', () => redoStill(f.frame_id, redoBtn));
+
+    // Approval toggle: untick → frame uses free Ken Burns instead of paid animation.
+    const apprCb = card.querySelector('.approval-cb');
+    if (apprCb) apprCb.addEventListener('change', () => {
+      frameApprovals[f.frame_id] = apprCb.checked;
+      card.classList.toggle('frame-rejected', !apprCb.checked);
+      const lbl = card.querySelector('.approval-label');
+      if (lbl) lbl.textContent = apprCb.checked ? '✓ Approved for animation' : '✗ Free Ken Burns (skipped)';
+      scheduleCostEstimate();
+    });
+
+    // Speaker dropdown → store override so the render uses the right face + voice
+    const spkSel = el(`speaker-${f.frame_id}`);
+    if (spkSel) spkSel.addEventListener('change', () => {
+      if (!frameOverrides[f.frame_id]) frameOverrides[f.frame_id] = {};
+      frameOverrides[f.frame_id].speaker_id = spkSel.value;
+    });
 
     // Wire visual type radios
     card.querySelectorAll('.vis-opt').forEach(opt => {
@@ -663,6 +799,11 @@ function renderFrameCards(frames) {
       }
     }
 
+    // Brand mode hook: let brand.js add the product-beat toggle to this card.
+    if (window.HOB_MODE === 'brand' && typeof window.augmentBrandCard === 'function') {
+      window.augmentBrandCard(card, f);
+    }
+
     // Wire photo upload
     card.querySelector(`input[type="file"][data-frame]`).addEventListener('change', async (e) => {
       const file = e.target.files[0];
@@ -706,6 +847,14 @@ function escHtml(s) {
 
 // ── Build payload (shared by Preview + Generate) ──────────────────────────
 
+// Approval gate: return the list of frame_ids approved for paid animation, or
+// null when nothing has been rejected (null = animate everything, back-compat).
+function approvedFrameIds() {
+  const rejected = parsedFrames.some(f => frameApprovals[f.frame_id] === false);
+  if (!rejected) return null;
+  return parsedFrames.filter(f => frameApprovals[f.frame_id] !== false).map(f => f.frame_id);
+}
+
 function buildPayload() {
   const musicType = document.querySelector('input[name="music-type"]:checked').value;
   let musicPath = null, voiceId = null;
@@ -736,18 +885,25 @@ function buildPayload() {
       image_model_override: ov.model_override || '',
       video_model_override: ov.model_override || '',
       video_start_sec: vstartEl  ? parseFloat(vstartEl.value)||0    : (f.video_start_sec  || 0),
+      speaker_id:      ov.speaker_id || f.speaker_id || 'narrator',
+      product_beat:    ov.product_beat || false,   // brand mode (ignored in story mode)
+      caption_position:  el(`cappos-${f.frame_id}`)?.value || '',     // '' = use global
+      caption_max_lines: el(`caplines-${f.frame_id}`)?.value || '',   // '' = use global
     };
   });
 
-  return {
+  const payload = {
     session_id:          SESSION_ID,
-    subject_name:        el('subject-name').value.trim(),
-    subject_description: el('subject-description').value.trim(),
+    subject_name:        el('subject-name')?.value.trim() || '',
+    subject_description: el('subject-description')?.value.trim() || '',
     assets_dir:          el('assets-dir').value.trim(),
     script:              el('script-input').value,
     frames,
+    cast:                parsedCast,
+    speaker_voices:      speakerVoices,
     multi_shot:          el('multi-shot')?.checked || false,
     face_ref:            el('face-ref')?.checked || false,
+    approved_frame_ids:  approvedFrameIds(),
     mood:                el('mood').value,
     quality:             el('quality').value,
     music_type:          musicType,
@@ -760,12 +916,19 @@ function buildPayload() {
     kling_mode:          el('kling-mode').value,
     orientation:         el('orientation').value,
     caption_style: {
-      font:     el('caption-font').value,
-      size:     parseInt(el('caption-size').value) || 52,
-      color:    el('caption-color').value,
-      position: el('caption-position').value,
+      font:      el('caption-font').value,
+      size:      parseInt(el('caption-size').value) || 52,
+      color:     el('caption-color').value,
+      position:  el('caption-position').value,
+      enabled:   el('caption-enabled') ? el('caption-enabled').checked : true,
+      max_lines: parseInt(el('caption-max-lines')?.value || '0') || 0,
     },
   };
+  // Brand mode: merge mode + brand block (brand.js owns the panel).
+  if (window.HOB_MODE === 'brand' && typeof window.buildBrandPayload === 'function') {
+    Object.assign(payload, window.buildBrandPayload());
+  }
+  return payload;
 }
 
 // ── Preview Stills (cheap pre-check before paying for animation) ───────────
@@ -808,15 +971,45 @@ el('preview-btn').addEventListener('click', async () => {
 });
 
 function applyPreviewStills(stills) {
+  previewReady = true;
   stills.forEach(s => {
     const prev = el(`preview-${s.frame_id}`);
-    if (!prev || !s.exists) return;
-    const url = `/media?path=${encodeURIComponent(s.path)}&t=${Date.now()}`;
-    prev.classList.remove('placeholder');
-    prev.innerHTML = s.is_video
-      ? `<video src="${url}#t=0.5" muted playsinline preload="metadata" style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#000"></video><span class="preview-label">🎬 generated still</span>`
-      : `<img src="${url}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#222"><span class="preview-label">✅ this image will be animated</span>`;
+    if (prev && s.exists) {
+      const url = `/media?path=${encodeURIComponent(s.path)}&t=${Date.now()}`;
+      prev.classList.remove('placeholder');
+      prev.innerHTML = s.is_video
+        ? `<video src="${url}#t=0.5" muted playsinline preload="metadata" style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#000"></video><span class="preview-label">🎬 generated still</span>`
+        : `<img src="${url}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#222"><span class="preview-label">✅ this image will be animated</span>`;
+    }
+    // Reveal the per-frame redo + approval controls once a still exists.
+    const iter = el(`iter-${s.frame_id}`);
+    if (iter && s.exists) iter.style.display = 'flex';
   });
+}
+
+// Per-frame redo: regenerate ONE still without re-running the pipeline.
+async function redoStill(frameId, btn) {
+  const f = parsedFrames.find(x => x.frame_id === frameId);
+  if (!f) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Redoing…'; }
+  // Build the full payload, then send only this one frame's current settings.
+  const payload = buildPayload();
+  const frame = payload.frames.find(x => x.frame_id === frameId);
+  try {
+    const res = await post('/redo-still', { ...payload, frame });
+    if (res.error) { alert('Redo failed: ' + res.error); return; }
+    if (res.exists) {
+      applyPreviewStills([res]);
+      const prev = el(`preview-${frameId}`);
+      if (prev) prev.querySelector('.preview-label')?.replaceChildren(document.createTextNode('🔄 redone'));
+    } else {
+      alert('Redo produced no image — check the frame settings.');
+    }
+  } catch (e) {
+    alert('Redo error: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Redo still'; }
+  }
 }
 
 // ── Run pipeline ──────────────────────────────────────────────────────────
@@ -839,6 +1032,15 @@ el('run-btn').addEventListener('click', async () => {
 
   try {
     const res = await post('/run', payload);
+    if (res.missing && res.missing.length) {
+      // Brand hard-block: required items missing — show the checklist, don't render.
+      el('run-btn').disabled = false;
+      const msg = 'Cannot render — complete these brand requirements:\n• ' + res.missing.join('\n• ');
+      if (typeof window.showBrandMissing === 'function') window.showBrandMissing(res.missing);
+      else alert(msg);
+      logLine('✗ ' + msg, 'err');
+      return;
+    }
     if (res.error) { logLine('✗ ' + res.error, 'err'); return; }
     currentRunId = res.run_id;
     streamProgress(res.run_id);
@@ -851,10 +1053,27 @@ el('run-btn').addEventListener('click', async () => {
 // ── SSE Progress stream ───────────────────────────────────────────────────
 
 function streamProgress(runId) {
+  // Mark every frame's preview as "animating…" so the editor sees live progress.
+  parsedFrames.forEach(f => {
+    const prev = el(`preview-${f.frame_id}`);
+    if (prev && !prev.querySelector('video.clip-preview')) {
+      const badge = prev.querySelector('.clip-status') || document.createElement('span');
+      badge.className = 'clip-status';
+      badge.textContent = '⏳ animating…';
+      if (!badge.parentNode) prev.appendChild(badge);
+    }
+  });
+
   const es = new EventSource(`/progress/${runId}`);
 
   es.onmessage = (event) => {
     const data = JSON.parse(event.data);
+
+    // Progressive clip reveal: swap the still for the finished clip in its card.
+    if (data.type === 'clip_ready' && data.frame_id) {
+      onClipReady(data.frame_id, data.url);
+      return;
+    }
 
     if (data.line) {
       const cls = data.line.startsWith('✓') || data.line.includes('✓') ? 'ok'
@@ -881,6 +1100,18 @@ function streamProgress(runId) {
     logLine('Connection lost. Check if the server is still running.', 'err');
     el('run-btn').disabled = false;
   };
+}
+
+// Progressive reveal: replace a frame's still with its finished clip the moment
+// it lands, so editors judge direction early instead of waiting for the full cut.
+function onClipReady(frameId, url) {
+  const prev = el(`preview-${frameId}`);
+  if (!prev) return;
+  prev.classList.remove('placeholder');
+  prev.innerHTML =
+    `<video class="clip-preview" src="${url}?t=${Date.now()}" muted playsinline loop autoplay preload="metadata"
+            style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#000"></video>`
+    + `<span class="preview-label clip-status ok">🎬 clip ready</span>`;
 }
 
 function logLine(text, cls = 'log-line') {

@@ -50,6 +50,8 @@
 <h1>🎬 Reel Maker — Team Guide</h1>
 <p class="lead">Turn a short written story + your photos and clips into a finished, captioned vertical video — no editing skills needed. This guide explains <b>every button and field in plain language</b>, with the <b>exact words you can type</b>.</p>
 
+<div class="box"><b>🛍 Doing a brand deal or ad?</b> Use the <b>Brand / Ad mode</b> link at the top. It works the same way, plus: you fill a short <b>brand brief</b> (or paste the brand's brief), upload the <b>logo</b> and <b>real product photos</b> (the tool never fakes a product or logo), tick <b>🛍 Product beat</b> on the product shots, and choose the <b>voice-over</b> and <b>music</b> (AI draft or the brand's own files). It <b>won't let you render</b> until you've added the logo, a call-to-action, and a product shot — and it auto-adds an end-card + a "Paid partnership" line. <b>You type all the ad wording and claims yourself</b> — the AI never writes claims.</div>
+
 <div class="box big">
   <b>Where to open the tool:</b> <span class="url">https://creative.kevat.ai</span><br>
   Works in any browser. Nothing to install. If a teammate is mid-render, just wait a moment and refresh.
@@ -73,10 +75,18 @@
   <a href="#style">6 · Style, Quality, Mood, Captions</a>
   <a href="#music">7 · Music</a>
   <a href="#cost">8 · Cost panel — read before you press Generate</a>
+  <a href="#iterate">8b · Iterate without re-rendering (redo · approve · live clips)</a>
   <a href="#arc">9 · How to build a story that lands</a>
   <a href="#cheat">10 · One-page cheat sheet (all keywords)</a>
   <a href="#example">11 · A full worked example</a>
   <a href="#faq">12 · Quick fixes (FAQ)</a>
+  <a href="#brand">13 · Brand / Ad Mode — full walkthrough</a>
+  <a href="#brand-brief">13a · Brand brief panel</a>
+  <a href="#brand-kit">13b · Brand kit &amp; assets</a>
+  <a href="#brand-audio">13c · Audio — VO &amp; music</a>
+  <a href="#brand-beats">13d · Writing the ad script &amp; marking product beats</a>
+  <a href="#brand-hard-block">13e · Mandatories hard-block</a>
+  <a href="#brand-faq">13f · Brand mode quick fixes</a>
 </div>
 
 <h2 id="what">1 · What it does (in one minute)</h2>
@@ -93,12 +103,14 @@
 <div class="step"><div class="num">7</div><div><b>Check the 💰 cost panel.</b></div></div>
 <div class="step"><div class="num">8</div><div><b>Generate</b> → watch the log → <b>Download .mp4</b>.</div></div>
 
-<h2 id="subject">3 · Step 1 — Subject</h2>
+<h2 id="subject">3 · Step 1 — Subject <span style="font-size:14px;color:var(--muted)">(optional)</span></h2>
+<div class="box"><b>You can skip this entirely.</b> Leave both fields blank and the tool works out <i>who is on screen</i> — their age, gender and look — from the story you write. There is no fixed "default person"; the story decides.</div>
 <table>
 <tr><th>Field</th><th>What to type</th><th>Example</th></tr>
-<tr><td><b>Name</b></td><td>The person's first name. Used so the AI "designs a shot of ___".</td><td><code>Lalita</code></td></tr>
-<tr><td><b>Description</b></td><td>A short physical look so AI-made pictures stay consistent. Leave blank if you only use real photos.</td><td><code>Rajasthani woman, 30s, strong features, sun-kissed skin, traditional clothing</code></td></tr>
+<tr><td><b>Name</b> <i>(optional)</i></td><td>The main person's first name, if you want to pin it.</td><td><code>Lalita</code></td></tr>
+<tr><td><b>Description</b> <i>(optional)</i></td><td>A short look so AI-made pictures stay consistent (helps most with the <b>Consistent face</b> tick). Fine to leave blank.</td><td><code>woman, 30s, strong features, traditional clothing</code></td></tr>
 </table>
+<div class="box"><b>More than one person in the story?</b> When a line <i>quotes</i> someone — e.g. <i>"My son asked, 'Mom, where is father gone?'"</i> — the tool spots it and shows <b>that person</b> (the kid's face, the right age) and, if lip-sync or voice-over is on, <b>their voice</b> — not the narrator's. Each frame card gets a <b>🎭 Speaker</b> dropdown to fix any line, and a <b>🎭 Cast voices</b> panel lets you pick a voice per person.</div>
 
 <h2 id="story">4 · Step 2 — Write the story</h2>
 <p>The story is plain text. Start each shot with the word <b>Frame</b> and a number, then write the line that should appear on screen. That's it.</p>
@@ -144,6 +156,7 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 
 <h2 id="card">5 · The Frame Card — every field explained</h2>
 <p>After <span class="kbd">Parse Frames →</span>, each line becomes a card. Top to bottom you choose: <b>the picture</b>, then optionally a <b>mood note</b>, a <b>photo edit</b>, a <b>camera move</b>, a <b>lip-sync</b> toggle, and the <b>length</b>.</p>
+<div class="box"><b>💡 Suggestion chips.</b> Under the <b>mood note</b>, <b>photo edit</b>, and <b>camera</b> boxes you'll see a few small clickable suggestions the tool made for that line. <b>Click one to drop it in — then edit the words however you like</b>, or ignore them and type your own. They're just there so you never stare at an empty box.</div>
 
 <h3 id="source">5a · Picture source — where the shot's image comes from</h3>
 <table>
@@ -282,11 +295,16 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <tr><th>Setting</th><th>Options</th><th>Pick</th></tr>
 <tr><td>Orientation</td><td>Portrait 1080×1920 / Landscape 1920×1080</td><td><b>Portrait</b> for Reels/Shorts/TikTok</td></tr>
 <tr><td>Transition</td><td>Crossfade / Hard Cut</td><td>Crossfade for smooth, Hard Cut for punchy</td></tr>
-<tr><td>Caption font</td><td>Baskerville / Arial / Georgia / Helvetica</td><td>Baskerville for storytelling</td></tr>
+<tr><td>Caption font</td><td>Baskerville / <b>Montserrat</b> / Satoshi* / Arial / Georgia / Helvetica</td><td>Baskerville for storytelling, Montserrat for modern &amp; clean</td></tr>
 <tr><td>Caption size</td><td>24–96 pt</td><td>52 default; 60–70 for dramatic</td></tr>
 <tr><td>Caption colour</td><td>White / Yellow / Black</td><td>White — always readable</td></tr>
-<tr><td>Caption position</td><td>Bottom / Middle / Top</td><td>Bottom for Reels</td></tr>
+<tr><td>Caption position <span class="muted">(default)</span></td><td>Bottom / Middle / Top</td><td>Bottom for Reels — override per frame if a shot needs it elsewhere</td></tr>
+<tr><td><b>Burn captions</b></td><td>On / Off</td><td>Untick for a <b>clean video with no subtitles</b>. Voice-over (if on) still plays.</td></tr>
+<tr><td><b>Max lines per caption</b> <span class="muted">(default)</span></td><td>No limit / 1 / 2 / 3</td><td>Caps how many lines a caption takes; long text <b>auto-shrinks</b> to fit. 1–2 lines keeps it clean.</td></tr>
 </table>
+<div class="box">*<b>Satoshi</b> is a paid font — it only works once a licensed font file has been added to the app (ask your developer). <b>Montserrat</b> works out of the box.</div>
+
+<div class="box big"><b>Per-frame caption control.</b> The <b>position</b> and <b>max-lines</b> pickers in Style &amp; Quality are the <i>defaults</i> for the whole reel. On any frame card you'll see a <b>💬 Caption</b> row with its own <b>Position</b> and <b>Lines</b> dropdowns — set them to move just that one caption (e.g. push it to the <b>Top</b> when the subject's face is at the bottom of the shot, or force a punchy line to <b>1 line</b>). Leave them on "default" to follow the global setting. All of this works the same in <b>Brand / Ad mode</b>.</div>
 
 <h2 id="music">7 · Music</h2>
 <table>
@@ -300,6 +318,34 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 
 <h2 id="cost">8 · The 💰 cost panel — read it before Generate</h2>
 <p>After you parse, a cost estimate appears and updates live as you change settings. <b>Check it before pressing Generate.</b> Want it cheaper? Use <b>Dev</b> tier, prefer <b>real photos/videos</b>, and keep lip-sync to a few shots.</p>
+
+<h2 id="iterate">8b · Iterate without re-rendering — redo, approve, live clips</h2>
+<p>You don't have to render the whole video and hope. Treat the tool as a <b>draft machine you steer</b>: preview the stills, fix the frames you don't like, approve the rest, and only pay to animate what you've approved. Three controls make this fast.</p>
+
+<div class="box big"><b>The recommended 3-pass workflow</b><br>
+1. <b>👁 Preview Stills</b> (free) — see every image.<br>
+2. <b>Fix &amp; approve per frame</b> — 🔄 redo any image you don't like; untick frames you're not happy with yet.<br>
+3. <b>▶ Generate</b> in Dev — only approved frames get paid animation; you watch each clip appear live.</div>
+
+<h3>🔄 Redo still — fix one image, not the whole video</h3>
+<p>After Preview Stills, each frame card shows a <b>🔄 Redo still</b> button. Change that frame's <b>note</b>, <b>photo</b>, <b>image edit</b>, or <b>camera</b> — then click 🔄. <b>Only that one image regenerates</b> (a few seconds), and it swaps into the card. Nothing else is touched, and you don't pay to re-animate anything.</p>
+<ul>
+<li>Use it to dial in a face, a mood, or a symbolic shot until that single frame is right.</li>
+<li>Unchanged frames are never re-touched, so it's cheap and fast.</li>
+<li>When the still looks right, it's the exact image that gets animated later.</li>
+</ul>
+
+<h3>✓ Approve for animation — only pay for the frames you like</h3>
+<p>Each frame card has a <b>✓ Approved for animation</b> tick (on by default). <b>Untick</b> any frame you're not happy with. When you press Generate:</p>
+<ul>
+<li><b>Approved frames</b> → full AI animation (Kling/Higgsfield) — the good stuff, costs credits.</li>
+<li><b>Unticked frames</b> → a free, simple Ken Burns zoom — so the video still assembles complete and you can see the whole cut.</li>
+<li>The <b>💰 cost panel drops</b> as you untick frames, so you see the saving immediately.</li>
+</ul>
+<div class="box tip">This is the cheap way to test direction: approve only 2–3 hero frames first, render, see how they feel, then come back and approve more. You're never forced to pay for all frames at once.</div>
+
+<h3>🎬 Live clip reveal — watch it build</h3>
+<p>While a render runs, <b>each frame's clip appears in its card the moment it's done</b> — you don't wait for the whole video. The card shows <i>⏳ animating…</i>, then flips to a looping <b>🎬 clip ready</b> preview. If an early clip looks wrong you can stop, fix that frame with 🔄, untick it, and re-run — without having waited for all ten.</p>
 
 <h2 id="arc">9 · How to build a story that lands</h2>
 <table>
@@ -326,7 +372,8 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <b>Picture models:</b> Seedream (cheap) · Nano Banana (photo-real) · Flux · GPT Image (objects/text)<br>
 <b>Video models:</b> Kling Standard (default) · Kling Pro · Higgsfield · Seedance · Veo · Hailuo · Ken Burns (free)<br><br>
 <b>Quality:</b> Dev (test cheap) → Production (final)<br>
-<b>Features:</b> Lip sync (2–4 shots) · Voice-Over track (full narration) · Multi-shot coverage (longer beats split into B-roll)
+<b>Features:</b> Lip sync (2–4 shots) · Voice-Over track (full narration) · Multi-shot coverage (longer beats split into B-roll)<br>
+<b>Iterate:</b> 🔄 Redo still (fix one image) · ✓ Approve per frame (pay only for approved; rest = free Ken Burns) · live clip reveal while rendering
 <br><b>Edit examples:</b> add thunderstorm · warmer golden light · add rain on the window · morning fog
 </div>
 
@@ -401,10 +448,108 @@ From the farm to the ramp — the full story for your followers goes here.</pre>
 <tr><td>Costs look high</td><td>Switch to <b>Dev</b>, use real photos, cut lip-sync to 2–4 shots.</td></tr>
 <tr><td>Lip-sync shot came out silent/animated</td><td>That shot fell back safely — check the line isn't empty and try again.</td></tr>
 <tr><td>Testing for free</td><td>Set Video model to <b>Ken Burns</b> + Quality to <b>Dev</b> — zero AI cost.</td></tr>
+<tr><td>Don't like one image</td><td>Click <b>🔄 Redo still</b> on that frame after Preview — only that image regenerates.</td></tr>
+<tr><td>Only want to pay for some frames</td><td>Untick <b>✓ Approved</b> on the frames you're unsure about — they animate free (Ken Burns); the cost panel drops.</td></tr>
+<tr><td>Don't want to wait for the whole render</td><td>Clips appear in each card as they finish — watch the early ones, stop &amp; fix if a frame looks wrong.</td></tr>
+<tr><td>Wrong speaker on a quoted line</td><td>Use the <b>🎭 Speaker</b> dropdown on that frame card to pick the right person.</td></tr>
+<tr><td>AI chose wrong gender/age for a character</td><td>Fill the <b>Subject → Description</b> field with gender + age, or leave blank and the AI infers from the story.</td></tr>
 </table>
 
 <hr>
-<p class="muted">Workflow in one line: <b>Write short lines → Parse → set Picture + Note + Camera per shot → Dev test → Production final → Download.</b> When unsure, leave models on <b>Auto</b> and start in <b>Dev</b>.</p>
+
+<!-- ─────────────────────────────────────────────────────────────── -->
+<h2 id="brand">13 · Brand / Ad Mode — full walkthrough</h2>
+<p>Click <b>🛍 Brand / Ad mode</b> in the header (or go to <code>/brand</code>) to switch. The engine is identical — same pipeline, same frame cards, same models — but the UI gains a <b>brand brief panel</b>, <b>real-asset uploads</b>, <b>mandatory checks</b>, and a <b>product beat toggle</b> per shot.</p>
+
+<div class="box warn">
+  <b>Iron rule: you type every word of ad copy yourself.</b> The AI never writes, rephrases, or invents marketing claims, taglines, or on-screen text. It only makes visuals. Paste the brand's exact words into the fields below.
+</div>
+
+<div class="step"><div class="num">1</div><div><b>Paste the brand brief</b> (optional) → click <span class="kbd">Extract fields →</span>. Fields fill in with the brand's exact words — never paraphrased. Only empty fields are filled; anything you've already typed is left alone.</div></div>
+<div class="step"><div class="num">2</div><div><b>Upload the logo</b> (required) and optionally <b>product photos/videos</b>.</div></div>
+<div class="step"><div class="num">3</div><div><b>Paste the ad script</b> in the beats box, then <span class="kbd">Parse Frames →</span>. Each beat = one frame card. Tick <b>🛍 Product beat</b> on the shot(s) where the real product/logo appears.</div></div>
+<div class="step"><div class="num">4</div><div><b>Choose audio</b> — AI announcer (draft) or brand-supplied VO file; AI music or brand-supplied cleared music.</div></div>
+<div class="step"><div class="num">5</div><div><span class="kbd">👁 Preview Stills</span> first (free — no animation) to check the look and product-beat frames.</div></div>
+<div class="step"><div class="num">6</div><div><span class="kbd">▶ Generate Ad</span> — the tool checks all mandatories before spending any credits and shows a checklist if anything is missing.</div></div>
+
+<h3 id="brand-brief">13a · Brand brief panel</h3>
+<div class="box">
+  <b>Option A:</b> Paste the full brief text → <span class="kbd">Extract fields →</span> (parses verbatim, fills empty boxes only).<br>
+  <b>Option B:</b> Type directly into the fields. Either way, what you see in the boxes is what gets used.
+</div>
+<table>
+<tr><th>Field</th><th>What to put here</th><th>Notes</th></tr>
+<tr><td><b>Brand name</b></td><td>The brand's name</td><td>Appears in the "Paid partnership" disclosure line</td></tr>
+<tr><td><b>Product</b></td><td>The product category or name</td><td>Used in visual context — not on screen</td></tr>
+<tr><td><b>Objective</b></td><td>What the ad should achieve</td><td>e.g. product awareness, trial drive</td></tr>
+<tr><td><b>Key message</b></td><td>The brand's exact claim — verbatim</td><td>Never rephrased by AI</td></tr>
+<tr><td><b>CTA text</b> <i>(required)</i></td><td>The call-to-action line shown on the end card</td><td>e.g. "Try it now · Link in bio"</td></tr>
+<tr><td><b>CTA link</b></td><td>URL or "Link in bio"</td><td>Shown on the end card</td></tr>
+<tr><td><b>Tagline</b></td><td>Brand tagline (optional)</td><td>Optional — only set if the brand supplied it</td></tr>
+<tr><td><b>Brand colour</b></td><td>Hex code for the end card</td><td>e.g. <code>#0a7d33</code></td></tr>
+<tr><td><b>Announcer script</b></td><td>Exact voice-over lines</td><td>Read aloud as-is — never rewritten</td></tr>
+</table>
+
+<h3 id="brand-kit">13b · Brand kit &amp; assets (real-only — never AI-generated)</h3>
+<table>
+<tr><th>Asset</th><th>Required?</th><th>What it does</th></tr>
+<tr><td><b>Logo</b></td><td>✅ Required</td><td>Placed on the end card; optionally shown as a logo bug in the corner throughout the video</td></tr>
+<tr><td><b>Product photos/videos</b></td><td>Recommended</td><td>Used on frames you mark 🛍 Product beat — never AI-replaced</td></tr>
+<tr><td><b>Show logo in corner</b></td><td>Optional</td><td>Tick to burn a small logo bug into every shot; pick corner (top-right default)</td></tr>
+</table>
+<div class="box warn"><b>Product beat frames are real-only.</b> When you tick 🛍 on a frame, it uses your uploaded product photo/video exactly as-is — the AI never generates a product shot. If you haven't uploaded one, that frame gets a plain visual instead.</div>
+
+<h3 id="brand-audio">13c · Audio — VO &amp; music</h3>
+<p>Brand mode separates the announcer voice-over from the background music. Both are decided per-project.</p>
+<table>
+<tr><th>Setting</th><th>Options</th></tr>
+<tr><td><b>Announcer VO</b></td><td><b>AI draft</b> — reads your announcer script in a chosen ElevenLabs voice (fast, for review) · <b>Brand-supplied audio</b> — upload the final signed-off VO file</td></tr>
+<tr><td><b>Background music</b></td><td><b>AI music</b> — auto-composed from the ad mood · <b>Brand-supplied music</b> — upload their cleared track</td></tr>
+</table>
+<div class="box"><b>VO plays over music.</b> The announcer is at full volume; music ducks to 18% underneath automatically — no ffmpeg knowledge needed.</div>
+<p class="muted">Need an ElevenLabs voice ID? Paste it in the VO voice field. Leave blank for the default voice.</p>
+
+<h3 id="brand-beats">13d · Writing the ad script &amp; marking product beats</h3>
+<p>Write the script exactly like a story script — one caption per Frame. <b>The caption is the on-screen text the brand supplies.</b> After parsing, each frame card gets a <b>🛍 Product beat</b> toggle.</p>
+<table>
+<tr><th>Beat type</th><th>What to do</th></tr>
+<tr><td>Lifestyle / story beat</td><td>Write the brand-supplied line. Leave product beat off. The AI makes the visual.</td></tr>
+<tr><td>Product / logo shot</td><td>Tick <b>🛍 Product beat</b>. Upload a real product photo in the Brand kit. That photo is used as-is — no AI generation.</td></tr>
+<tr><td>End-card beat</td><td>Auto-generated by the tool from your CTA text, logo, and brand colour. You don't write it — it's appended automatically.</td></tr>
+</table>
+<div class="box tip"><b>Best structure for a 15–30s ad:</b><br>
+Frame 1: Lifestyle hook (relatable scene, brand-neutral)<br>
+Frame 2–3: Problem or desire<br>
+Frame 4: Product introduction (🛍 Product beat — your product photo)<br>
+Frame 5: Key message (brand's exact words on screen)<br>
+End-card: Auto-generated CTA</div>
+
+<h3 id="brand-hard-block">13e · Mandatories hard-block (the checklist)</h3>
+<p>If you click <span class="kbd">Generate Ad</span> with something missing, the tool refuses to spend any credits and shows a red checklist. You cannot generate until all boxes are ticked. This protects against accidentally publishing an ad without a logo or disclosure.</p>
+<table>
+<tr><th>Mandatory</th><th>How to clear it</th></tr>
+<tr><td>Brand logo (upload the logo file)</td><td>Upload a logo file in the Brand kit section</td></tr>
+<tr><td>Call-to-action text</td><td>Fill the CTA text field in the Brand brief panel</td></tr>
+<tr><td>At least one 🛍 Product beat</td><td>Tick the 🛍 Product beat toggle on at least one frame card</td></tr>
+<tr><td>Disclosure (auto-added)</td><td>This one is always satisfied — the tool adds "Paid partnership with [Brand]" automatically</td></tr>
+</table>
+<div class="box warn"><b>The Instagram "Paid Partnership" label is separate.</b> The tool burns a text disclosure into the video file. You still need to set Instagram's native <b>Paid Partnership with Brand</b> label when posting — that's done inside the Instagram app, not here.</div>
+
+<h3 id="brand-faq">13f · Brand mode quick fixes</h3>
+<table>
+<tr><th>Problem</th><th>Fix</th></tr>
+<tr><td>Hard-block checklist appears when I click Generate</td><td>Complete each item in the red checklist — upload the logo, fill CTA text, tick a product beat.</td></tr>
+<tr><td>Product photo isn't showing on the product beat frame</td><td>Upload a product photo in the Brand kit section, then tick 🛍 on the right frame.</td></tr>
+<tr><td>Extract fields filled in the wrong thing</td><td>Just edit the field directly — extracted values are pre-fills, not locked. You always win over the AI.</td></tr>
+<tr><td>VO is the wrong voice</td><td>Paste an ElevenLabs voice ID in the VO voice field, or switch to brand-supplied audio.</td></tr>
+<tr><td>I want to test the look without spending VO/music credits</td><td>Use <b>👁 Preview Stills</b> — it generates images only, no animation, no audio spend.</td></tr>
+<tr><td>End-card text is wrong</td><td>Edit the CTA text field and the brand name field — the end card is built from those.</td></tr>
+</table>
+
+<hr>
+<p class="muted">Story mode workflow: <b>Write short lines → Parse → set Picture + Note + Camera per shot → Dev test → Production final → Download.</b><br>
+Brand mode workflow: <b>Fill brief → upload logo + product → write ad script → Parse → tick 🛍 product beats → Preview Stills → Generate Ad → Download.</b><br>
+When unsure, leave models on <b>Auto</b> and start in <b>Dev</b>.</p>
 
 </body>
 </html>

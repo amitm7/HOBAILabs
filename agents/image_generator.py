@@ -196,13 +196,18 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
     scene  = frame.get("scene", {})
     prompt = scene.get("image_prompt", "")
     if not prompt:
+        # Bare fallback only (scene design absent/failed). No fixed stock person:
+        # describe whoever the beat — and the detected speaker — implies.
         caption = frame.get("caption", "")
         note    = frame.get("director_note", "")
+        gender  = frame.get("speaker_gender", "")
+        age     = frame.get("speaker_age_bracket", "")
+        who = (f"{age} " if age and age != "adult" else "") + (gender or "person")
         prompt  = (
-            f"Cinematic portrait of a young Assamese Indian woman at the right age: "
-            f"{caption[:120]}. "
+            f"Cinematic, era- and setting-accurate portrait of a {who} at the right age "
+            f"for this moment: {caption[:120]}. "
             f"{('Director note: ' + note + '. ') if note else ''}"
-            "Early 2000s India, humble setting, warm natural light, photorealistic, "
+            "Authentic, grounded, photorealistic, warm natural light, "
             "9:16 vertical, no text, no watermarks, shallow depth of field, 85mm lens."
         )
 

@@ -46,6 +46,8 @@ def _resolve_model_id(item: dict, provider: str, kling_mode: str) -> str:
     existing callers keep working. Returns "" for Ken Burns (no AI).
     """
     mid = (item.get("model_id") or "").strip().lower()
+    if mid == "kenburns":          # explicit per-frame Ken Burns (e.g. unapproved frame)
+        return ""
     if mid and mid not in ("auto", "passthrough"):
         return mid
     if provider == "higgsfield":
@@ -548,10 +550,23 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
 def build_clips(assignments: list[dict], temp_dir: str,
                 width: int, height: int, fps: int = 30,
                 force_5s: bool = False, kling_mode: str = "pro",
-                provider: str = "kling") -> list[dict]:
+                provider: str = "kling", on_clip_ready=None) -> list[dict]:
+    """
+    on_clip_ready: optional callback(segment_id, clip_path) fired the moment each
+    clip is finished (cached, Ken Burns, or freshly polled). Lets the web UI reveal
+    clips progressively as they land instead of waiting for the whole batch. Must be
+    safe to call from worker threads; any exception it raises is swallowed.
+    """
     use_kling = bool(os.environ.get("KLING_ACCESS_KEY") and os.environ.get("KLING_SECRET_KEY"))
     print(f"[ClipBuilder] Provider: {provider} (auto-routed per shot) | "
           f"tier: {'draft' if force_5s else 'premium'} | Cache: {CLIP_CACHE_DIR}")
+
+    def _notify(seg_id, clip_path):
+        if on_clip_ready and clip_path:
+            try:
+                on_clip_ready(seg_id, clip_path)
+            except Exception as e:
+                print(f"[ClipBuilder] on_clip_ready callback failed for {seg_id} ({e})")
 
     # Phase 1: Submit all AI tasks simultaneously, Ken Burns immediately
     clips, pending = [], []
@@ -565,6 +580,7 @@ def build_clips(assignments: list[dict], temp_dir: str,
             clips.append(result)
             if not result.get("cached"):
                 print(f"[ClipBuilder] {result['segment_id']} → {result['clip_path']} ({result['actual_duration']:.1f}s)")
+            _notify(result["segment_id"], result.get("clip_path"))
 
     # Phase 2: Poll all pending tasks in parallel (Kling + Higgsfield mixed)
     if pending:
@@ -664,6 +680,7 @@ def build_clips(assignments: list[dict], temp_dir: str,
                 result = future.result()
                 clips.append(result)
                 print(f"[ClipBuilder] {result['segment_id']} → done ({result['actual_duration']:.1f}s)")
+                _notify(result["segment_id"], result.get("clip_path"))
 
     # Restore original order
     order = {item["segment_id"]: i for i, item in enumerate(assignments)}

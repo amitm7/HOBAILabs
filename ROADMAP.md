@@ -2,7 +2,8 @@
 
 **Last revised:** 2026-06-09  
 **Stack:** Python + FFmpeg + Kling AI + OpenAI + ElevenLabs + Suno AI  
-**Current state:** Single-story pipeline working end-to-end (script → Kling clips → ASS captions → assembled Reel). Web UI live at `web_app.py`.
+**Current state:** Single-story pipeline working end-to-end (script → Kling clips → ASS captions → assembled Reel). Web UI live at `web_app.py`.  
+**Companion backlog:** [docs/PRODUCT_IDEAS.md](docs/PRODUCT_IDEAS.md) — consolidated creative + strategic wishlist (per-frame layout engine, text/callouts, timing, edit surface, story→script intake, multi-language, asset library, Brand B2).
 
 ---
 

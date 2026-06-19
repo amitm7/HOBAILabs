@@ -4,12 +4,19 @@ FROM python:3.12-slim
 # System deps:
 #   ffmpeg            — clip normalization / assembly
 #   fonts-liberation  — a serif caption face (macOS Baskerville is absent on Linux)
+#   fontconfig        — fc-cache so libass finds the bundled caption fonts by name
 #   libheif/PIL come from the pillow-heif wheel, so no apt libheif needed
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg fonts-liberation \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-liberation fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Caption fonts: install the bundled TTFs (Montserrat OFL; drop a licensed
+# Satoshi TTF into deploy/fonts to enable it) so libass can render them by
+# family name. fc-cache registers them with fontconfig.
+COPY deploy/fonts/ /usr/share/fonts/truetype/hob/
+RUN fc-cache -f
 
 # Install deps first (better layer caching)
 COPY requirements.txt .

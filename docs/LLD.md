@@ -1,6 +1,6 @@
 # HOBAILabs — Low-Level Design (LLD)
 
-**Revision:** 2026-06-11 · branch `feat/pipeline-expansion-roadmap`
+**Revision:** 2026-06-18 · current `main` branch
 **Companion:** [HLD.md](HLD.md) — system context, flow, decisions
 **Audience:** engineers modifying the pipeline. File references are clickable.
 
@@ -10,33 +10,50 @@
 
 ```
 run_caption.py            CLI orchestrator (the canonical pipeline)
-main.py                   Legacy voiceover pipeline (segmenter→TTS→match→assemble)
-web_app.py                Flask server: parse/preview/estimate/run/progress(SSE)/download
+main.py                   Legacy voiceover pipeline (segmenter→TTS→match→assemble) — not maintained
+web_app.py                Flask server: parse/preview/estimate/run/progress(SSE)/download/brand
 
 agents/
   script_parser.py        text → frames[]  (Format A/B, annotations, auto-match)
   image_matcher.py        opt-in LLM content match (describe → assign); SQLite cache
-  scene_intelligence.py   LLM director per frame → scene{} (cached)
-  llm.py                  pluggable chat()/vision brain (OpenAI|Bedrock|Gemini)
+  scene_intelligence.py   LLM director: treatment pass + per-frame scene design + vision-grounded motion
+  llm.py                  pluggable chat()/vision brain (OpenAI|Bedrock|Gemini), 3 tiers + JSON schema
   model_router.py         shot → model id (pure logic over config/models.json)
-  image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends)
+  image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends); prompt-hash cache
   image_editor.py         [edit:] pass on a still (gpt-image)
-  safety.py               Gate A (moderation) + Gate B (face sanity)
+  safety.py               Gate A (moderation) + Gate B (face sanity) + Gate B2 (vision critique)
+  cast.py                 multi-speaker detection + voice resolution per frame
+  brand.py                brief extraction, mandatories gate, PIL CTA card, disclosure
+  suggestions.py          fast-tier batch → camera/edit/note chips per frame
   coverage.py             multi-shot B-roll: LLM vision assign + duration split
   lipsync_coordinator.py  audio → CDN → Hedra/SyncLabs → lipsync_clip_path
     hedra.py / synclabs.py    vendor clients
-    tts_generator.py          ElevenLabs/OpenAI TTS; frame-exact padding/trim (_fit_seg)
+    tts_generator.py          ElevenLabs/OpenAI TTS; frame-exact padding/trim; per-speaker voice
   clip_builder.py         still/video → animated clip (kenburns|kling|higgsfield|fal)
     higgsfield.py / fal_video.py / fal_client.py   vendor clients
-  caption_writer.py       frames → ASS subtitle file
-  assembler.py            clips → normalize → concat/xfade → captions → music → voiceover → mp4
-  pricing.py              whole-pipeline cost estimate (config/pricing.json)
+  caption_writer.py       frames → ASS subtitle file (uses effective_timecodes)
+  assembler.py            clips → normalize → concat/xfade → captions → music → voiceover
+                          → apply_brand_overlay (brand post-pass)
+  pricing.py              whole-pipeline cost estimate (config/pricing.json); multi-shot aware
   style_exemplars.py      opt-in in-context house-style injection (USE_EXEMPLARS=1)
   _kv.py                  thread-safe SQLite KVStore (WAL mode, per-key writes)
   cache_store.py          BlobCache abstraction (local FS + optional S3 read-through)
 
-config/  models.json (catalog+routing) · pricing.json (costs) · llm.json (provider)
-~/.hob_cache/  kling_clips · scene_designs · image_descriptions.db (SQLite) · lipsync_clips · lipsync_audio (all BlobCache-backed)
+config/
+  models.json             model catalog + routing
+  pricing.json            per-model costs
+  llm.json                provider + model per tier (reasoning/vision/fast)
+  voices.json             role → ElevenLabs voice_id map (narrator/gender/age defaults)
+
+deploy/fonts/
+  Montserrat-Regular.ttf, Montserrat-Italic.ttf  (OFL; installed via Dockerfile + fc-cache)
+
+~/.hob_cache/
+  kling_clips/            animation clips (BlobCache; S3-backed when enabled)
+  scene_designs/          per-frame JSON (MD5-keyed)
+  image_descriptions.db   SQLite WAL (image content-hash keyed)
+  lipsync_clips/          finished lip-sync clips (BlobCache)
+  lipsync_audio/          ElevenLabs TTS segments (BlobCache)
 ```
 
 ---
@@ -46,7 +63,7 @@ config/  models.json (catalog+routing) · pricing.json (costs) · llm.json (prov
 **Entry:** `parse_frame_script(script_path, assets_dir, max_frame_dur=9.0, smart_match=False)`
 → [agents/script_parser.py:154](../agents/script_parser.py#L154)
 
-- **Format detection:** presence of `visual:` → Format A; else Format B (the HOB format).
+- **Format detection:** presence of `visual:` → Format A; else Format B (HOB format).
 - **Format B parsing** ([script_parser.py:56](../agents/script_parser.py#L56)): split on `Caption:`
   (Instagram text, dropped), strip leading `Reels`, split body on `\bFrame\s*\d+\b`.
   Frame **numbers are positional, not authoritative** — re-indexed `f01..fNN`.
@@ -54,6 +71,7 @@ config/  models.json (catalog+routing) · pricing.json (costs) · llm.json (prov
   `[note:]`→`director_note`, `[photo:]`→`photo_spec`, `[edit:]`→`edit_prompt`,
   `[camera:]`/`[motion:]`→`motion_override` (camera wins if both),
   `[lipsync: yes|true|1]`→`lipsync`, `[voice:]`→`voice_override`,
+  `[speaker:]`→`speaker_id` (optional manual override of LLM-detected speaker),
   `[model:]`→both overrides, `[imgmodel:]`/`[vidmodel:]`→single-step override,
   `[duration:]`, `[start:]`→`video_start_sec`, `[end:]`→`video_end_sec`.
 - **Duration auto-calc** `_frame_duration` ([:26](../agents/script_parser.py#L26)):
@@ -77,9 +95,9 @@ can show/override it; downstream `_is_real_media` treats a non-`ai_` `photo_spec
 
 Two LLM stages, both cached, both safe (return `False`/positional on any failure):
 
-1. **`describe_images(paths)`** ([:131](../agents/image_matcher.py#L131)) — one
+1. **`describe_images(paths)`** ([:131](../agents/image_matcher.py#L131)) — one fast-tier
    vision call per file → 1–2 sentence description **including any text/names visible**.
-   Cached **forever** by image content hash in `~/.hob_cache/image_descriptions.json`.
+   Cached **forever** by image content hash in `~/.hob_cache/image_descriptions.db` (SQLite WAL).
    **Videos** are sampled into up to 3 keyframes (`ffmpeg` at 15/50/85%) and described
    as `(real video clip) …` ([:82](../agents/image_matcher.py#L82)).
 2. **`assign_images(frames, descriptions)`** ([:175](../agents/image_matcher.py#L175))
@@ -87,300 +105,435 @@ Two LLM stages, both cached, both safe (return `False`/positional on any failure
    names/text matches and **prefers real video clips over stills** for equal fit.
 
 Only fills frames with no `photo_spec`, no `ai_*`, excludes pinned files; never
-touches the animation stage. `style_exemplars.matching_examples()` is prepended when enabled.
+touches the animation stage.
 
 ---
 
 ## 3. `scene_intelligence.py` — the director
 
-**Entry:** `design_all_scenes(frames, subject_name, subject_description="")`
+### 3a. Treatment pass
+**Entry:** `design_treatment(frames, subject_name="", subject_description="", extra_context="") -> dict`
+
+Called once before per-frame design. Returns a whole-reel plan:
+`{arc, visual_motif, shot_size_rhythm, opening_hook, closing_resolution}`.
+The treatment dict is fed as `extra_context` into every subsequent `design_scene()` call
+so individual frames stay thematically consistent.
+
+Strict JSON enforced via `_TREATMENT_SCHEMA`. On LLM error, returns an empty dict (non-fatal).
+
+### 3b. Per-frame scene design
+**Entry:** `design_all_scenes(frames, subject_name="", subject_description="", extra_context="")`
 → [agents/scene_intelligence.py:189](../agents/scene_intelligence.py#L189)
 
 - Per-frame `design_scene()` picks one of three system prompts by `visual_type`:
-  `symbolic` (objects, no people), `contextual` (age/era-accurate portrait), or
-  `portrait`/default. Returns strict JSON:
+  `symbolic` (objects, no people), `contextual` (age/era-accurate portrait), or `portrait`/default.
+- Returns strict JSON via `_SCENE_SCHEMA`:
   `{emotion, scene_description, image_prompt, motion_prompt, camera_angle}`.
-- **`visual_type` derivation** ([:214](../agents/scene_intelligence.py#L214)):
-  `ai_symbolic→symbolic`, `ai_portrait→contextual`, else `portrait`.
-- **`has_real_photo`** flag tells the director to design *motion only* and skip the
-  image prompt (the real photo is kept).
-- **Caching** ([:23](../agents/scene_intelligence.py#L23)): `MD5(caption, note,
-  visual_type, subject_name, subject_description, has_real_photo)` → JSON in
-  `~/.hob_cache/scene_designs/`. Changing any of those re-runs GPT.
-- **Parallelism:** `ThreadPoolExecutor(max_workers=min(n,10))`; results merged back,
-  order restored. Silent frames get a canned slow-zoom-out scene with no image prompt.
-- **Fallback:** on LLM error, a generic photoreal prompt + slow push-in is returned
-  (never raises). `style_exemplars` preamble/examples appended to system prompt when on.
+- **Subject is always optional.** When `subject_name/description` are blank, system prompts
+  say "infer from the story itself" — no hardcoded defaults.
+- **`has_real_photo`** flag tells the director to design *motion only* and skip the image prompt.
+- **Caching:** `MD5(caption, note, visual_type, subject_name, subject_description, has_real_photo)` → JSON in `~/.hob_cache/scene_designs/`.
+- **Parallelism:** `ThreadPoolExecutor(max_workers=min(n,10))`. Silent frames get a canned slow-zoom-out scene.
+- **Fallback:** on LLM error, a generic photoreal prompt + slow push-in is returned (never raises).
 
-> Note: prompt copy references "gpt-image-2" / "Kling v3" and an Assamese subject —
-> these are prompt-engineering details, not hard dependencies; the brain is provider-agnostic.
+### 3c. Vision-grounded motion
+**Entry:** `ground_motion_prompt(frame) -> str` / `ground_all_motions(frames) -> None`
+
+Called *after* stills are generated (stage 3b1 in HLD flow). Opens the actual generated still
+with a vision LLM call and rewrites `frame["scene"]["motion_prompt"]` to be visually accurate
+for the specific image — instead of a generic motion prompt written before the image existed.
+
+### 3d. JSON schema enforcement
+`_SCENE_SCHEMA` and `_TREATMENT_SCHEMA` are passed to `llm.chat(json_schema=...)`.
+OpenAI uses structured outputs (`response_format`); Bedrock/Gemini get a schema directive injected
+into the system prompt. This eliminates partial-JSON parse failures.
 
 ---
 
 ## 4. `llm.py` — the pluggable brain
 
-**Entry:** `chat(messages, *, json_mode, max_tokens, temperature, model_tier) -> str`
+**Entry:** `chat(messages, *, json_mode, json_schema, max_tokens, temperature, model_tier) -> str`
 → [agents/llm.py:105](../agents/llm.py#L105)
 
 - **Provider** from `LLM_PROVIDER` env or `config/llm.json` (`openai` default).
-- **Model** from `LLM_<TIER>_MODEL` env, else `config[provider][tier]`, else `reasoning`.
-  `model_tier` is `"reasoning"` or `"vision"`.
+- **Model** from `LLM_<TIER>_MODEL` env, else `config[provider][tier]`, else falls back to `reasoning`.
+  `model_tier` is `"reasoning"` | `"vision"` | `"fast"`.
+- **`fast` tier** (`gpt-4o-mini`, `claude-haiku-4-5`, `gemini-2.5-flash-lite`) used for
+  batch low-stakes calls: image descriptions, suggestion chips, image content match.
+- **`json_schema` param:** OpenAI → `response_format={type:"json_schema", json_schema:{...}}`
+  (strict structured outputs); Bedrock/Gemini → schema injected as a system directive.
 - **Message format is provider-neutral:** `content` is a string or a list of
   `{type:text}` / `{type:image, path|data_uri}` parts. Each backend translates:
-  - **OpenAI** ([:121](../agents/llm.py#L121)) — `image_url` data-URIs; `response_format`
-    for json_mode.
-  - **Bedrock Converse** ([:151](../agents/llm.py#L151)) — system blocks separated;
-    images as raw bytes; json_mode emulated via a system directive (Claude has no
-    `response_format`). IAM auth, no API key.
-  - **Gemini** ([:195](../agents/llm.py#L195)) — system_instruction + PIL images;
-    `response_mime_type` for json.
+  - **OpenAI** ([:121](../agents/llm.py#L121)) — `image_url` data-URIs.
+  - **Bedrock Converse** ([:151](../agents/llm.py#L151)) — system blocks separated; images as raw bytes; IAM auth.
+  - **Gemini** ([:195](../agents/llm.py#L195)) — `system_instruction` + PIL images.
 - **`json_loads_lenient`** strips ```` ```json ```` fences and slices outer braces.
+- Singletons: `_openai_client()` and `_bedrock_client()` are cached so the heavy SDK
+  init happens once per process.
 
-**Axis boundary:** only reasoning/vision is routed here. **Image generation and
-audio are separate axes** (image via `model_router`+`image_generator`, audio via
-`tts_generator`) — do not route them through `llm.py`.
+**config/llm.json tiers:**
+```json
+{
+  "openai":   {"reasoning":"gpt-4.1", "vision":"gpt-4o", "fast":"gpt-4o-mini"},
+  "bedrock":  {"reasoning":"us.anthropic.claude-sonnet-4-6", "fast":"us.anthropic.claude-haiku-4-5"},
+  "gemini":   {"reasoning":"gemini-2.5-flash", "fast":"gemini-2.5-flash-lite"}
+}
+```
 
 ---
 
 ## 5. `model_router.py` — shot → model id
 
 **Entry:** `select_model(kind, shot, cost_tier="draft", override="") -> str`
-→ [agents/model_router.py:104](../agents/model_router.py#L104). Pure logic + JSON read,
-**unit-testable, no API calls.**
+→ [agents/model_router.py:104](../agents/model_router.py#L104). Pure logic + JSON read, unit-testable, no API calls.
 
 Resolution order:
-1. **Valid override wins** — `override` must be a real model of the right `kind`
-   (`_valid_override` [:99](../agents/model_router.py#L99)); a wrong-kind id is ignored.
+1. **Valid override wins** — `override` must be a real model of the right `kind`.
 2. **Image step + real media → `PASSTHROUGH`** (`_is_real_media`/`_is_video_source`).
-3. **Route by shot type + tier:** `config.routing[kind][shot_type][tier]` → first id
-   that exists in `models`.
+3. **Route by shot type + tier:** `config.routing[kind][shot_type][tier]` → first id in `models`.
 4. **Fallback** to `config.defaults[kind]`.
 
-**Shot classification** (uses metadata the pipeline already has):
+**Shot classification:**
 - `cost_tier_from_quality`: `dev|draft|preview → draft`, else `premium`.
 - Image (`_image_shot_type`): `ai_symbolic→object`, else `face`.
-- Video (`_video_shot_type`): `lipsync→dialogue`, real→`real`, `ai_symbolic→landscape`,
-  hero/index-0→`hero`, else `face`.
-
-**`config/models.json`** holds, per model: `kind`, `backend` (`flux|openai|fal|
-kling|higgsfield`), `tier`, `fal_endpoint`, `kling_mode`, `max_concurrent`,
-`pricing_key`. `routing` maps `shot_type→tier→[ordered ids]`. **Add a model =
-add a `models` entry + list it in `routing`; no code change.**
+- Video (`_video_shot_type`): `lipsync→dialogue`, real→`real`, `ai_symbolic→landscape`, hero/index-0→`hero`, else `face`.
 
 ---
 
-## 6. Visual assignment (in `run_caption.py`)
+## 6. `cast.py` — multi-speaker detection + voice resolution
 
-Stage 3 loop → [run_caption.py:219](../run_caption.py#L219):
-- `cost_tier` from quality; per-frame `image_model_override`/`video_model_override`
-  default to the global `--image-model`/`--video-model` (unless `auto`).
-- `select_model("image", …)` → `mid` (`""` for PASSTHROUGH). Then by `photo_spec`:
-  - **real photo pin** → use file if it exists, else AI-portrait fallback;
-  - **`ai_portrait`** → `generate_contextual_image` (or **reuse `first_portrait_path`**
-    under `--face-lock`);
-  - **`ai_symbolic`** → `generate_symbolic_image`;
-  - **no source** → contextual fallback.
-- Each generation goes through **`_generate_with_sanity_check`**
-  ([run_caption.py:29](../run_caption.py#L29)): run → Gate B → up to 2 retries
-  (deleting the bad file) → accept last result.
+**Entry:** `detect_cast(frames, narrator_name, narrator_description) -> list[dict]`
+**Secondary:** `apply_cast(frames, cast, narrator_name, narrator_description) -> None`
+→ [agents/cast.py](../agents/cast.py)
 
-### `image_generator.py` backends
-→ [agents/image_generator.py](../agents/image_generator.py)
-- `_generate_with_model` dispatches on `backend`: `flux`→`_flux_generate` (fal
-  `flux-2-pro`, `sync_mode`), `openai`→`_openai_generate` (`gpt-image-2`, 1024×1536),
-  `fal`→`_fal_image_generate` (endpoint from catalog).
-- **`_generate_image(model, prompt, out, fallback)`** wraps with a fallback model
-  (default `gpt_image`) so one flaky provider never breaks a render.
-- **Disk reuse:** `ai_portrait_<fid>.jpg` / `ai_symbolic_<fid>.jpg` written into the
-  **asset folder**; reused if present and ≥ 50 KB (`_image_cached`). This is why the
-  derived-marker filter in the parser matters.
+### Cast detection
+One LLM reasoning call on the full script text. Returns a list of cast members:
+```python
+{"id": "narrator", "name": "...", "gender": "female", "age_bracket": "adult", "description": "..."}
+{"id": "son",      "name": "...", "gender": "male",   "age_bracket": "child", "description": "..."}
+```
+`NARRATOR_ID = "narrator"` is always present.
 
-### `safety.py`
+`apply_cast()` assigns `frame["speaker_id"]` per frame based on the LLM output.
+A `[speaker:]` script annotation overrides the detected speaker.
+
+### Voice resolution
+**`voice_for_frame(frame, default_voice_id, voice_map) -> str`**
+
+Priority chain (first non-empty wins):
+1. `frame["voice_override"]` — explicit `[voice:]` annotation in the script
+2. `voice_map[speaker_id]` — operator selection in the Cast voices UI panel
+3. `voices.json roles[speaker_id]` — if speaker_id matches a role key
+4. `voices.json roles[gender_age_bracket]` — e.g. `female_adult`, `child`
+5. `default_voice_id` — the global voice picker
+
+**`subject_descriptor(frame, narrator_description) -> str`**
+Returns a visual description of who should be on screen for this frame — `narrator_description`
+for narrator frames, or the cast member's description for quoted-speaker frames. Used by
+`image_generator` as the subject in AI portrait prompts (never hardcoded).
+
+**config/voices.json:**
+```json
+{"roles": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""}}
+```
+All values empty by default — fill with your ElevenLabs voice IDs for role-based defaults.
+
+---
+
+## 7. `brand.py` — brief extraction, mandatories, CTA card
+
+→ [agents/brand.py](../agents/brand.py)
+
+### `extract_brief(text: str) -> dict`
+Parse-only LLM call. System prompt says "copy verbatim — do NOT rephrase or summarise."
+Returns `{name, product, objective, key_message, cta_text, cta_url, tagline}`.
+Only empty fields in the UI are filled; operator edits always win.
+
+### `validate_mandatories(frames, brand) -> list[str]`
+Hard-block gate called at the **top of `/run`** before any spend. Returns a list of
+failure strings; empty list = proceed. Checks:
+- `brand["logo_path"]` is set and non-empty
+- `brand["cta_text"]` is set and non-empty
+- At least one frame has `product_beat = True`
+- If `vo_mode == "brand_audio"` → `vo_audio_path` must be set
+- If `music_mode == "brand_audio"` → `music_audio_path` must be set
+
+### `build_cta_card(brand, out_path, width, height) -> str`
+PIL-generated end card: brand colour background, logo image, CTA text (Montserrat preferred),
+CTA URL. Written to `out_path` and appended as the final frame in `_generate_stills()`.
+
+### `apply_brand_overlay(in_path, out_path, disclosure_text, logo_path, logo_corner, disclosure_secs) -> str`
+Post-pass on the assembled MP4. Uses `ffmpeg drawtext` to burn
+`"Paid partnership with {brand_name}"` into the first N seconds. Optionally composites
+a corner logo bug via `ffmpeg overlay` filter. Isolated function — does not touch the
+4 existing assembly branches.
+
+### `disclosure_text(brand) -> str`
+Returns `"Paid partnership with {name}"` or `"Paid partnership with the brand"` fallback.
+
+---
+
+## 8. `suggestions.py` — AI suggestion chips
+
+**Entry:** `suggest_for_frames(frames, max_each=3) -> None`
+→ [agents/suggestions.py](../agents/suggestions.py)
+
+One batched **fast-tier** LLM call at parse time. For each frame returns up to
+`max_each` suggestions each for:
+- `camera` — camera motion ideas (e.g. "dolly in", "crane up")
+- `edit` — image edit ideas (e.g. "add soft fog", "warmer golden light")
+- `note` — director note ideas (e.g. "head high, direct gaze, warm backlight")
+
+Results stored in `frame["suggestions"]`. UI renders them as clickable chips below
+the relevant input boxes. Clicking a chip fills the box but leaves it fully editable —
+not locked.
+
+---
+
+## 9. `safety.py` — safety gates
+
 → [agents/safety.py](../agents/safety.py)
-- **Gate A `moderate_script`** — OpenAI Moderation on first 4 000 chars; raises
-  `ValueError` if flagged; **non-blocking** if the API errors.
-- **Gate B `check_face_sanity`** — file exists & > 10 KB; PIL-openable & portrait
-  (h > w); optional OpenCV Haar cascade rejects **> 3 faces** (deformed). No-face is
-  *not* a failure (symbolic frames). cv2 absent → PIL checks only.
+
+| Gate | Function | When | Blocks |
+|---|---|---|---|
+| **A** | `moderate_frames(frames)` / `moderate_script(text)` | Before scene design | Harmful/policy-violating content |
+| **B** | `check_face_sanity(path)` | After image gen (≤2 retries) | Deformed face, bad dimensions, file < 10 KB |
+| **B2** | `critique_image(image_path, frame_id, prompt) -> bool` | After stills pass, before motion | Blank/abstract/empty image when prompt required a real subject |
+| **Brand** | `critique_brand(image_path, frame_id, brand) -> bool` | After stills pass on brand runs | Visual conflicts with brand safety requirements |
+
+Gate B2 uses a vision LLM call. Prompt: "Does this image match the description? Flag if
+blank/abstract/empty when a real subject was expected." Returns `True` if OK.
+
+Gate A is **non-blocking** on API error (logged, render continues). Gate B triggers
+up to 2 retries (deleting the bad file) then accepts the last result.
 
 ---
 
-## 7. `coverage.py` — multi-shot B-roll
+## 10. `image_generator.py` — still generation
+
+→ [agents/image_generator.py](../agents/image_generator.py)
+
+**Backends:** `flux`→fal `flux-2-pro`, `openai`→`gpt-image-2`, `fal`→endpoint from catalog.
+
+**`generate_contextual_image(model_id, prompt, out_path, reference_path=None) -> str`**
+- `reference_path=` enables face-consistency: the first AI portrait per speaker_id becomes
+  the identity reference; subsequent portrait frames use GPT image-edit on that reference
+  so the same face appears across scenes/ages.
+
+**Prompt-hash disk reuse:** output filename is `ai_portrait_{frame_id}_{prompt_hash}.jpg`
+where `_prompt_hash(model_id, prompt)` is `MD5(model_id + "|" + prompt)[:12]`.
+Changing the prompt → new filename → re-generates. Changing only the frame → can reuse.
+Contrast with the old scheme (`ai_portrait_{fid}.jpg`) which reused across prompt changes.
+
+**Gate B + B2 in `_generate_image_checked()`:**
+- Runs Gate B sanity check after generation.
+- On failure: delete file, retry (≤2), then accept last result.
+- Gate B2 critique also runs here; result logged but non-blocking.
+
+**Fallback subject descriptor:** if `subject_description` is empty, uses
+`cast.subject_descriptor(frame, narrator_description)` — never a hardcoded sample name.
+
+---
+
+## 11. `coverage.py` — multi-shot B-roll
 
 **Entry:** `assign_coverage(frames, assets_dir, max_extra=2) -> int`
 → [agents/coverage.py](../agents/coverage.py)
 
-Optional per-frame B-roll expansion:
-- One LLM vision call per frame: "which other images also fit this beat as B-roll?"
+- One fast-tier LLM vision call per frame: "which other images also fit this beat as B-roll?"
 - Sets `frame["extra_media"]` with spare photo paths.
-- **`split_durations(total, n, min_each=2.5)`** evenly splits a beat across N sub-shots (last absorbs rounding).
-- **`expand_assignment(base, frame)`** guards against lipsync/short-beats, else splits duration and assigns gentle camera moves (`slow_pan`, `subtle_zoom`).
-- **`expand_all(assignments, frames)`** expands all 1:1 aligned frames → sub-shots (`f02_1`, `f02_2`, `f02_3`).
-- Each sub-shot uses its own image + proportional duration, preserving total frame time.
+- `split_durations(total, n, min_each=2.5)` evenly splits a beat across N sub-shots.
+- `expand_assignment(base, frame)` guards against lipsync/short-beats; else splits duration and assigns gentle camera moves (`slow_pan`, `subtle_zoom`).
+- `expand_all(assignments, frames)` expands all 1:1 aligned frames → sub-shots (`f02_1`, `f02_2`, …).
 
-Web UI: `multi_shot` checkbox; CLI: `--multi-shot` flag. Covered frames count extras in `pricing.py` animation cost.
+Web UI: `multi_shot` checkbox; CLI: `--multi-shot`. Covered frames count extras in `pricing.py`.
 
 ---
 
-## 8. `lipsync_coordinator.py` — talking faces
+## 12. `lipsync_coordinator.py` — talking faces
 
-**Entry:** `run_lipsync_pass(frames, temp_dir, default_voice_id) -> frames`
+**Entry:** `run_lipsync_pass(frames, temp_dir, default_voice_id, voice_map=None) -> frames`
 → [agents/lipsync_coordinator.py:223](../agents/lipsync_coordinator.py#L223)
 
-Two parallel phases (submit, then poll), mirroring the clip builder.
+Two parallel phases (submit, then poll).
 
 **Per frame `_submit_one`** ([:93](../agents/lipsync_coordinator.py#L93)):
 1. Guard: needs caption + existing visual + a voice_id, else clear `lipsync`.
 2. **Audio** via ElevenLabs (`tts_generator.generate_single_tts`), cached by
    `MD5(caption, voice_id)` in `~/.hob_cache/lipsync_audio/` (BlobCache).
+   Per-speaker voice via `cast.voice_for_frame()`.
 3. **Duration flip:** `frame["duration"] = audio_dur` — audio now drives timing.
 4. **Clip cache** by `MD5(media bytes + audio bytes)` in `~/.hob_cache/lipsync_clips/` (BlobCache).
-5. **Upload** media+audio to **Higgsfield CDN** (`_upload_for_lipsync`).
-6. **Vendor route:** video source + `SYNCLABS_API_KEY` → SyncLabs; else
-   `HEDRA_API_KEY` → Hedra; else clear `lipsync`.
+5. **Upload** media+audio to Higgsfield CDN (`_upload_for_lipsync`).
+6. **Vendor route:** video source + `SYNCLABS_API_KEY` → SyncLabs; else Hedra; else clear `lipsync`.
 
-**`_poll_one`** ([:192](../agents/lipsync_coordinator.py#L192)) downloads, caches,
-sets `lipsync_clip_path`. **Any failure clears `lipsync`** → the frame falls through
-to normal animation (Ken Burns). The finished clip later bypasses animation via the
-`clip_ready` path in the clip builder.
+**`_poll_one`** ([:192](../agents/lipsync_coordinator.py#L192)) downloads, caches, sets `lipsync_clip_path`.
+**Any failure clears `lipsync`** → normal animation fallback.
 
-CLI `--lipsync` ([run_caption.py:287](../run_caption.py#L287)) auto-flags all
-video-source frames; `[lipsync: yes]` flags any single frame.
-
-**Voiceover mode (new):** independent of lip-sync; generates a full concatenated TTS/OpenAI track via `tts_generator.generate_voiceover_track()`. Per-segment padding/trimming via `_fit_seg()` (ffmpeg `apad=whole_dur=<seconds>`) ensures voice aligns exactly to each frame's duration. Web UI: voiceover checkbox; CLI: `--voiceover` flag.
+### `tts_generator.py`
+- `generate_voiceover_track(frames, voice_map, ...)` — full concatenated TTS track;
+  per-speaker voice selection; prosody continuity broken (silence pad) when voice changes.
+- Emotion → ElevenLabs `voice_settings` (stability, similarity_boost, style).
+- `_fit_seg(path, target_dur)` — `ffmpeg apad=whole_dur=<seconds>` ensures frame-exact sync.
 
 ---
 
-## 8. `clip_builder.py` — animation engine
+## 13. `clip_builder.py` — animation engine
 
-**Entry:** `build_clips(assignments, temp_dir, w, h, fps, force_5s, kling_mode, provider)`
-→ [agents/clip_builder.py:517](../agents/clip_builder.py#L517)
+**Entry:** `build_clips(assignments, temp_dir, w, h, fps, force_5s, kling_mode, provider, on_clip_ready=None)`
+→ [agents/clip_builder.py:548](../agents/clip_builder.py#L548)
+
+**`on_clip_ready(segment_id, clip_path)`** — optional callback fired the moment
+each clip finishes (Phase 1 immediate clips AND Phase 2 polled clips). Used by the
+web UI for progressive reveal. Called from worker threads; any exception it raises
+is swallowed. Default `None` keeps the CLI path unchanged.
+
+**`_resolve_model_id`** treats `model_id == "kenburns"` as a per-frame Ken Burns
+sentinel (returns `""`) — this is how the approval gate forces an unapproved frame
+to the free path without touching the global provider.
 
 **Two-phase, per the provider-parallel-limit problem:**
 
-- **Phase 1 `_build_one_clip`** ([:418](../agents/clip_builder.py#L418)) — runs for
-  every assignment, classifies and *defers* AI jobs rather than submitting inline:
-  - HEIC→JPEG (`sips`); `prepare_image` fixes EXIF + **face-aware portrait crop**
-    (OpenCV largest-face center; blind center-crop fallback) ([:124](../agents/clip_builder.py#L124)).
+- **Phase 1 `_build_one_clip`** ([:418](../agents/clip_builder.py#L418)):
+  - HEIC→JPEG (`sips`); `prepare_image` fixes EXIF + **face-aware portrait crop** (OpenCV largest-face center; blind center-crop fallback).
   - **`clip_ready` bypass** — a finished lip-sync clip is copied straight through.
-  - Resolve `model_id` (router value or legacy provider via `_resolve_model_id`),
-    look up `backend`. **Clip cache** check first (`_model_cache_key`, namespaced per
-    model, legacy keys preserved for kling/higgsfield so paid clips still hit).
+  - Resolve `model_id` (router value or legacy provider via `_resolve_model_id`), look up `backend`. **Clip cache** check first (`_model_cache_key`, namespaced per model, legacy keys preserved for kling/higgsfield).
   - Backend `higgsfield`/`fal`/`kling` → stash `_*_deferred` fields, return `pending`.
   - No model → **Ken Burns** immediately; raw video → **`_video_trim`**.
-- **Phase 2** ([:539](../agents/clip_builder.py#L539)) — `poll_one` in a
-  `ThreadPoolExecutor` capped at `min(max_concurrent)` of the models in flight:
-  - **Submit happens inside the capped pool**, with retry-on-limit (Kling 429/1303 →
-    wait 15 s ×8; Higgsfield "concurrent" → wait 20 s ×6) instead of dropping to Ken Burns.
-  - Poll → download → length-fix (`_extend_clip` freeze-frame for 5s-only models;
-    `_video_trim`+extend for Dev 5s cap) → store in clip cache.
-  - **Any exception → Ken Burns fallback** for that frame only.
-  - Order restored at the end by `segment_id`.
+- **Phase 2** ([:539](../agents/clip_builder.py#L539)) — `poll_one` in a `ThreadPoolExecutor` capped at `min(max_concurrent)`:
+  - **Submit inside capped pool**, retry-on-limit (Kling 429/1303 → wait 15s ×8; Higgsfield "concurrent" → wait 20s ×6).
+  - Poll → download → **`_fit_clip_to_duration()`** (trims/extends before caching) → store.
+  - Any exception → Ken Burns fallback for that frame only. Order restored by `segment_id`.
+
+**`_fit_clip_to_duration(path, target_dur)`** — trims over-long clips; freeze-extends short clips.
+Cache keys version-bumped (`hf2_` for Higgsfield, `|v2|` for fal) after this fix so old wrong-duration entries don't hit.
+
+**Kling motion prompt (`_kling_motion_prompt`):** pure motion language only. Caption text was
+previously injected (bug); now removed. Negative prompt includes `morphing faces, extra limbs, flickering`.
 
 **Kling specifics:** JWT auth (`_kling_jwt`, HS256, 30-min exp); base64 image;
-`_kling_camera_control` maps plain-English motion → Kling structured `camera_control`
-(zoom/vertical/tilt/roll axes + named turn moves), with a **no-camera retry on 4xx**
-(not billed) so a rejected camera move still renders via the text prompt.
-
-**Raw video `_video_trim`** ([:191](../agents/clip_builder.py#L191)): `-ss start_sec`,
-trims to `min(duration, available)`, and **freeze-extends** if the source is shorter
-than the frame (roadmap #4a). Scale-to-fill + center-crop to target, audio dropped.
+`_kling_camera_control` maps English → Kling structured `camera_control`; no-camera retry on 4xx.
 
 ---
 
-## 9. `caption_writer.py` + `assembler.py`
+## 14. `caption_writer.py` + `assembler.py`
 
-- **Captions:** `generate_frame_srt(frames, srt_path)` writes an **ASS** file timed to
-  cumulative frame durations (Baskerville Italic, bottom-center per GUIDE). Assembler
-  prefers `.ass` over `.srt`.
-- **`assemble_caption_only`** ([agents/assembler.py:296](../agents/assembler.py#L296)):
-  - **Normalize every clip** (`_normalize_clip` [:65](../agents/assembler.py#L65)) to one
-    resolution / pixel-format / **color range (tv)** / fps / SAR — prevents xfade frame
-    drops from `pc`-range JPEGs and resolution-mismatch crashes (e.g. Higgsfield 768×1168).
-    Target = largest-area clip.
-  - Transition: `crossfade` chains `xfade` with running offsets
-    (`offset += dur - 0.4`); `none` → `_concat_clips_hard` (normalize + stream-copy concat).
-  - Burn captions via `subtitles=` filter; music looped at **25%**, 3 s fade-out.
-  - **Lip-sync mixed mode** (`_assemble_with_lipsync` [:177](../agents/assembler.py#L177)):
-    strip embedded audio from lip-sync clips for the video concat, re-extract each
-    lip-sync track, position with `adelay` at its timecode, mix at 100%, and **duck
-    music to 10% inside lip-sync windows** (25% elsewhere) via a `volume=expr` between() gate.
-- `assemble()` ([:364](../agents/assembler.py#L364)) is the **legacy voiceover** path
-  (used by `main.py`): concatenated TTS track + music at 15%.
+### `caption_writer.py`
+`generate_frame_srt(frames, srt_path, ..., caption_style=None, timecodes=None)` — writes an **ASS** file.
+When `timecodes` is provided (list of `(start_ms, end_ms)` tuples from `effective_timecodes()`),
+those are used directly instead of cumulative durations. Assembler prefers `.ass` over `.srt`.
+
+**`caption_style` keys:** `font`, `size`, `color`, `position` (global default),
+`max_lines` (global default; 0 = unlimited), `enabled` (read in `web_app`, not here —
+when False the caller skips `generate_frame_srt` entirely and passes `srt_path=None`).
+
+**Per-frame overrides** (`frame["caption_position"]`, `frame["caption_max_lines"]`,
+blank = use the global default) are applied as **inline ASS tags per Dialogue line**,
+not via the style header:
+- Position → `{\anN}` alignment tag + the per-Dialogue `MarginV` field (`_ALIGNMENT`/`_MARGIN_V`).
+- Line cap + auto-shrink → `_fit_caption(text, base_size, max_lines)`: wraps into ≤ `max_lines`
+  lines, shrinking the font (down to ~60% of base) until it fits, emitting `{\fsN}` when shrunk.
+  `max_lines<=0` → no cap, base size (legacy behaviour). At the size floor it force-wraps into
+  exactly `max_lines` (longer lines beat overflow).
+The header `Main` style still carries font/colour/italic and the global position; per-line tags
+override it. Silent frames (no caption) emit no Dialogue line.
+
+### `assembler.py` — key functions
+
+**`effective_timecodes(durations, transition="crossfade") -> list[tuple[float,float]]`**
+Accounts for 0.4s crossfade overlap per junction:
+```
+offset[i] = sum(durations[:i]) - 0.4 * i   (crossfade)
+           = sum(durations[:i])              (hard cut)
+```
+Used by captions, voiceover adelay, ducking windows, and lip-sync audio positioning.
+All audio timing must go through this function or it drifts.
+
+**`frame_timecodes(frames, clips, transition) -> list[tuple]`**
+Computes effective timecodes for the actual assembled clip durations.
+
+**`assemble_caption_only(clips, srt_path, out_path, ..., bg_music_path=None)`** ([:296](../agents/assembler.py#L296)):
+- Normalize every clip (`_normalize_clip` [:65](../agents/assembler.py#L65)) to one resolution / pixel-format / color range (tv) / fps / SAR.
+- Transition: `crossfade` chains `xfade` with effective offset; `none` → stream-copy concat.
+- Burn captions via `subtitles=` filter; music looped at 25%, duck to 10% under lip-sync.
+- **`bg_music_path`** for VO-over-ducked-music: voiceover at full volume, music at 18%.
+- **Lip-sync mixed mode** (`_assemble_with_lipsync` [:177](../agents/assembler.py#L177)): strip embedded audio from lip-sync clips, re-extract each lip-sync track, position with `adelay` at effective timecode, duck music to 10% inside lip-sync windows.
+
+**`apply_brand_overlay(in_path, out_path, disclosure_text, logo_path, logo_corner, disclosure_secs) -> str`**
+Post-pass called in `_run_inner` after assembly. Burns disclosure + corner logo via ffmpeg.
+`_brand_font_arg()` prefers Montserrat (from `deploy/fonts/`) via `fc-query`.
 
 ---
 
-## 10. `pricing.py` — cost engine
+## 15. `web_app.py` — Flask surface
 
-**Entry:** `estimate(frames, kling_mode, force_5s, music_type, voice_chars, provider,
-skip_scene_ai, cost_tier, image_model, video_model) -> dict`
-→ [agents/pricing.py:108](../agents/pricing.py#L108)
-
-- Walks `frames[]` and **mirrors the router's actual choices** (`select_model` for
-  both image and video) so the estimate matches billing. Categories: scene, images,
-  edits, animation (labelled with the set of models used), lipsync + lipsync_audio,
-  music, voice.
-- `model_cost` ([:92](../agents/pricing.py#L92)) resolves each model's `pricing_key`
-  in `config/pricing.json`; **video bills per 5 s block** (`ceil(dur/5)`), image once.
-- Lip-sync frames count vendor cost (`synclabs` per-second / `hedra` per-gen) + their
-  caption chars as ElevenLabs audio, and **skip animation**.
-- `_FALLBACK` dict guards a missing/broken pricing file.
-
-The CLI dry-run ([run_caption.py:131](../run_caption.py#L131)) prints a per-frame plan
-plus this breakdown and exits without spending.
-
----
-
-## 11. `web_app.py` — Flask surface
-
-→ [web_app.py](../web_app.py). Server-rendered UI + JSON/SSE endpoints, per-`run_id`
-in-memory state, `_LogCapture` redirecting stdout into an SSE stream.
+→ [web_app.py](../web_app.py). Server-rendered UI + JSON/SSE endpoints.
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/` | GET | UI shell |
-| `/parse-script` | POST | `parse_frame_script` → frame cards + matched-photo count |
-| `/preview` , `/preview-result/<run_id>` | POST/GET | generate stills only (fast iteration) |
-| `/pricing` , `/models` , `/voices` | GET | expose `pricing.json`, `model_router.catalog()`, ElevenLabs voices |
-| `/generate-music` | POST | Suno generation |
-| `/run` | POST | kick off `_execute_pipeline` in a thread |
-| `/progress/<run_id>` | GET (SSE) | stream the run log |
-| `/output/<run_id>` , `/download/<run_id>` | GET | stream / download the MP4 |
-| `/media` , `/upload-photo` | GET/POST | serve asset thumbnails, accept uploads |
+| `/` | GET | Story mode UI shell |
+| `/brand` | GET | Brand / Ad mode UI shell |
+| `/parse-script` | POST | `parse_frame_script` → frame cards + cast + suggestion chips |
+| `/preview` , `/preview-result/<run_id>` | POST/GET | Generate stills only (fast iteration); brand-safe critique if `is_brand` |
+| `/api/estimate` | POST | Server-side cost estimate (no client-side cost logic) |
+| `/pricing` , `/models` , `/voices` | GET | Expose `pricing.json`, `model_router.catalog()`, ElevenLabs voices |
+| `/generate-music` | POST | Suno generation; accepts `captions` + `mood` for auto-brief |
+| `/extract-brief` | POST | `brand.extract_brief()` — parse-only, verbatim field extraction |
+| `/browse-dirs` | GET | List folders + media count under `ASSETS_BROWSE_ROOT` |
+| `/run` | POST | Kick off `_execute_pipeline` in a thread; mandatories hard-block for brand |
+| `/progress/<run_id>` | GET (SSE) | Stream the run log |
+| `/output/<run_id>` , `/download/<run_id>` | GET | Stream / download the MP4 |
+| `/clip/<run_id>/<frame_id>` | GET | Serve ONE finished clip for progressive reveal during a render |
+| `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
+| `/guide` | GET | Serve `docs/OPERATOR_GUIDE.html` |
+| `/media` | GET | Serve asset thumbnails (validates path via `_path_allowed`) |
+| `/upload-photo` | POST | Accept file upload; save to session assets dir |
 
-`_build_frames_from_payload` ([web_app.py:314](../web_app.py#L314)) converts UI frame
-cards into the same `frames[]` the parser produces; `_run_inner`
-([web_app.py:501](../web_app.py#L501)) reuses the exact router + clip-builder path as the
-CLI (the two entry points share the engine).
+### Editor iteration features (per-frame redo, progressive reveal, approval gate)
 
----
+These three share the frame-card UI and the `_run_inner` path, so both story and
+brand modes get them automatically.
 
-## 15. `web_app.py` — Flask surface with folder upload
+- **Per-frame redo** (`/redo-still`): the UI sends one frame's current settings;
+  `_generate_stills(..., force_regen_ids={fid})` deletes that frame's cached
+  `ai_*_{fid}_*.jpg` so the prompt-hash reuse check misses and the image is
+  regenerated. Returns `{frame_id, path, is_video, exists}`. Synchronous — no
+  thread, no SSE.
+- **Progressive reveal**: `build_clips(..., on_clip_ready=cb)` fires `cb(segment_id,
+  clip_path)` the instant each clip lands (cached, Ken Burns, or polled). In
+  `_run_inner` the callback copies the clip into `run_dir/clip_{frame_id}.mp4`
+  (sub-shots `f02_1…` map to parent `f02`, first one wins) and appends a typed
+  SSE event `{"type":"clip_ready","frame_id","url":"/clip/<run_id>/<frame_id>"}`.
+  The `/progress` generator drains a separate `events` list alongside `log`.
+- **Approval gate**: the UI sends `approved_frame_ids` (or `null` = all approved).
+  In `_run_inner`, `_video_model_for(f)` returns the sentinel `"kenburns"` for
+  unapproved non-lipsync frames; `clip_builder._resolve_model_id` maps
+  `"kenburns"` → `""` → free Ken Burns. `pricing.estimate(..., approved_ids=...)`
+  mirrors this so the quote drops for rejected frames.
 
-→ [web_app.py](../web_app.py). Server-rendered UI + JSON/SSE endpoints, per-`run_id`
-in-memory state, `_LogCapture` redirecting stdout into an SSE stream.
+Run-state additions: `_runs[run_id]` gains `"clips": {frame_id: path}` and
+`"events": [typed dicts]` alongside `log`/`status`/`output_path`.
 
-| Route | Method | Purpose |
-|---|---|---|
-| `/` | GET | UI shell |
-| `/parse-script` | POST | `parse_frame_script` → frame cards + matched-photo count |
-| `/preview` , `/preview-result/<run_id>` | POST/GET | generate stills only (fast iteration) |
-| `/pricing` , `/models` , `/voices` | GET | expose `pricing.json`, `model_router.catalog()`, ElevenLabs voices |
-| `/generate-music` | POST | Suno generation |
-| `/browse-dirs` | GET | list folders + media count under `ASSETS_BROWSE_ROOT` |
-| `/upload-folder` | POST | accept multi-file folder upload; save to session assets dir |
-| `/run` | POST | kick off `_execute_pipeline` in a thread |
-| `/progress/<run_id>` | GET (SSE) | stream the run log |
-| `/output/<run_id>` , `/download/<run_id>` | GET | stream / download the MP4 |
-| `/media` | GET | serve asset thumbnails (validates path via `_path_allowed`) |
-| `/upload-photo` | POST | accept single file upload (legacy) |
+**Security:** `/media` validates all paths against `RUNS_DIR` and `ASSETS_BROWSE_ROOT` via
+`_path_allowed()`. Only image/video MIME types allowed. `ASSETS_BROWSE_ROOT` env var scopes
+the server folder browser.
 
-**Security:** `/media` endpoint validates all paths against `RUNS_DIR` and `ASSETS_BROWSE_ROOT` roots via `_path_allowed()` to prevent path traversal. Only image/video extensions allowed.
+**`_build_frames_from_payload`** ([web_app.py:314](../web_app.py#L314)) converts UI frame
+cards into `frames[]`; carries `speaker_id`, `product_beat` from the payload.
+Calls `apply_cast()` if `parsedCast` was provided, else `detect_cast()`.
 
-`_build_frames_from_payload` ([web_app.py:314](../web_app.py#L314)) converts UI frame
-cards into the same `frames[]` the parser produces; `_run_inner`
-([web_app.py:501](../web_app.py#L501)) reuses the exact router + clip-builder path as the
-CLI (the two entry points share the engine).
+**`_generate_stills`** ([web_app.py:576](../web_app.py#L576)) shared by preview + run:
+- Skips AI generation for `product_beat=True` frames (real asset used).
+- Appends PIL CTA end-card for brand runs via `brand.build_cta_card()`.
+- Gate B2 vision critique on each AI-generated still.
+- `extra_context=brand_mod.brand_scene_context(brand)` for visual context in scene design.
+
+**`_run_inner`** ([web_app.py:775](../web_app.py#L775)) runs the full pipeline.
+Brand runs: `_brand_audio()` helper resolves `(vo_track, bg_music_track, is_voiceover)`;
+`apply_brand_overlay()` post-pass on the finished MP4.
+
+**Subject handling:** `subject_name = (data.get("subject_name") or "").strip()` — no default.
+Empty string means "infer from the story".
 
 ---
 
@@ -393,16 +546,11 @@ CLI (the two entry points share the engine).
 | Image descriptions | image content hash | `~/.hob_cache/image_descriptions.db` *(SQLite, WAL mode)* | file content change (rename safe) |
 | Lip-sync clips | `MD5(media bytes + audio bytes)` | `~/.hob_cache/lipsync_clips/` *(BlobCache; S3-backed)* | media or audio change |
 | Lip-sync audio | `MD5(caption + voice_id)` | `~/.hob_cache/lipsync_audio/` *(BlobCache; S3-backed)* | caption or voice change |
-| Generated stills | filename `ai_*_<fid>.jpg`, ≥ 50 KB | the **asset folder** | delete file or size < 50 KB |
+| Generated stills | `ai_portrait_{fid}_{prompt_hash}.jpg`, ≥ 50 KB | the **asset folder** | changing the prompt (new hash) or file < 50 KB |
 
-**Storage backends** (P1/P2 shipped): small text caches use `agents/_kv.py`
-(SQLite, per-key writes under WAL — replaces the raced whole-file JSON). Blob
-caches (clips, lip-sync clips/audio) go through `agents/cache_store.py`
-`BlobCache`: local FS by default, optional S3 read-through via
-`HOB_CACHE_BACKEND=s3` (+ `HOB_CACHE_S3_BUCKET`) so paid artifacts survive
-container redeploys. Object keys are the same content hashes, so switching
-backends preserves cache identity. Scene designs remain per-file JSON (cheap to
-regenerate — deliberately not migrated).
+**Note on still cache:** the `{prompt_hash}` suffix means changing the scene design prompt
+(e.g. after editing the director note) auto-busts the still and regenerates. The old scheme
+(`ai_portrait_{fid}.jpg`) silently reused stale images when prompts changed.
 
 ---
 
@@ -415,6 +563,7 @@ regenerate — deliberately not migrated).
 | Lip-sync | ThreadPool ×2 phases | 6 submit / N poll | clear `lipsync` → animate normally |
 | Clip build | ThreadPool | `min(model max_concurrent)` | retry-on-limit; else Ken Burns for that frame |
 | Assembly | single ffmpeg | — | raises (whole render fails; temp kept) |
+| Brand overlay | single ffmpeg post-pass | — | raises (logged; main MP4 already done) |
 
 **Whole-pipeline failure** ([run_caption.py:343](../run_caption.py#L343)) preserves the
 temp dir for debugging; success cleans it unless `--keep-temp`.
@@ -423,30 +572,27 @@ temp dir for debugging; success cleans it unless `--keep-temp`.
 
 ## 18. Extension Recipes
 
-- **Add a video/image model:** add a `models` entry (with `backend`, `pricing_key`,
-  `fal_endpoint` if fal-hosted, `max_concurrent`) in `config/models.json`, list its id
-  under the relevant `routing[kind][shot_type][tier]`, add its price to
-  `config/pricing.json`. No Python change for fal-hosted models.
-- **Swap the reasoning/vision LLM:** set `LLM_PROVIDER` (and keys) or edit
-  `config/llm.json`. Callers are untouched.
-- **New annotation:** add a regex in `_parse_format_b`, a clean-up `re.sub`, and a key
-  on the frame dict; consume it in the relevant stage.
-- **New shot type:** extend `_image_shot_type`/`_video_shot_type` and add a `routing`
-  entry for it.
+- **Add a video/image model:** add a `models` entry (with `backend`, `pricing_key`, `fal_endpoint` if fal-hosted, `max_concurrent`) in `config/models.json`, list it under `routing[kind][shot_type][tier]`, add price to `config/pricing.json`. No Python change for fal-hosted models.
+- **Swap the reasoning/vision/fast LLM:** set `LLM_PROVIDER` (and keys) or edit `config/llm.json`. Callers are untouched.
+- **New frame annotation:** add a regex in `_parse_format_b`, a clean-up `re.sub`, and a key on the frame dict; consume it in the relevant stage.
+- **New shot type:** extend `_image_shot_type`/`_video_shot_type` and add a `routing` entry.
+- **New voice role:** add a key to `config/voices.json roles` and fill the ElevenLabs voice ID.
+- **Progressive reveal for a new clip backend:** nothing extra — `build_clips` calls `on_clip_ready` for every finished clip regardless of backend.
+- **Brand mode B2 (kinetic graphics):** hook into `apply_brand_overlay()` as an additional post-pass; all other assembly branches remain untouched.
 
 ---
 
 ## 19. Known Sharp Edges (read before editing)
 
-- Generated stills land in the **user's asset folder**; the parser's `_DERIVED_MARKERS`
-  filter is what stops them from corrupting positional auto-match. Touch both together.
-- `pricing.estimate` must keep mirroring `model_router.select_model` exactly, or the
-  quoted cost diverges from the billed cost.
-- Clip-cache keys for `kling`/`higgsfield` are **deliberately legacy-formatted**
-  ([clip_builder.py:59](../agents/clip_builder.py#L59)) so previously-paid clips still
-  hit — do not "clean up" those token formats.
+- Generated stills land in the **user's asset folder**; the parser's `_DERIVED_MARKERS` filter stops them corrupting positional auto-match. Touch both together.
+- `pricing.estimate` must keep mirroring `model_router.select_model` exactly, or quoted cost diverges from billed cost.
+- Clip-cache keys for `kling`/`higgsfield` are **deliberately legacy-formatted** ([clip_builder.py:59](../agents/clip_builder.py#L59)) so previously-paid clips still hit — do not "clean up" those token formats.
+- Still-cache key includes a **prompt hash** — the old `ai_portrait_{fid}.jpg` filename scheme is gone. Any code that assumes the old filename will miss the cache.
 - Lip-sync uploads user media to an **external CDN**; treat as a privacy boundary.
-- macOS assumptions: `sips` (HEIC), Baskerville font dir. Cloud/Linux needs alternatives.
-- `main.py` is the **legacy** voiceover pipeline; the maintained path is
-  `run_caption.py` / `web_app.py`. Don't confuse the two `build_clips`/`assemble` callers.
-</content>
+- `subject_name` and `subject_description` are **always optional** — never default to a sample name. Any fallback must use `cast.subject_descriptor()` which derives from the story.
+- `brand.extract_brief()` is **parse-only** — it must never rephrase, infer, or generate claims. If you add LLM creativity to it, you break the "AI never writes ad copy" guarantee.
+- `effective_timecodes()` must be used for **all** audio timing in the brand overlay path (voiceover adelay, ducking windows). Using raw cumulative durations causes drift at crossfade junctions.
+- The approval gate uses the `"kenburns"` string as a per-frame `model_id` sentinel. `web_app._video_model_for()`, `clip_builder._resolve_model_id()`, and `pricing.estimate(approved_ids=…)` must stay in lockstep — change one and the quote diverges from the render. Lipsync frames are never auto-rejected (their audio drives the clip).
+- Progressive-reveal sub-shot mapping is `segment_id.split("_")[0]` → parent `frame_id`; only the first sub-shot per frame reveals (later ones are ignored for display). Frame ids must not themselves contain `_` or the mapping breaks.
+- macOS assumptions: `sips` (HEIC), Baskerville font dir. Cloud/Linux needs alternatives; Montserrat is bundled and safe.
+- `main.py` is the **legacy** voiceover pipeline; maintained path is `run_caption.py` / `web_app.py`.

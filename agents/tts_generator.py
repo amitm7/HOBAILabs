@@ -139,16 +139,19 @@ def generate_single_tts(text: str, path: str, voice_id: str) -> float:
     return get_audio_duration(path)
 
 
-def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -> str:
+def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str,
+                             voice_map: dict | None = None) -> str:
     """
     Generate a voice-over audio track timed to match the video.
     Each frame caption is read by ElevenLabs; silent frames get silence.
-    The result is one concatenated MP3 at out_path.
-    Returns out_path.
+    Per-frame voice: a quoted speaker (kid, father) is read in their own voice
+    via cast.voice_for_frame; narrator frames use voice_id. Result is one
+    concatenated MP3 at out_path. Returns out_path.
     """
+    from agents.cast import voice_for_frame
     use_elevenlabs = bool(os.environ.get("ELEVENLABS_API_KEY")) and bool(voice_id)
     provider = "ElevenLabs" if use_elevenlabs else "OpenAI TTS"
-    print(f"[Voiceover] Provider: {provider} | Voice: {voice_id or 'nova'}")
+    print(f"[Voiceover] Provider: {provider} | Narrator voice: {voice_id or 'nova'}")
 
     tmp_dir = tempfile.mkdtemp(prefix="hob_vo_")
     segment_files = []
@@ -171,6 +174,7 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
         ], check=True, capture_output=True)
 
     prev_caption = ""   # prosody continuity: each segment knows the line before it
+    prev_voice = ""
     for i, frame in enumerate(frames):
         caption  = (frame.get("caption") or "").strip()
         duration = float(frame.get("duration", 5.0))
@@ -181,12 +185,16 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
             print(f"  {frame.get('frame_id','?')} → silence ({duration:.1f}s)")
         else:
             raw_path = os.path.join(tmp_dir, f"raw_{i:03d}.mp3")
+            frame_voice = voice_for_frame(frame, voice_id, voice_map)
             try:
-                if use_elevenlabs:
+                if use_elevenlabs and frame_voice:
                     emotion = frame.get("scene", {}).get("emotion", "")
-                    _generate_elevenlabs(caption, raw_path, voice_id,
+                    # A different speaker breaks prosody continuity — only pass
+                    # previous_text when the voice is the same as the prior line.
+                    prev = prev_caption if frame_voice == prev_voice else None
+                    _generate_elevenlabs(caption, raw_path, frame_voice,
                                          voice_settings=_voice_settings_for(emotion),
-                                         previous_text=prev_caption or None)
+                                         previous_text=prev or None)
                 else:
                     _generate_openai(caption, raw_path)
                 spoken = get_audio_duration(raw_path)
@@ -197,6 +205,7 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str) -
                 print(f"  {frame.get('frame_id','?')} → TTS failed ({e}), using silence")
                 _silence_seg(duration, seg_path)
             prev_caption = caption
+            prev_voice = frame_voice
 
         segment_files.append(seg_path)
 

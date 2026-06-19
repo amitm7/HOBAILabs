@@ -1,0 +1,11 @@
+{
+  "_note": "Maps detected speaker roles to ElevenLabs voice ids (agents/cast.py). One narrator + quoted speakers (a kid line gets the child voice, a father line the male voice) when lip-sync or voiceover is on. Values are ElevenLabs voice ids from your account; LEAVE EMPTY to fall back to the global default voice (ELEVENLABS_VOICE_ID / the UI voice). The UI 'Cast voices' panel writes these per render; this file is the default. Explicit [voice: id] in the script still wins over everything.",
+  "roles": {
+    "narrator":        "",
+    "male_adult":      "",
+    "female_adult":    "",
+    "child":           "",
+    "elderly_male":    "",
+    "elderly_female":  ""
+  }
+}

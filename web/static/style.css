@@ -386,3 +386,34 @@ audio { width: 100%; margin-top: 8px; }
 .text-dim { color: var(--text-dim); }
 .text-green { color: var(--green); }
 .text-red { color: var(--red); }
+.muted { color: var(--text-dim); }
+
+/* Pickable AI suggestion chips (fill an editable field on click) */
+.sug-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 2px; }
+.sug-chip {
+  font-size: 11px; line-height: 1.4; padding: 2px 8px; cursor: pointer;
+  color: var(--text-dim); background: transparent;
+  border: 1px dashed var(--border); border-radius: 999px;
+}
+.sug-chip:hover { color: var(--text); border-color: var(--text-dim); border-style: solid; }
+
+/* Per-frame iterate row: redo still + approval toggle (shown after Preview) */
+.frame-iter-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 6px 0 8px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.redo-still-btn { white-space: nowrap; }
+.approval-toggle {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 12px; color: var(--text-dim); user-select: none;
+}
+.approval-toggle .approval-label { white-space: nowrap; }
+.frame-card.frame-rejected { opacity: 0.62; }
+.frame-card.frame-rejected .approval-label { color: var(--text-dim); }
+
+/* Progressive clip reveal status badge over the frame preview */
+.clip-status {
+  display: inline-block; font-size: 11px; margin-top: 2px; color: var(--text-dim);
+}
+.clip-status.ok { color: var(--green); }

@@ -92,7 +92,7 @@ def _generate_audio(caption: str, voice_id: str, audio_dir: str) -> tuple[str, f
 # ── Submit one frame ──────────────────────────────────────────────────────────
 
 def _submit_one(frame: dict, temp_dir: str, audio_dir: str,
-                default_voice_id: str) -> dict:
+                default_voice_id: str, voice_map: dict | None = None) -> dict:
     """
     Generate audio, check clip cache, upload, and submit to vendor.
     Returns frame with _ls_pending=True if a job was submitted,
@@ -113,11 +113,14 @@ def _submit_one(frame: dict, temp_dir: str, audio_dir: str,
         frame["lipsync"] = False
         return frame
 
-    voice_id = frame.get("voice_override") or default_voice_id
+    from agents.cast import voice_for_frame
+    voice_id = voice_for_frame(frame, default_voice_id, voice_map)
     if not voice_id:
         print(f"[LipsyncCoordinator] {fid}: no voice_id — skipping lipsync (set ELEVENLABS_VOICE_ID)")
         frame["lipsync"] = False
         return frame
+    if frame.get("speaker_id", "narrator") != "narrator":
+        print(f"[LipsyncCoordinator] {fid}: speaker {frame.get('speaker_label','?')} → voice {voice_id[:8]}…")
 
     # ── 1. Generate audio ──────────────────────────────────────────────────
     try:
@@ -221,7 +224,7 @@ def _poll_one(frame: dict) -> dict:
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def run_lipsync_pass(frames: list[dict], temp_dir: str,
-                     default_voice_id: str = "") -> list[dict]:
+                     default_voice_id: str = "", voice_map: dict | None = None) -> list[dict]:
     """
     Process all frames with lipsync=True.
 
@@ -251,7 +254,7 @@ def run_lipsync_pass(frames: list[dict], temp_dir: str,
 
     with ThreadPoolExecutor(max_workers=min(len(lipsync_frames), 6)) as pool:
         future_map = {
-            pool.submit(_submit_one, f, temp_dir, audio_dir, voice_id): f["frame_id"]
+            pool.submit(_submit_one, f, temp_dir, audio_dir, voice_id, voice_map): f["frame_id"]
             for f in lipsync_frames
         }
         for future in as_completed(future_map):
