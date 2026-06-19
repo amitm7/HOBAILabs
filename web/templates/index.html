@@ -15,6 +15,28 @@
 
 <main>
 
+  <!-- ── AI credits (live vendor balances) ───────────────── -->
+  <div class="card" id="balances-card">
+    <div class="card-header">
+      <h2>💳 AI Credits</h2>
+      <button class="btn-secondary btn-small" id="balances-refresh">↻ Refresh</button>
+    </div>
+    <div class="card-body">
+      <div id="balances-body" class="muted">Checking vendor balances…</div>
+    </div>
+  </div>
+
+  <!-- ── IP / property watermark ─────────────────────────── -->
+  <div class="card">
+    <div class="card-header"><h2>IP / Property</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Which HOB IP is this reel for? <span class="text-dim">(lays that IP's watermark over the whole video)</span></label>
+        <select id="ip"><option value="">No IP watermark</option></select>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Subject ─────────────────────────────────────────── -->
   <div class="card">
     <div class="card-header"><h2>Subject</h2></div>
@@ -121,7 +143,28 @@ Caption:
     </div>
     <div class="card-body">
       <div id="cast-panel" style="display:none;margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px"></div>
+      <div id="timeline-strip" class="timeline-strip" aria-label="Read-only timeline"></div>
       <div id="frames-container"></div>
+    </div>
+  </div>
+
+  <!-- ── Story-mode posting kit ───────────────────────────── -->
+  <div class="card" id="posting-kit-card" style="display:none">
+    <div class="card-header"><h2>Posting Kit</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Instagram caption seed <span class="text-dim">(story mode only)</span></label>
+        <textarea id="posting-caption-seed" style="min-height:90px"></textarea>
+        <small>Brand post copy stays operator-supplied; this tool is only for story-mode social captions.</small>
+      </div>
+      <div class="row" style="align-items:flex-end">
+        <div class="field flex-1">
+          <label>Cover frame</label>
+          <select id="posting-cover-frame"></select>
+        </div>
+        <button type="button" class="btn-secondary" id="posting-kit-btn">Generate posting kit</button>
+      </div>
+      <div id="posting-kit-output" class="posting-kit-output"></div>
     </div>
   </div>
 
@@ -348,10 +391,18 @@ Caption:
   <div class="card" id="output-panel">
     <div class="card-header"><h2>Output</h2></div>
     <div class="card-body">
-      <video id="output-video" controls playsinline></video>
+      <div class="video-safezone-wrap">
+        <video id="output-video" controls playsinline></video>
+        <div class="reels-safezone-overlay" aria-hidden="true">
+          <span>Reels UI safe zone</span>
+        </div>
+      </div>
       <div class="output-actions">
         <a id="download-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">
           ⬇ Download .mp4
+        </a>
+        <a id="export-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">
+          Export clips + edit list
         </a>
       </div>
     </div>

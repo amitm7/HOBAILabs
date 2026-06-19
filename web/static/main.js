@@ -11,6 +11,7 @@ let parsedCast = [];            // [{id, label, gender, age_bracket}] from /pars
 let speakerVoices = {};         // speaker_id → ElevenLabs voice_id (Cast voices panel)
 let frameApprovals = {};        // frame_id → bool (approval gate; default approved)
 let previewReady = false;       // true once Preview Stills has produced images
+let postingCaption = '';        // Format B Caption: block for story-mode posting kit
 
 // Live per-frame override setter (used by brand.js, which is a separate script).
 window.setFrameOverride = (frameId, key, value) => {
@@ -286,12 +287,14 @@ el('parse-btn').addEventListener('click', async () => {
     }
     parsedFrames = res.frames || [];
     parsedCast = res.cast || [];
+    postingCaption = res.posting_caption || '';
     frameOverrides = {};
     speakerVoices = {};
     frameApprovals = {};
     previewReady = false;
     renderCastPanel(parsedCast);
     renderFrameCards(parsedFrames);
+    renderPostingKitPanel();
     el('frames-card').style.display = 'block';
     el('frames-count').textContent = `${parsedFrames.length} frames`;
     // Auto-apply target duration if already set
@@ -380,6 +383,7 @@ function updateTotalDur() {
     badge.textContent = `≈ ${total.toFixed(0)}s total`;
     badge.className = 'dur-total-badge';
   }
+  renderTimelineStrip();
 }
 
 // Preset buttons
@@ -452,6 +456,7 @@ function scheduleCostEstimate() {
 // Recompute cost when quality/model/kling-mode/music/multi-shot changes
 ['quality', 'image-model', 'video-model', 'kling-mode', 'multi-shot'].forEach(id =>
   el(id)?.addEventListener('change', renderCostEstimate));
+el('transition')?.addEventListener('change', renderTimelineStrip);
 document.querySelectorAll('input[name="music-type"]').forEach(r =>
   r.addEventListener('change', renderCostEstimate)
 );
@@ -541,9 +546,11 @@ function renderFrameCards(frames) {
 
     // Determine initial visual type from photo_spec
     const initSpec    = f.photo_spec || (f.visual_path ? f.visual_path.split('/').pop() : '');
+    const initLayout  = f.layout?.preset || '';
     const isVideo     = /\.(mp4|mov|avi|m4v|webm)$/i.test(f.visual_path || initSpec);
     const isMatched   = !!(f.visual_path) && !initSpec.startsWith('ai_');
-    const initType    = initSpec === 'ai_portrait' ? 'portrait'
+    const initType    = initLayout === 'text_card' ? 'text_card'
+                      : initSpec === 'ai_portrait' ? 'portrait'
                       : initSpec === 'ai_symbolic'  ? 'symbolic'
                       : isMatched                   ? 'matched'
                       : 'auto';
@@ -572,6 +579,8 @@ function renderFrameCards(frames) {
       previewHtml = `<div class="frame-preview placeholder">🎨 AI Portrait<br><span class="preview-label">generated at render</span></div>`;
     } else if (initType === 'symbolic') {
       previewHtml = `<div class="frame-preview placeholder">🖼 AI Symbolic<br><span class="preview-label">objects, no people — generated at render</span></div>`;
+    } else if (initType === 'text_card') {
+      previewHtml = `<div class="frame-preview placeholder">Text Card<br><span class="preview-label">bold statement on a colour field</span></div>`;
     } else {
       previewHtml = `<div class="frame-preview placeholder">📂 Auto<br><span class="preview-label">next folder file, or AI if none</span></div>`;
     }
@@ -589,6 +598,7 @@ function renderFrameCards(frames) {
 
         <div class="frame-iter-row" id="iter-${f.frame_id}" style="display:none">
           <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}">🔄 Redo still</button>
+          <button type="button" class="btn-secondary btn-small redo-motion-btn" data-frame="${f.frame_id}">Redo motion</button>
           <label class="approval-toggle" data-frame="${f.frame_id}" title="Untick to skip paid animation — this frame uses free Ken Burns instead">
             <input type="checkbox" class="approval-cb" data-frame="${f.frame_id}" checked>
             <span class="approval-label">✓ Approved for animation</span>
@@ -615,6 +625,10 @@ function renderFrameCards(frames) {
           <label class="vis-opt ${initType === 'symbolic' ? 'active' : ''}" data-type="symbolic">
             <input type="radio" name="vis-${f.frame_id}" value="symbolic" ${initType === 'symbolic' ? 'checked' : ''}>
             🖼 AI Symbolic
+          </label>
+          <label class="vis-opt ${initType === 'text_card' ? 'active' : ''}" data-type="text_card">
+            <input type="radio" name="vis-${f.frame_id}" value="text_card" ${initType === 'text_card' ? 'checked' : ''}>
+            Text Card
           </label>
         </div>
 
@@ -728,6 +742,8 @@ function renderFrameCards(frames) {
     // Per-frame redo: regenerate just this still with the current card settings.
     const redoBtn = card.querySelector('.redo-still-btn');
     if (redoBtn) redoBtn.addEventListener('click', () => redoStill(f.frame_id, redoBtn));
+    const redoMotionBtn = card.querySelector('.redo-motion-btn');
+    if (redoMotionBtn) redoMotionBtn.addEventListener('click', () => redoMotion(f.frame_id, redoMotionBtn));
 
     // Approval toggle: untick → frame uses free Ken Burns instead of paid animation.
     const apprCb = card.querySelector('.approval-cb');
@@ -766,7 +782,11 @@ function renderFrameCards(frames) {
           : type === 'matched'  ? f.photo_spec   // keep original filename
           : type === 'portrait' ? 'ai_portrait'
           : type === 'symbolic' ? 'ai_symbolic'
+          : type === 'text_card' ? ''
           : 'uploaded';
+        frameOverrides[f.frame_id].layout = type === 'text_card'
+          ? { preset: 'text_card', text: f.caption || '' }
+          : {};
       });
     });
 
@@ -839,10 +859,80 @@ function renderFrameCards(frames) {
       }
     });
   });
+  renderTimelineStrip();
 }
 
+function _frameDuration(f) {
+  const inp = el(`dur-${f.frame_id}`);
+  return inp ? (parseFloat(inp.value) || f.duration || 0) : (f.duration || 0);
+}
+
+function renderTimelineStrip() {
+  const strip = el('timeline-strip');
+  if (!strip || !parsedFrames.length) return;
+  const transition = el('transition')?.value || 'crossfade';
+  const overlap = transition === 'none' ? 0 : 0.4;
+  const durations = parsedFrames.map(_frameDuration);
+  const total = durations.reduce((s, d, i) => s + d - (i ? overlap : 0), 0);
+  strip.innerHTML = parsedFrames.map((f, i) => {
+    const dur = durations[i] || 0;
+    const pct = total > 0 ? Math.max(6, (dur / total) * 100) : 10;
+    return `<div class="timeline-seg" style="flex-basis:${pct}%">
+      <div class="timeline-id">${escHtml(f.frame_id)}</div>
+      <div class="timeline-caption">${escHtml(f.caption || 'silent')}</div>
+      <div class="timeline-dur">${dur.toFixed(1)}s</div>
+    </div>`;
+  }).join('');
+}
+
+function renderPostingKitPanel() {
+  const panel = el('posting-kit-card');
+  if (!panel) return;
+  if (window.HOB_MODE === 'brand' || !parsedFrames.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  const seed = el('posting-caption-seed');
+  if (seed) seed.value = postingCaption || parsedFrames.map(f => f.caption).filter(Boolean).join('\n');
+  const cover = el('posting-cover-frame');
+  if (cover) {
+    cover.innerHTML = parsedFrames.map((f, i) =>
+      `<option value="${f.frame_id}" ${i === 0 ? 'selected' : ''}>${f.frame_id} — ${(f.caption || 'silent').slice(0, 48)}</option>`
+    ).join('');
+  }
+  const out = el('posting-kit-output');
+  if (out) out.innerHTML = '<span class="muted">Generate when the story frames are ready. Story-mode only; brand copy remains operator-supplied.</span>';
+}
+
+el('posting-kit-btn')?.addEventListener('click', async () => {
+  if (!parsedFrames.length) return;
+  const btn = el('posting-kit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  try {
+    const res = await post('/posting-kit', {
+      mode: window.HOB_MODE === 'brand' ? 'brand' : 'story',
+      frames: buildPayload().frames,
+      posting_caption: el('posting-caption-seed')?.value || postingCaption,
+      cover_frame_id: el('posting-cover-frame')?.value || parsedFrames[0]?.frame_id || '',
+    });
+    if (res.error) throw new Error(res.error);
+    el('posting-kit-output').innerHTML = `
+      <div class="posting-result-block"><strong>Caption</strong><textarea readonly>${escHtml(res.caption || '')}</textarea></div>
+      <div class="posting-result-block"><strong>Hashtags</strong><div class="posting-tags">${(res.hashtags || []).map(escHtml).join(' ')}</div></div>
+      <div class="posting-result-block"><strong>Cover frame</strong> ${escHtml(res.cover_frame_id || '')}</div>
+    `;
+  } catch (err) {
+    el('posting-kit-output').innerHTML = `<span class="text-red">${escHtml(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate posting kit';
+  }
+});
+
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Build payload (shared by Preview + Generate) ──────────────────────────
@@ -877,6 +967,7 @@ function buildPayload() {
       duration:        durEl ? parseFloat(durEl.value) || f.duration : f.duration,
       photo_spec:      ov.photo_spec !== undefined ? ov.photo_spec : (f.photo_spec || ''),
       photo_tmp_path:  ov.photo_tmp_path || '',
+      visual_path:      f.visual_path || '',
       director_note:   noteEl    ? noteEl.value.trim()              : (f.director_note   || ''),
       edit_prompt:     editEl    ? editEl.value.trim()               : (f.edit_prompt     || ''),
       motion_override: motionEl  ? motionEl.value.trim()             : (f.motion_override || ''),
@@ -887,6 +978,7 @@ function buildPayload() {
       video_start_sec: vstartEl  ? parseFloat(vstartEl.value)||0    : (f.video_start_sec  || 0),
       speaker_id:      ov.speaker_id || f.speaker_id || 'narrator',
       product_beat:    ov.product_beat || false,   // brand mode (ignored in story mode)
+      layout:           ov.layout !== undefined ? ov.layout : (f.layout || {}),
       caption_position:  el(`cappos-${f.frame_id}`)?.value || '',     // '' = use global
       caption_max_lines: el(`caplines-${f.frame_id}`)?.value || '',   // '' = use global
     };
@@ -903,6 +995,7 @@ function buildPayload() {
     speaker_voices:      speakerVoices,
     multi_shot:          el('multi-shot')?.checked || false,
     face_ref:            el('face-ref')?.checked || false,
+    ip:                  el('ip')?.value || '',
     approved_frame_ids:  approvedFrameIds(),
     mood:                el('mood').value,
     quality:             el('quality').value,
@@ -973,6 +1066,10 @@ el('preview-btn').addEventListener('click', async () => {
 function applyPreviewStills(stills) {
   previewReady = true;
   stills.forEach(s => {
+    const frame = parsedFrames.find(f => f.frame_id === s.frame_id);
+    if (frame && s.exists) {
+      frame.visual_path = s.path;
+    }
     const prev = el(`preview-${s.frame_id}`);
     if (prev && s.exists) {
       const url = `/media?path=${encodeURIComponent(s.path)}&t=${Date.now()}`;
@@ -1009,6 +1106,28 @@ async function redoStill(frameId, btn) {
     alert('Redo error: ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Redo still'; }
+  }
+}
+
+async function redoMotion(frameId, btn) {
+  const f = parsedFrames.find(x => x.frame_id === frameId);
+  if (!f) return;
+  if (!f.visual_path) {
+    alert('Preview or render a still for this frame before redoing motion.');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Redoing motion...'; }
+  const payload = buildPayload();
+  const frame = payload.frames.find(x => x.frame_id === frameId);
+  try {
+    const res = await post('/redo-motion', { ...payload, frame });
+    if (res.error) { alert('Redo motion failed: ' + res.error); return; }
+    if (res.url) onClipReady(frameId, res.url);
+    if (res.output_ready && currentRunId) showOutput(currentRunId);
+  } catch (e) {
+    alert('Redo motion error: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Redo motion'; }
   }
 }
 
@@ -1129,5 +1248,60 @@ function showOutput(runId) {
   el('output-panel').style.display = 'block';
   el('output-video').src = `/output/${runId}?t=${Date.now()}`;
   el('download-btn').href = `/download/${runId}`;
+  const exportBtn = el('export-btn');
+  if (exportBtn) exportBtn.href = `/export/${runId}`;
   el('output-panel').scrollIntoView({ behavior: 'smooth' });
 }
+
+// ── AI credits (live vendor balances) ──────────────────────────────────────
+const _BAL_ICON = { ok: '✓', error: '✗', no_key: '·', unsupported: '—' };
+
+async function loadBalances() {
+  const body = el('balances-body');
+  if (!body) return;
+  body.innerHTML = '<span class="muted">Checking vendor balances…</span>';
+  try {
+    const res = await fetch('/balances').then(r => r.json());
+    const rows = res.balances || [];
+    if (!rows.length) { body.innerHTML = '<span class="muted">No vendors configured.</span>'; return; }
+    const html = rows.map(r => {
+      const icon = _BAL_ICON[r.status] || '?';
+      // A live "0" balance is an empty wallet → flag red.
+      const empty = r.status === 'ok' && Number(r.balance) <= 0;
+      const cls = r.status === 'ok' ? (empty ? 'bal-empty' : 'bal-ok')
+                : r.status === 'error' ? 'bal-err' : 'bal-dim';
+      const value = r.status === 'ok'
+        ? `${Number(r.balance).toLocaleString()} ${r.unit}${empty ? ' — recharge!' : ''}`
+        : r.status.replace('_', ' ');
+      return `<div class="bal-row ${cls}">
+                <span class="bal-icon">${icon}</span>
+                <span class="bal-label">${r.label}</span>
+                <span class="bal-value">${value}</span>
+                <span class="bal-detail muted">${r.detail || ''}</span>
+              </div>`;
+    }).join('');
+    body.innerHTML = `<div class="bal-summary muted">${res.live_count} of ${res.total} vendors report a live balance</div>${html}`;
+  } catch (e) {
+    body.innerHTML = `<span class="bal-err">Could not load balances: ${e.message}</span>`;
+  }
+}
+
+el('balances-refresh')?.addEventListener('click', loadBalances);
+loadBalances();   // probe on page load so credits are visible upfront
+
+// ── IP / property watermark dropdown ───────────────────────────────────────
+async function loadIps() {
+  const sel = el('ip');
+  if (!sel) return;
+  try {
+    const res = await fetch('/ips').then(r => r.json());
+    (res.ips || []).forEach(ip => {
+      const opt = document.createElement('option');
+      opt.value = ip.id;
+      // Flag IPs whose PNG isn't added yet so the operator knows it won't overlay.
+      opt.textContent = ip.available ? ip.label : `${ip.label} (no image yet)`;
+      sel.appendChild(opt);
+    });
+  } catch (_) { /* leave the "No IP watermark" default */ }
+}
+loadIps();

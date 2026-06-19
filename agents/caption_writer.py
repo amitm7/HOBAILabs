@@ -8,7 +8,8 @@ import os
 
 # ASS alignment codes: bottom=2, middle=5, top=8 (all center-aligned)
 _ALIGNMENT = {"bottom": 2, "middle": 5, "top": 8}
-_MARGIN_V   = {"bottom": 100, "middle": 0, "top": 60}
+# Bottom captions need to clear Instagram/Reels UI chrome on real phones.
+_MARGIN_V   = {"bottom": 320, "middle": 0, "top": 60}
 
 # &HAABBGGRR format (ASS is BGRA, alpha=00 means fully opaque)
 _COLOR = {
@@ -16,6 +17,19 @@ _COLOR = {
     "yellow": "&H0000FFFF",
     "black":  "&H00000000",
 }
+
+
+def _apply_highlights(text: str, base_color: str, highlight_color: str = "yellow") -> str:
+    """Convert ==keyword== spans into ASS color tags."""
+    import re
+
+    reset = _COLOR.get(base_color, _COLOR["white"])
+    hi = _COLOR.get(highlight_color, _COLOR["yellow"])
+    return re.sub(
+        r"==(.+?)==",
+        lambda m: f"{{\\c{hi}}}{m.group(1)}{{\\c{reset}}}",
+        text,
+    )
 
 
 def _ass_time(seconds: float) -> str:
@@ -118,6 +132,7 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
     font       = style.get("font") or os.environ.get("HOB_CAPTION_FONT", "Baskerville")
     size       = int(style.get("size", 52))
     color      = style.get("color", "white")
+    highlight_color = style.get("highlight_color", "yellow")
     g_position = style.get("position", "bottom")          # global default
     g_max_lines = int(style.get("max_lines", 0) or 0)     # 0 = unlimited
 
@@ -144,6 +159,7 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
                 except (TypeError, ValueError):
                     ml = g_max_lines
                 wrapped, fs = _fit_caption(caption, size, ml)
+                wrapped = _apply_highlights(wrapped, color, highlight_color)
                 align    = _ALIGNMENT.get(pos, 2)
                 margin_v = _MARGIN_V.get(pos, 100)
                 # Inline override: alignment per line (+ shrunk size when capped).

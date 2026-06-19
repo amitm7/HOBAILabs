@@ -296,6 +296,21 @@ The **💰 Estimated Cost** panel appears after parsing. Shows a per-category br
 - Video plays automatically when done
 - Click **⬇ Download .mp4** to save
 
+### Step 9 (optional): Finish in your own editor (Premiere / DaVinci Resolve / Final Cut)
+The app generates an **80–90% ready reel**. For the final polish — fine timing, grading, sound design, anything bespoke — hand it off to the editor's own licensed tool instead of re-doing it in-app:
+
+- Click **⬇ Send to editor** (the export button on the output panel) to download `editor_export.zip`.
+- Inside the zip:
+  - **`timeline.fcpxml`** — open this in **Premiere Pro, DaVinci Resolve, or Final Cut** and the **whole timeline rebuilds** with every clip already placed at the right time. You start at ~80%, not from scratch.
+  - **`captions.srt`** — standard subtitles; import/drag onto the timeline.
+  - **`clips/`** — the individual clip files the timeline references.
+  - **`output.mp4`** — the finished reel (reference, and the source of the music/voice mix).
+  - **`edit_list.json`** — machine-readable manifest (timecodes, captions) for any custom tooling.
+- **Relinking media:** after unzipping, your NLE may ask to relink the clips — point it at the `clips/` folder next to the FCPXML. This is normal for any interchange package.
+- **Notes:** crossfades are flattened (re-apply transitions in your tool — you'll be re-cutting anyway). **CapCut/Descript:** there's no clean FCPXML import — just drag in the `clips/` (and the `output.mp4` into Descript for text-based editing).
+
+> Model in one line: **generate 80–90% here → finish the last 10% in the tool your editors already own and know.** Many reels are postable straight from Step 8; Step 9 is the escape hatch when a human's final hand is worth it.
+
 ### Step 7b: Iterate without re-rendering (after Preview Stills)
 
 Once you've clicked **👁 Preview Stills**, each frame card gains two controls so you can steer the output instead of re-rendering blindly:
@@ -601,6 +616,14 @@ Applied on top of every AI-generated image prompt:
 - **Crossfade** — 0.4s dissolve between clips (default, smooth)
 - **Hard Cut** — instant cut (more aggressive, editorial feel)
 
+### IP / Property Watermark
+Every reel can be tagged with one **HOB IP** (HOB Originals, The HOB Show, Unfiltered HOB, The Unplanned HOB…). Pick it from the **IP / Property** dropdown at the top of the page and that IP's **transparent PNG is laid over the whole video** for its full duration — HOB's own property branding.
+
+- **Both modes:** works in story and brand. In brand mode it's **separate from the advertiser logo** (you can have both: the HOB IP watermark *and* the brand's corner logo).
+- **Adding/renaming IPs:** they live in `config/watermarks.json` (IP name → PNG filename) with the PNGs in `deploy/watermarks/`. Add a line + drop a transparent PNG (full-frame, e.g. 1080×1920) to add an IP. See `deploy/watermarks/README.md`.
+- **Graceful:** an IP with no PNG yet still appears in the dropdown (marked "no image yet") and simply applies no overlay — nothing breaks.
+- Leave the dropdown on **No IP watermark** to skip it.
+
 ### Caption Styling
 | Setting | Options | Recommendation |
 |---|---|---|
@@ -620,6 +643,10 @@ Applied on top of every AI-generated image prompt:
   inherit the global setting.
 - **Max lines** caps the line count; if a caption is too long the **font auto-shrinks**
   (to ~60% of the base size) so it fits without overflowing — nothing is truncated.
+- **Reels safe-zone:** bottom captions are raised by default so they clear Instagram's
+  bottom UI on a real phone. The output preview also shows a safe-zone overlay.
+- **Keyword highlight:** wrap an important word or phrase in `==double equals==`
+  to colour it differently in the burned caption, e.g. `I had ==nothing== left`.
 
 \* **Satoshi** is a commercial font (free for personal use; commercial/hosted use
 needs an Indian Type Foundry license). It is **not bundled** — drop a licensed
@@ -894,6 +921,24 @@ When vendor prices change, edit `config/pricing.json`:
 ## 15. Cache System
 
 The app caches aggressively to avoid re-spending credits on identical content.
+
+### Editor trust controls
+- **Read-only timeline strip:** after parsing, a horizontal strip shows frame order
+  and duration so you can judge rhythm before rendering.
+- **Posting kit:** story mode can turn the `Caption:` block into an Instagram
+  caption/hashtag kit and cover-frame choice. This is story-mode only; brand copy
+  and claims stay operator-supplied.
+- **Text Card:** choose `Text Card` on a frame, or use `[layout: text_card]`, to
+  create a full-screen bold statement card.
+- **Export clips + edit list:** after a completed run, download a zip with the
+  final MP4, per-frame clips, and `edit_list.json` for a human editor.
+- **Redo motion:** after preview/render, redo only a frame's motion while keeping
+  the approved still.
+
+### Brand governance
+Brand mode now includes a consent / likeness / content-rights confirmation. Brand
+renders are blocked until this is checked, alongside logo/CTA/product mandatories.
+Spend caps and run ledger rows are enforced server-side through the governance gate.
 
 ### What is cached
 

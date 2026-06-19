@@ -6,11 +6,13 @@ Open: http://localhost:7860
 import contextlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
 import threading
 import uuid
+import zipfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,7 +27,7 @@ app = Flask(__name__, template_folder="web/templates", static_folder="web/static
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024  # 256MB per request
 app.config["MAX_FORM_PARTS"] = 5000
 
-RUNS_DIR = Path(tempfile.gettempdir()) / "hob_runs"
+RUNS_DIR = Path(os.environ.get("HOB_RUNS_DIR", str(Path(tempfile.gettempdir()) / "hob_runs")))
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Typed asset paths, the folder browser, and /media file serving are all confined
@@ -42,6 +44,19 @@ def _path_allowed(p: str) -> bool:
         return False
     return any(rp == root or rp.is_relative_to(root)
                for root in (RUNS_DIR.resolve(), ASSETS_BROWSE_ROOT))
+
+# Startup: release any spend reservations orphaned by a previous process that was
+# killed mid-render, so a crash can't permanently inflate a project's spend cap.
+# Idempotent + best-effort (must never block boot). Runs once per process import,
+# which covers both `python web_app.py` and a gunicorn -w 1 worker.
+try:
+    from agents import governance as _gov
+    _swept = _gov.sweep_stale_reservations(
+        ttl_seconds=int(os.environ.get("HOB_RESERVATION_TTL_SEC", "7200")))
+    if _swept:
+        print(f"[Governance] released {_swept} stale spend reservation(s) on startup")
+except Exception as _e:
+    print(f"[Governance] startup reservation sweep skipped ({_e})")
 
 # In-memory run state: run_id → {status, log, output_path}
 _runs: dict[str, dict] = {}
@@ -66,6 +81,11 @@ class _LogCapture:
         if stripped:
             with _runs_lock:
                 _runs[self._run_id]["log"].append(stripped)
+            try:
+                from agents import run_store
+                run_store.append_log(self._run_id, stripped)
+            except Exception:
+                pass
         sys.__stdout__.write(text)
 
     def flush(self):
@@ -122,9 +142,10 @@ def parse_script():
     tmp.close()
 
     try:
-        from agents.script_parser import parse_frame_script
+        from agents.script_parser import extract_caption_block, parse_frame_script
         smart_match = bool(request.json.get("smart_match", False))
         frames = parse_frame_script(tmp.name, assets_dir or "", smart_match=smart_match)
+        posting_caption = extract_caption_block(script_text)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     finally:
@@ -195,8 +216,148 @@ def parse_script():
             "speaker_id":     f.get("speaker_id", "narrator"),
             "speaker_label":  f.get("speaker_label", ""),
             "suggestions":    f.get("suggestions", {}),
+            "layout":         f.get("layout", {}),
         })
-    return jsonify({"frames": result, "cast": cast})
+    return jsonify({"frames": result, "cast": cast, "posting_caption": posting_caption})
+
+
+def _posting_hashtags(text: str, frames: list[dict], limit: int = 12) -> list[str]:
+    """Cheap story-mode hashtag helper; avoids ad-copy generation and vendor spend."""
+    stop = {
+        "about", "after", "again", "also", "and", "because", "before", "being",
+        "from", "have", "into", "just", "more", "most", "that", "their", "there",
+        "this", "through", "with", "without", "where", "while", "your",
+    }
+    source = " ".join([text] + [f.get("caption", "") for f in frames])
+    words = re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", source.lower())
+    ranked = []
+    seen = set()
+    for w in words:
+        if w in stop or w in seen:
+            continue
+        seen.add(w)
+        ranked.append(w)
+    base = ["reels", "shorts", "storytelling", "inspiration", "journey"]
+    tags = base + ranked
+    out = []
+    for tag in tags:
+        clean = re.sub(r"[^A-Za-z0-9]", "", tag.title())
+        if clean and clean.lower() not in {t.lower().lstrip("#") for t in out}:
+            out.append("#" + clean)
+        if len(out) >= limit:
+            break
+    return out
+
+
+@app.route("/posting-kit", methods=["POST"])
+def posting_kit():
+    data = request.json or {}
+    if data.get("mode") == "brand":
+        return jsonify({"error": "Posting kit AI copy is story-mode only."}), 400
+    frames = data.get("frames") or []
+    caption = (data.get("posting_caption") or "").strip()
+    if not caption:
+        caption = "\n".join(f.get("caption", "") for f in frames if f.get("caption"))
+    cover_id = data.get("cover_frame_id") or (frames[0].get("frame_id") if frames else "")
+    return jsonify({
+        "caption": caption,
+        "hashtags": _posting_hashtags(caption, frames),
+        "cover_frame_id": cover_id,
+    })
+
+
+def _commercial_gate(data: dict, estimate_usd: float = 0.0) -> tuple[list[str], list[str]]:
+    from agents import governance
+    return governance.validate_consent(data), governance.check_spend_cap(data, estimate_usd)
+
+
+@app.route("/story-intake", methods=["POST"])
+def story_intake():
+    """STR-2 pilot: long story → editable frame script."""
+    data = request.json or {}
+    consent_missing, spend_missing = _commercial_gate(data, 0.0)
+    if consent_missing or spend_missing:
+        return jsonify({"error": "Commercial gate blocked", "missing": consent_missing + spend_missing}), 400
+    from agents.growth import story_to_script
+    return jsonify({
+        "status": "draft_scaffold",
+        "confidence": "placeholder",
+        "note": "Editable regex segmentation draft; review before rendering.",
+        "script": story_to_script(data.get("story", ""), int(data.get("max_frames", 10) or 10)),
+    })
+
+
+@app.route("/hook-workshop", methods=["POST"])
+def hook_workshop():
+    """STR-5 pilot: generate low-cost opener candidates before full spend."""
+    data = request.json or {}
+    consent_missing, spend_missing = _commercial_gate(data, 0.0)
+    if consent_missing or spend_missing:
+        return jsonify({"error": "Commercial gate blocked", "missing": consent_missing + spend_missing}), 400
+    from agents.growth import hook_candidates
+    return jsonify({
+        "status": "draft_scaffold",
+        "confidence": "placeholder",
+        "candidates": hook_candidates(data.get("frames") or []),
+    })
+
+
+@app.route("/caption-variants", methods=["POST"])
+def caption_variants():
+    """STR-4 pilot: caption translation scaffold before voice/dubbing spend."""
+    data = request.json or {}
+    consent_missing, spend_missing = _commercial_gate(data, 0.0)
+    if consent_missing or spend_missing:
+        return jsonify({"error": "Commercial gate blocked", "missing": consent_missing + spend_missing}), 400
+    from agents.growth import caption_language_variants
+    return jsonify({
+        "status": "draft_scaffold",
+        "confidence": "placeholder",
+        "note": "These are translation placeholders, not completed language variants.",
+        "variants": caption_language_variants(data.get("frames") or [], data.get("languages") or []),
+    })
+
+
+@app.route("/render-variants", methods=["POST"])
+def render_variants_route():
+    """STR-3b pilot: return governed rerender payloads for variants/cutdowns."""
+    data = request.json or {}
+    consent_missing, spend_missing = _commercial_gate(data, _estimate_payload_cost(data))
+    if consent_missing or spend_missing:
+        return jsonify({"error": "Commercial gate blocked", "missing": consent_missing + spend_missing}), 400
+    from agents.growth import render_variants
+    return jsonify({"variants": render_variants(data)})
+
+
+@app.route("/asset-library/register", methods=["POST"])
+def asset_register():
+    data = request.json or {}
+    path = data.get("path", "")
+    if not path or not _path_allowed(path) or not os.path.exists(path):
+        return jsonify({"error": "Asset path not allowed or not found"}), 400
+    from agents.product_surface import register_asset
+    return jsonify({"asset": register_asset(
+        path,
+        kind=data.get("kind", ""),
+        consent_flag=bool(data.get("consent_flag")),
+        owner=data.get("owner", "default"),
+    )})
+
+
+@app.route("/brand-approval", methods=["POST"])
+def brand_approval():
+    data = request.json or {}
+    project_id = data.get("project_id") or data.get("session_id") or "default"
+    from agents.product_surface import record_approval
+    return jsonify({"approval": record_approval(project_id, data, approver=data.get("approver") or data.get("operator_id", ""))})
+
+
+@app.route("/project-version", methods=["POST"])
+def project_version():
+    data = request.json or {}
+    project_id = data.get("project_id") or data.get("session_id") or "default"
+    from agents.product_surface import save_version
+    return jsonify({"version": save_version(project_id, data.get("payload") or data, data.get("output_path", ""))})
 
 
 @app.route("/media")
@@ -312,6 +473,29 @@ def get_pricing():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/ips")
+def get_ips():
+    """HOB IP/property list for the watermark dropdown (both modes)."""
+    try:
+        from agents.watermark import list_ips
+        return jsonify({"ips": list_ips()})
+    except Exception as e:
+        return jsonify({"error": str(e), "ips": []}), 500
+
+
+@app.route("/balances")
+def get_balances():
+    """Live AI-vendor credit/balance probe (read-only) so the operator knows
+    upfront whether a recharge is needed. Each vendor degrades independently."""
+    try:
+        from agents.balances import all_balances
+        rows = all_balances()
+        ok = sum(1 for r in rows if r["status"] == "ok")
+        return jsonify({"balances": rows, "live_count": ok, "total": len(rows)})
+    except Exception as e:
+        return jsonify({"error": str(e), "balances": []}), 500
+
+
 @app.route("/models")
 def list_models():
     """Model catalog + routing policy for the UI dropdowns and cost estimate."""
@@ -374,6 +558,14 @@ def generate_music_route():
     data = request.json or {}
     prompt = (data.get("prompt") or "").strip()
     session_id = data.get("session_id", str(uuid.uuid4()))
+    try:
+        from agents import governance
+        from agents.pricing import music_cost
+        spend_missing = governance.reserve_spend(data | {"session_id": session_id}, music_cost(), run_id=session_id)
+        if spend_missing:
+            return jsonify({"error": spend_missing[0]}), 400
+    except Exception as e:
+        print(f"[Governance] music spend guard skipped ({e})")
 
     run_dir = RUNS_DIR / session_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -388,9 +580,28 @@ def generate_music_route():
                                          mood=data.get("mood", ""))
             print(f"[MusicGen] Composed brief: {prompt}")
         generate_music(prompt, music_path)
+        try:
+            from agents import governance
+            from agents.pricing import music_cost
+            governance.release_reservation(data | {"session_id": session_id}, run_id=session_id, reason="music_done")
+            governance.record_cost_event(
+                governance.project_key(data | {"session_id": session_id}),
+                item="music_estimate",
+                usd=music_cost(),
+                run_id=session_id,
+                vendor="suno",
+                event_type="estimate",
+            )
+        except Exception as ge:
+            print(f"[Governance] music ledger record skipped ({ge})")
         return jsonify({"music_path": music_path, "session_id": session_id,
                         "prompt_used": prompt})
     except Exception as e:
+        try:
+            from agents import governance
+            governance.release_reservation(data | {"session_id": session_id}, run_id=session_id, reason="music_failed")
+        except Exception:
+            pass
         return jsonify({"error": str(e)}), 500
 
 
@@ -400,6 +611,34 @@ def _check_assets_dir(data: dict):
     if assets_dir and not _path_allowed(assets_dir):
         return jsonify({"error": f"Assets folder must be inside {ASSETS_BROWSE_ROOT}"}), 403
     return None
+
+
+def _estimate_payload_cost(data: dict) -> float:
+    """Server-truth estimate used by spend governance before dispatch."""
+    quality = data.get("quality", "dev")
+    max_frame_dur = 5.0 if quality == "dev" else 9.0
+    frames = _build_frames_from_payload(data, max_frame_dur)
+    music_type = data.get("music_type", "none")
+    voice_chars = (sum(len(f.get("caption") or "") for f in frames
+                       if not f.get("lipsync"))
+                   if music_type == "voiceover" else 0)
+    from agents import model_router
+    from agents.pricing import estimate
+    video_model = data.get("video_model", "auto") or "auto"
+    approved = data.get("approved_frame_ids")
+    b = estimate(
+        frames,
+        force_5s=(quality == "dev"),
+        music_type=music_type,
+        voice_chars=voice_chars,
+        provider=("kenburns" if video_model == "kenburns" else "kling"),
+        cost_tier=model_router.cost_tier_from_quality(quality),
+        image_model=data.get("image_model", "auto") or "auto",
+        video_model=video_model,
+        multi_shot=bool(data.get("multi_shot")),
+        approved_ids=set(approved) if approved is not None else None,
+    )
+    return float(b.get("total", 0.0))
 
 
 @app.route("/run", methods=["POST"])
@@ -416,6 +655,15 @@ def run_pipeline():
         if missing:
             return jsonify({"error": "Brand requirements missing", "missing": missing}), 400
     session_id = data.get("session_id", str(uuid.uuid4()))
+    data["session_id"] = session_id
+    from agents import governance
+    missing = governance.validate_consent(data)
+    if missing:
+        return jsonify({"error": "Consent / rights requirements missing", "missing": missing}), 400
+    governance.record_consent(data)
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
+    if spend_missing:
+        return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
 
     run_dir = RUNS_DIR / session_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -423,6 +671,12 @@ def run_pipeline():
     with _runs_lock:
         _runs[session_id] = {"status": "running", "log": [], "output_path": None,
                              "clips": {}, "events": []}
+    try:
+        from agents import run_store
+        run_store.save(session_id, status="running", payload=data, run_dir=str(run_dir),
+                       log=[], output_path=None)
+    except Exception as e:
+        print(f"[RunStore] save skipped ({e})")
 
     thread = threading.Thread(
         target=_execute_pipeline,
@@ -431,6 +685,25 @@ def run_pipeline():
     )
     thread.start()
 
+    return jsonify({"run_id": session_id})
+
+
+@app.route("/retry/<run_id>", methods=["POST"])
+def retry_run(run_id: str):
+    """Re-dispatch a stored run payload; paid work should hit content caches."""
+    from agents import run_store
+    stored = run_store.load(run_id)
+    if not stored or not stored.get("payload"):
+        return jsonify({"error": "No stored payload for run"}), 404
+    data = stored["payload"]
+    session_id = data.get("session_id", run_id)
+    run_dir = RUNS_DIR / session_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with _runs_lock:
+        _runs[session_id] = {"status": "running", "log": [], "output_path": None,
+                             "clips": {}, "events": []}
+    run_store.save(session_id, status="running", payload=data, run_dir=str(run_dir), log=[])
+    threading.Thread(target=_execute_pipeline, args=(session_id, data, run_dir), daemon=True).start()
     return jsonify({"run_id": session_id})
 
 
@@ -447,6 +720,12 @@ def preview_stills():
     if err:
         return err
     session_id = data.get("session_id", str(uuid.uuid4()))
+    data["session_id"] = session_id
+    from agents import governance
+    missing = governance.validate_consent(data)
+    if missing:
+        return jsonify({"error": "Consent / rights requirements missing", "missing": missing}), 400
+    governance.record_consent(data)
 
     run_dir = RUNS_DIR / session_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -476,9 +755,15 @@ def progress(run_id: str):
         while True:
             with _runs_lock:
                 run = _runs.get(run_id, {})
-                log = list(run.get("log", []))
-                events = list(run.get("events", []))
-                status = run.get("status", "running")
+            if not run:
+                try:
+                    from agents import run_store
+                    run = run_store.load(run_id) or {}
+                except Exception:
+                    run = {}
+            log = list(run.get("log", []))
+            events = list(run.get("events", []))
+            status = run.get("status", "running")
 
             for line in log[sent:]:
                 yield f"data: {json.dumps({'line': line})}\n\n"
@@ -505,6 +790,13 @@ def output(run_id: str):
     with _runs_lock:
         run = _runs.get(run_id, {})
     path = run.get("output_path")
+    if not path:
+        try:
+            from agents import run_store
+            stored = run_store.load(run_id) or {}
+            path = stored.get("output_path")
+        except Exception:
+            path = None
     if not path or not os.path.exists(path):
         return "Not ready", 404
     return send_file(path, mimetype="video/mp4")
@@ -515,9 +807,39 @@ def download(run_id: str):
     with _runs_lock:
         run = _runs.get(run_id, {})
     path = run.get("output_path")
+    if not path:
+        try:
+            from agents import run_store
+            stored = run_store.load(run_id) or {}
+            path = stored.get("output_path")
+        except Exception:
+            path = None
     if not path or not os.path.exists(path):
         return "Not ready", 404
     return send_file(path, as_attachment=True, download_name="hobaigabs_reel.mp4")
+
+
+@app.route("/export/<run_id>")
+def export_run(run_id: str):
+    """Download a lightweight editor package for one completed run."""
+    run_dir = RUNS_DIR / run_id
+    manifest = run_dir / "edit_list.json"
+    if not manifest.exists():
+        return "Export not ready", 404
+    zip_path = run_dir / "editor_export.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.write(manifest, "edit_list.json")
+        # Importable timeline + standard captions for the editor's own NLE.
+        for extra in ("timeline.fcpxml", "captions.srt"):
+            p = run_dir / extra
+            if p.exists():
+                z.write(p, extra)
+        for clip_path in sorted(run_dir.glob("clip_*.mp4")):
+            z.write(clip_path, f"clips/{clip_path.name}")
+        output_path = run_dir / "output.mp4"
+        if output_path.exists():
+            z.write(output_path, "output.mp4")
+    return send_file(zip_path, as_attachment=True, download_name=f"{run_id}_editor_export.zip")
 
 
 @app.route("/clip/<run_id>/<frame_id>")
@@ -549,6 +871,11 @@ def redo_still():
         return jsonify({"error": "No frame supplied"}), 400
 
     session_id = data.get("session_id", str(uuid.uuid4()))
+    data["session_id"] = session_id
+    from agents import governance
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
     run_dir = RUNS_DIR / session_id
     run_dir.mkdir(parents=True, exist_ok=True)
     assets_dir = str(run_dir / "assets")
@@ -572,6 +899,11 @@ def redo_still():
                                   face_ref=bool(data.get("face_ref")), brand=brand,
                                   force_regen_ids={frame_payload["frame_id"]})
     except Exception as e:
+        try:
+            from agents import governance
+            governance.release_reservation(data, run_id=session_id, reason="redo_still_failed")
+        except Exception:
+            pass
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -580,12 +912,113 @@ def redo_still():
     vp = f.get("visual_path", "")
     _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v", ".webm"}
     is_video = bool(vp and os.path.splitext(vp)[1].lower() in _VIDEO_EXTS)
+    try:
+        from agents import governance
+        estimate_usd = _estimate_payload_cost(data)
+        governance.release_reservation(data, run_id=session_id, reason="redo_still_done")
+        governance.record_cost_event(
+            governance.project_key(data),
+            item="redo_still_estimate",
+            usd=estimate_usd,
+            run_id=session_id,
+            event_type="estimate",
+        )
+    except Exception as ge:
+        print(f"[Governance] redo-still ledger record skipped ({ge})")
     return jsonify({
         "frame_id": f["frame_id"],
         "path":     vp,
         "is_video": is_video,
         "exists":   bool(vp and os.path.exists(vp)),
     })
+
+
+@app.route("/redo-motion", methods=["POST"])
+def redo_motion():
+    """Rebuild motion for one approved still; keep the still image unchanged."""
+    data = request.json or {}
+    err = _check_assets_dir(data)
+    if err:
+        return err
+    frame_payload = data.get("frame")
+    if not frame_payload or not frame_payload.get("frame_id"):
+        return jsonify({"error": "No frame supplied"}), 400
+    if not frame_payload.get("visual_path"):
+        return jsonify({"error": "Frame has no generated still yet"}), 400
+
+    session_id = data.get("session_id", str(uuid.uuid4()))
+    data["session_id"] = session_id
+    from agents import governance
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    run_dir = RUNS_DIR / session_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    quality = data.get("quality", "dev")
+    max_frame_dur = 5.0 if quality == "dev" else 9.0
+    width, height = (1080, 1920) if data.get("orientation", "portrait") == "portrait" else (1920, 1080)
+    fps = int(data.get("fps", 30))
+
+    try:
+        from agents import model_router
+        from agents.clip_builder import build_clips
+        one = dict(data)
+        one["frames"] = [frame_payload]
+        frame = _build_frames_from_payload(one, max_frame_dur)[0]
+        tier = model_router.cost_tier_from_quality(quality)
+        frame["video_model_override"] = frame.get("video_model_override") or data.get("video_model", "")
+        model_id = model_router.select_model("video", frame, tier, override=frame.get("video_model_override", ""))
+        assignment = {
+            "segment_id": frame["frame_id"],
+            "actual_duration": frame["duration"],
+            "media_path": frame["visual_path"],
+            "text": frame.get("caption", ""),
+            "motion_prompt": frame.get("motion_override") or frame.get("scene", {}).get("motion_prompt", ""),
+            "video_start_sec": frame.get("video_start_sec", 0.0),
+            "model_id": model_id,
+        }
+        clip_temp = tempfile.mkdtemp(prefix="hob_redo_motion_")
+        try:
+            clips = build_clips([assignment], clip_temp, width, height, fps,
+                                force_5s=(quality == "dev"),
+                                kling_mode=data.get("kling_mode", "pro"),
+                                provider=data.get("provider", "kling"))
+            dst = str(run_dir / f"clip_{frame['frame_id']}.mp4")
+            shutil.copy2(clips[0]["clip_path"], dst)
+        finally:
+            shutil.rmtree(clip_temp, ignore_errors=True)
+
+        with _runs_lock:
+            run = _runs.setdefault(session_id, {"status": "running", "log": [], "clips": {}, "events": []})
+            run.setdefault("clips", {})[frame["frame_id"]] = dst
+
+        try:
+            estimate_usd = _estimate_payload_cost(data)
+            governance.release_reservation(data, run_id=session_id, reason="redo_motion_done")
+            governance.record_cost_event(
+                governance.project_key(data),
+                item="redo_motion_estimate",
+                usd=estimate_usd,
+                run_id=session_id,
+                event_type="estimate",
+            )
+        except Exception as ge:
+            print(f"[Governance] redo-motion ledger record skipped ({ge})")
+
+        return jsonify({
+            "frame_id": frame["frame_id"],
+            "url": f"/clip/{session_id}/{frame['frame_id']}",
+            "output_ready": False,
+        })
+    except Exception as e:
+        try:
+            from agents import governance
+            governance.release_reservation(data, run_id=session_id, reason="redo_motion_failed")
+        except Exception:
+            pass
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Shared frame/still helpers (used by both preview and full render) ──────────
@@ -608,8 +1041,12 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
 
         photo_spec = fd.get("photo_spec", "")
         photo_tmp  = fd.get("photo_tmp_path", "")
+        payload_visual = (fd.get("visual_path") or "").strip()
 
-        if photo_spec == "uploaded" and photo_tmp and os.path.exists(photo_tmp):
+        if payload_visual and _path_allowed(payload_visual) and os.path.exists(payload_visual):
+            visual_path = payload_visual
+            photo_spec = ""
+        elif photo_spec == "uploaded" and photo_tmp and os.path.exists(photo_tmp):
             visual_path = photo_tmp
             photo_spec  = ""
         elif photo_spec and not photo_spec.startswith("ai_") and photo_spec != "uploaded":
@@ -640,6 +1077,7 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             "duration":        duration,
             "speaker_id":      _speaker_id,
             "product_beat":    bool(fd.get("product_beat", False)),
+            "layout":          fd.get("layout") or {},
             # Per-frame caption overrides (blank = use the global caption style).
             "caption_position":  (fd.get("caption_position") or "").strip(),
             "caption_max_lines": fd.get("caption_max_lines") or "",
@@ -686,6 +1124,20 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
 
     os.makedirs(assets_dir, exist_ok=True)
 
+    # LAY-0 pilot extraction: render layout frames through one shared layout seam.
+    try:
+        from agents import layout as layout_mod
+        for f in frames:
+            if layout_mod.is_layout_frame(f):
+                out = os.path.join(assets_dir, f"layout_{f['frame_id']}.jpg")
+                layout_mod.render_layout_frame(f, out)
+                f["visual_path"] = out
+                f["motion_override"] = f.get("motion_override") or "static"
+                f.setdefault("scene", {"motion_prompt": "static"})
+                print(f"[Layout] {f['frame_id']}: text card rendered")
+    except Exception as e:
+        print(f"[Layout] text-card render failed ({e}) — continuing with normal visual generation")
+
     # Per-frame redo: drop any cached still for these frames so the prompt-hash
     # file-reuse check misses and the image regenerates fresh.
     if force_regen_ids:
@@ -705,9 +1157,11 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
         extra_context = brand_mod.brand_scene_context(brand)
 
     # Scene intelligence (parallel, cached; treatment pass plans the whole reel)
-    frames = design_all_scenes(frames, subject_name=subject_name,
-                               subject_description=subject_description, mood=mood,
-                               extra_context=extra_context)
+    design_frames = [f for f in frames if not (f.get("layout") or {}).get("preset")]
+    if design_frames:
+        design_all_scenes(design_frames, subject_name=subject_name,
+                          subject_description=subject_description, mood=mood,
+                          extra_context=extra_context)
 
     # Apply mood to every AI image prompt
     mood_suffix = MOOD_MAP.get(mood, "")
@@ -727,6 +1181,8 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
     first_portrait_by_speaker: dict[str, str] = {}
     for f in frames:
         # Real-only: product/logo beats are NEVER AI-generated (BRAND_PLAN §5).
+        if (f.get("layout") or {}).get("preset") and f.get("visual_path"):
+            continue
         if f.get("product_beat"):
             if not (f.get("visual_path") and os.path.exists(f["visual_path"])):
                 print(f"[Brand] {f['frame_id']}: product beat has no real asset — leaving blank")
@@ -791,6 +1247,42 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
     return frames
 
 
+def _write_edit_list(run_dir: Path, frames: list[dict], clips: list[dict],
+                     frame_times: list[tuple[float, float]], transition: str,
+                     output_path: str) -> str:
+    """Persist a lightweight editor manifest for STR-6a export."""
+    manifest = {
+        "version": 1,
+        "transition": transition,
+        "output_path": output_path,
+        "frames": [],
+    }
+    for i, f in enumerate(frames):
+        start, end = frame_times[i] if i < len(frame_times) else (0.0, float(f.get("duration", 0.0)))
+        fid = f["frame_id"]
+        segment_clips = [
+            {
+                "segment_id": c.get("segment_id"),
+                "clip_path": c.get("clip_path"),
+                "duration": c.get("actual_duration"),
+            }
+            for c in clips
+            if c.get("segment_id") == fid or str(c.get("segment_id", "")).startswith(fid + "_")
+        ]
+        manifest["frames"].append({
+            "frame_id": fid,
+            "caption": f.get("caption", ""),
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration": round(max(0.0, end - start), 3),
+            "source_visual": f.get("visual_path", ""),
+            "clips": segment_clips,
+        })
+    out = run_dir / "edit_list.json"
+    out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return str(out)
+
+
 # ── Pipeline execution ────────────────────────────────────────────────────────
 
 def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
@@ -799,6 +1291,11 @@ def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
     def _finish(status: str):
         with _runs_lock:
             _runs[run_id]["status"] = status
+        try:
+            from agents import run_store
+            run_store.save(run_id, status=status)
+        except Exception:
+            pass
 
     try:
         with contextlib.redirect_stdout(log):
@@ -809,6 +1306,16 @@ def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
         with _runs_lock:
             _runs[run_id]["log"].append(f"✗ Error: {e}")
             _runs[run_id]["log"].append(traceback.format_exc())
+        try:
+            from agents import run_store
+            run_store.save(run_id, status="error", error=str(e))
+        except Exception:
+            pass
+        try:
+            from agents import governance
+            governance.release_reservation(data, run_id=run_id, reason="render_failed")
+        except Exception:
+            pass
         _finish("error")
 
 
@@ -1056,27 +1563,75 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                 is_vo = True
 
         # ── Assemble ───────────────────────────────────────────────────────
+        # HOB IP/property watermark (both modes): full-frame PNG over the whole reel.
+        from agents.watermark import watermark_for
+        watermark_path = watermark_for(data.get("ip", ""))
+
         output_path = str(run_dir / "output.mp4")
-        assemble_target = str(run_dir / "_raw_output.mp4") if is_brand else output_path
+        # A post-pass is needed for a brand overlay OR an IP watermark; otherwise
+        # assemble straight to the final output (one encode).
+        needs_overlay = is_brand or bool(watermark_path)
+        assemble_target = str(run_dir / "_raw_output.mp4") if needs_overlay else output_path
         assemble_caption_only(clips, clip_temp, assemble_target,
                               music_path=music_path, srt_path=ass_path,
                               transition=transition, is_voiceover=is_vo,
                               bg_music_path=bg_music_path)
 
-        # Brand post-pass: burned-in disclosure + optional corner logo bug.
-        if is_brand:
+        # Single overlay post-pass: IP watermark (both modes) + brand disclosure/logo
+        # (brand only) composited together so the final video is encoded once.
+        if needs_overlay:
             from agents.assembler import apply_brand_overlay
-            from agents.brand import disclosure_text
+            disc, logo, corner = "", "", "tr"
+            if is_brand:
+                from agents.brand import disclosure_text
+                disc = disclosure_text(brand) if brand.get("disclosure", True) else ""
+                logo = brand.get("logo_path", "") if brand.get("logo_bug") else ""
+                corner = brand.get("logo_corner", "tr")
+            if watermark_path:
+                print(f"[Watermark] applying IP layer: {data.get('ip','')}")
             apply_brand_overlay(
                 assemble_target, output_path,
-                disclosure_text=disclosure_text(brand) if brand.get("disclosure", True) else "",
-                logo_path=brand.get("logo_path", "") if brand.get("logo_bug") else "",
-                logo_corner=brand.get("logo_corner", "tr"))
+                disclosure_text=disc, logo_path=logo, logo_corner=corner,
+                watermark_path=watermark_path, width=width, height=height)
 
         total = sum(f["duration"] for f in frames)
+        edit_list_path = _write_edit_list(run_dir, frames, clips, frame_times, transition, output_path)
+        print(f"[Export] edit list ready → {edit_list_path}")
+        # Editor hand-off: an importable FCPXML timeline (Premiere/Resolve/FCP) + a
+        # standard SRT, so the operator can finish the last 10% in their own tool.
+        try:
+            from agents.fcpxml import build_fcpxml, build_srt
+            (run_dir / "timeline.fcpxml").write_text(
+                build_fcpxml(frames, width, height, fps), encoding="utf-8")
+            (run_dir / "captions.srt").write_text(
+                build_srt(frames, frame_times), encoding="utf-8")
+            print("[Export] FCPXML timeline + SRT captions ready")
+        except Exception as e:
+            print(f"[Export] FCPXML/SRT skipped ({e})")
+        try:
+            from agents import governance
+            estimated_usd = _estimate_payload_cost(data)
+            governance.release_reservation(data, run_id=run_id, reason="render_done")
+            governance.record_cost_event(
+                governance.project_key(data),
+                item="render_estimate",
+                usd=estimated_usd,
+                run_id=run_id,
+                event_type="estimate",
+            )
+            print(f"[Governance] ledger recorded render estimate ${estimated_usd:.2f}")
+        except Exception as e:
+            print(f"[Governance] ledger record skipped ({e})")
         print(f"\n✓ Done! {total:.1f}s → output ready")
         with _runs_lock:
             _runs[run_id]["output_path"] = output_path
+            _runs[run_id]["edit_list_path"] = edit_list_path
+        try:
+            from agents import run_store
+            run_store.save(run_id, output_path=output_path, edit_list_path=edit_list_path,
+                           run_dir=str(run_dir))
+        except Exception:
+            pass
 
     finally:
         shutil.rmtree(clip_temp, ignore_errors=True)

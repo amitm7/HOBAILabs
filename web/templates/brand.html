@@ -15,6 +15,28 @@
 
 <main>
 
+  <!-- ── AI credits (live vendor balances) ───────────────── -->
+  <div class="card" id="balances-card">
+    <div class="card-header">
+      <h2>💳 AI Credits</h2>
+      <button class="btn-secondary btn-small" id="balances-refresh">↻ Refresh</button>
+    </div>
+    <div class="card-body">
+      <div id="balances-body" class="muted">Checking vendor balances…</div>
+    </div>
+  </div>
+
+  <!-- ── IP / property watermark (HOB's own, not the advertiser logo) ── -->
+  <div class="card">
+    <div class="card-header"><h2>IP / Property</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Which HOB IP is this reel for? <span class="text-dim">(HOB's own watermark layer — separate from the advertiser logo below)</span></label>
+        <select id="ip"><option value="">No IP watermark</option></select>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Brand brief ─────────────────────────────────────── -->
   <div class="card">
     <div class="card-header"><h2>Brand brief</h2></div>
@@ -64,6 +86,10 @@
       </div>
       <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;cursor:pointer">
         <input type="checkbox" id="b-logobug"> Show a small logo in the corner for the whole video
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:6px;margin-top:10px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="b-rights" style="margin-top:3px">
+        <span>I confirm we have consent / likeness / content rights for all real people, product assets, logo, VO, and music used in this brand render.</span>
       </label>
       <div class="field" style="margin-top:6px;max-width:200px">
         <label>Logo corner</label>

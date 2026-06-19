@@ -23,6 +23,12 @@ import os
 import re
 
 
+def extract_caption_block(raw: str) -> str:
+    """Return the Format B `Caption:` block used for posting copy."""
+    parts = re.split(r'\nCaption\s*:', raw, maxsplit=1, flags=re.IGNORECASE)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
 def _frame_duration(caption: str, max_dur: float = 9.0) -> float:
     words = len(caption.split()) if caption.strip() else 0
     if words == 0:
@@ -86,6 +92,7 @@ def _parse_format_b(raw: str, assets_dir: str) -> list[dict]:
         model_match    = re.search(r'\[model:\s*(.*?)\]',    text, re.IGNORECASE | re.DOTALL)
         imgmodel_match = re.search(r'\[imgmodel:\s*(.*?)\]', text, re.IGNORECASE | re.DOTALL)
         vidmodel_match = re.search(r'\[vidmodel:\s*(.*?)\]', text, re.IGNORECASE | re.DOTALL)
+        layout_match   = re.search(r'\[layout:\s*(.*?)\]',   text, re.IGNORECASE | re.DOTALL)
         duration_match = re.search(r'\[duration:\s*(\d+\.?\d*)\s*s?\]', text, re.IGNORECASE)
         start_match    = re.search(r'\[start:\s*(\d+\.?\d*)\s*s?\]',    text, re.IGNORECASE)
         end_match      = re.search(r'\[end:\s*(\d+\.?\d*)\s*s?\]',      text, re.IGNORECASE)
@@ -107,6 +114,8 @@ def _parse_format_b(raw: str, assets_dir: str) -> list[dict]:
         model_any         = model_match.group(1).strip()    if model_match    else ""
         image_model_override = (imgmodel_match.group(1).strip() if imgmodel_match else "") or model_any
         video_model_override = (vidmodel_match.group(1).strip() if vidmodel_match else "") or model_any
+        layout_raw        = layout_match.group(1).strip().lower() if layout_match else ""
+        layout            = {"preset": "text_card"} if layout_raw in ("text_card", "text-card", "card") else {}
         duration_override = float(duration_match.group(1)) if duration_match else None
         video_start_sec   = float(start_match.group(1))    if start_match    else 0.0
         video_end_sec     = float(end_match.group(1))      if end_match      else None
@@ -122,6 +131,7 @@ def _parse_format_b(raw: str, assets_dir: str) -> list[dict]:
         clean_text = re.sub(r'\[model:.*?\]',    '', clean_text, flags=re.IGNORECASE | re.DOTALL)
         clean_text = re.sub(r'\[imgmodel:.*?\]', '', clean_text, flags=re.IGNORECASE | re.DOTALL)
         clean_text = re.sub(r'\[vidmodel:.*?\]', '', clean_text, flags=re.IGNORECASE | re.DOTALL)
+        clean_text = re.sub(r'\[layout:.*?\]',   '', clean_text, flags=re.IGNORECASE | re.DOTALL)
         clean_text = re.sub(r'\[duration:.*?\]', '', clean_text, flags=re.IGNORECASE)
         clean_text = re.sub(r'\[start:.*?\]',    '', clean_text, flags=re.IGNORECASE)
         clean_text = re.sub(r'\[end:.*?\]',      '', clean_text, flags=re.IGNORECASE)
@@ -144,6 +154,7 @@ def _parse_format_b(raw: str, assets_dir: str) -> list[dict]:
             "video_model_override": video_model_override,
             "video_start_sec": video_start_sec,
             "video_end_sec":   video_end_sec,
+            "layout":          layout,
             "duration":        duration,
         })
         frame_idx += 1

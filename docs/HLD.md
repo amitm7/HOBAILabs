@@ -32,6 +32,10 @@ premium in Production.
 - Suggestion chips (camera / image-edit / director note per frame)
 - Brand / Ad mode (B1): brief extraction, brand kit, product beats, mandatories hard-block, CTA end-card, disclosure, VO-over-ducked-music
 - Font options: Montserrat (bundled), Satoshi (drop-in when licensed)
+- Governed roadmap thin slices: caption safe-zone, keyword highlights, read-only
+  timeline, story-mode posting kit, text-card layout preset, lightweight editor
+  export, redo-motion clip refresh, consent/spend governance, restart-safe run
+  metadata, and SQLite stand-ins for asset/approval/version records.
 
 **Out of scope (today):** multi-tenant accounts, persistent job DB, batch/queue
 production, beat-synced cuts, kinetic motion-graphics (B2), multi-platform export,
@@ -80,13 +84,14 @@ CLIP-based scoring — these are on the roadmap (§9).
 
 | Container | Tech | Responsibility |
 |---|---|---|
-| **Web UI** | Flask + server-rendered templates + SSE | Parse script, preview stills, estimate cost, stream progress logs, serve/download output. Per-`run_id` in-memory state. |
+| **Web UI** | Flask + server-rendered templates + SSE | Parse script, preview stills, estimate cost, stream progress logs, serve/download output and lightweight editor exports. Per-`run_id` state is mirrored to a lightweight run store. |
 | **Brand UI layer** | `brand.html` + `brand.js` (hooks into `main.js`) | Additional brief panel, brand-kit uploads, mandatories checklist, product-beat toggles. No fork of the engine. |
 | **CLI** | `argparse` + `run_caption.py` | Headless render; dry-run cost plan; all flags the UI exposes. |
 | **Render pipeline** | `agents/*` Python modules | The actual work: parse → treatment → scene-design → cast → assign visuals → edit → lip-sync → animate → caption → assemble → (brand post-pass). |
 | **Cast module** | `agents/cast.py` | Detect speakers per frame, build cast list, resolve voice priority per speaker. |
 | **Brand module** | `agents/brand.py` | Extract brief (parse-only), validate mandatories, build PIL CTA card, burn disclosure text via ffmpeg. |
 | **Suggestions module** | `agents/suggestions.py` | Batch fast-tier LLM call at parse time → camera/edit/note chips per frame. |
+| **Governance modules** | `agents/governance.py`, `agents/run_store.py`, `agents/product_surface.py` | Thin SQLite bridges for consent/spend gates, restart-safe run metadata, asset records, approval records, and version records before the full DB lands. |
 | **Model router** | `agents/model_router.py` + `config/models.json` | Pure logic: maps each shot to a model id given shot type + cost tier + overrides. |
 | **LLM brain** | `agents/llm.py` + `config/llm.json` | Single entry point for every reasoning/vision/fast call; OpenAI / Bedrock / Gemini backends; JSON schema enforcement. |
 | **Cost engine** | `agents/pricing.py` + `config/pricing.json` | Single source of cost figures; whole-pipeline estimate (multi-shot aware). |
@@ -257,6 +262,12 @@ order-dependent (each depends on keys the previous wrote) but internally
   router's actual model choices so the UI/CLI estimate matches billing. Dev caps clips
   at 5s. `/api/estimate` server-side endpoint returns a structured breakdown (no
   client-side cost logic).
+- **Upfront credit visibility.** `agents/balances.py` probes each vendor's live
+  credit balance (read-only, concurrent, degrades per-vendor) and surfaces it at
+  `GET /balances` + a "💳 AI Credits" panel, so an operator sees a low/empty wallet
+  before a run instead of mid-render. Live numbers come from ElevenLabs, Kling, Suno,
+  and fal today; OpenAI/Gemini/Higgsfield/Hedra/SyncLabs expose no usable balance API
+  and are labelled accordingly. Complements the per-project spend ledger in `governance.py`.
 - **Caching.** Clip cache keyed by `MD5(image bytes + motion + duration)`, namespaced
   per model. Still cache: `ai_portrait_{fid}_{prompt_hash}.jpg` in the asset folder —
   changing the prompt busts the cache. Scene designs, image descriptions, lip-sync
@@ -269,6 +280,11 @@ order-dependent (each depends on keys the previous wrote) but internally
   `_path_allowed()`; `ASSETS_BROWSE_ROOT` env var scopes server folder browser.
 - **Font bundling.** Montserrat OFL TTFs bundled in `deploy/fonts/`, installed via
   Dockerfile + `fc-cache`. Satoshi is unlisted (commercial license) — drop-in only.
+- **IP/property watermarking.** Every reel can be tagged with one HOB IP (HOB Originals,
+  The HOB Show, …); its full-frame transparent PNG is composited over the whole video in
+  both modes via the single `apply_brand_overlay` post-pass. Registry: `config/watermarks.json`
+  → `deploy/watermarks/*.png` (`agents/watermark.py`). This is HOB's own property branding,
+  separate from the brand-collab advertiser logo. Degrades to no-op if the PNG isn't present.
 
 ---
 

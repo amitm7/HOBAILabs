@@ -24,6 +24,15 @@ agents/
   safety.py               Gate A (moderation) + Gate B (face sanity) + Gate B2 (vision critique)
   cast.py                 multi-speaker detection + voice resolution per frame
   brand.py                brief extraction, mandatories gate, PIL CTA card, disclosure
+  balances.py             live per-vendor credit/balance probes (read-only, concurrent)
+  watermark.py            HOB IP/property watermark resolver (config/watermarks.json → PNG)
+  fcpxml.py               editor hand-off: build_fcpxml (importable timeline) + build_srt
+  layout.py               LAY-0 layout seam; text-card preset renders to stills
+  governance.py           F1/F2 consent + spend gate; append-only cost_events ledger,
+                          reserve→release→settle spend model, startup stale-reservation sweep
+  growth.py               STR-2/3b/4/5 pilot helpers (drafts/descriptors, no auto-spend)
+  run_store.py            F3 restart-safe run payload/status/log bridge
+  product_surface.py      SQLite stand-ins for assets, approvals, project versions
   suggestions.py          fast-tier batch → camera/edit/note chips per frame
   coverage.py             multi-shot B-roll: LLM vision assign + duration split
   lipsync_coordinator.py  audio → CDN → Hedra/SyncLabs → lipsync_clip_path
@@ -240,6 +249,32 @@ All values empty by default — fill with your ElevenLabs voice IDs for role-bas
 
 ---
 
+## 6b. `balances.py` — live vendor credit probes
+
+**Entry:** `all_balances() -> list[dict]` → [agents/balances.py](../agents/balances.py)
+
+Read-only, concurrent (`ThreadPoolExecutor`), never raises — surfaced at `GET /balances`
+and a "💳 AI Credits" panel on both story and brand pages. Each probe returns
+`{vendor, label, status, balance, unit, detail}` where `status` ∈
+`ok | no_key | unsupported | error`; results sort `ok → error → no_key → unsupported`.
+
+**What actually returns a live number (verified against the live `.env`):**
+
+| Vendor | Status | How |
+|---|---|---|
+| **ElevenLabs** | ✅ ok | `GET /v1/user/subscription` (`xi-api-key`) → `character_limit − character_count` |
+| **Kling** | ✅ ok | `GET /account/costs` (JWT, 30-day window) → sum `resource_pack_subscribe_infos[].remaining_quantity` |
+| **Suno (sunoapi.org)** | ✅ ok | `GET /api/v1/generate/credit` (Bearer) → credits |
+| **fal.ai** | ✅ ok | `GET rest.alpha.fal.ai/billing/user_balance` (`Key`) → USD *(alpha endpoint, best-effort)* |
+| **Higgsfield** | — unsupported | no public REST balance path on `platform.higgsfield.ai` (probes 3 candidates, then degrades) |
+| **OpenAI / Gemini / Bedrock / Hedra / SyncLabs** | — unsupported | no usable balance API (documented reason per vendor) |
+
+Only vendors whose key is configured appear. Run standalone: `python -m agents.balances`.
+**Sharp edge:** the Kling `/account/costs` and fal `rest.alpha.fal.ai` endpoints are
+plan/alpha-dependent — if a vendor changes them, the probe degrades to `error`/`unsupported`,
+never breaks the page. Pair with [governance.py](../agents/governance.py) ledger for the
+"will this render need a recharge?" pre-flight.
+
 ## 7. `brand.py` — brief extraction, mandatories, CTA card
 
 → [agents/brand.py](../agents/brand.py)
@@ -437,6 +472,17 @@ not via the style header:
   exactly `max_lines` (longer lines beat overflow).
 The header `Main` style still carries font/colour/italic and the global position; per-line tags
 override it. Silent frames (no caption) emit no Dialogue line.
+- **Safe-zone default:** bottom captions use a raised `MarginV` (~320px on the
+  1080x1920 ASS canvas) to clear Instagram/Reels UI chrome.
+- **Keyword highlight:** operator-authored `==word or phrase==` spans are converted
+  to inline ASS colour tags. AI does not choose highlighted words.
+
+### `layout.py` — LAY-0 pilot seam
+
+`frame["layout"] = {"preset": "text_card", ...}` renders a full-bleed text-card
+still through `agents/layout.py`. The current preset is intentionally narrow:
+it proves one real case before future half/split/PIP/overlay presets extend the
+same module.
 
 ### `assembler.py` — key functions
 
@@ -459,9 +505,18 @@ Computes effective timecodes for the actual assembled clip durations.
 - **`bg_music_path`** for VO-over-ducked-music: voiceover at full volume, music at 18%.
 - **Lip-sync mixed mode** (`_assemble_with_lipsync` [:177](../agents/assembler.py#L177)): strip embedded audio from lip-sync clips, re-extract each lip-sync track, position with `adelay` at effective timecode, duck music to 10% inside lip-sync windows.
 
-**`apply_brand_overlay(in_path, out_path, disclosure_text, logo_path, logo_corner, disclosure_secs) -> str`**
-Post-pass called in `_run_inner` after assembly. Burns disclosure + corner logo via ffmpeg.
-`_brand_font_arg()` prefers Montserrat (from `deploy/fonts/`) via `fc-query`.
+**`apply_brand_overlay(in_path, out_path, disclosure_text, logo_path, logo_corner, disclosure_secs, watermark_path, width, height) -> str`**
+Single overlay post-pass called in `_run_inner` after assembly. Composites, in order:
+**(1) IP watermark** — `watermark_path` full-frame PNG (its alpha shows the video through),
+scaled to `width×height`, whole duration — applied in **both** story and brand modes;
+**(2) advertiser logo** corner bug (brand only); **(3) disclosure** drawtext top-centre (brand only).
+No-op copy when none requested. `_run_inner` runs this pass when `is_brand OR watermark_path`,
+so it's encoded **once**. `_brand_font_arg()` prefers Montserrat via `fc-query`.
+
+**IP watermark resolution** ([watermark.py](../agents/watermark.py)): `watermark_for(ip)` maps the
+selected IP → `deploy/watermarks/<file>` via `config/watermarks.json`, returning `""` (graceful
+no-op) for an unknown IP or a missing PNG. This is HOB's own property branding (HOB Originals,
+The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 
 ---
 
@@ -477,6 +532,8 @@ Post-pass called in `_run_inner` after assembly. Burns disclosure + corner logo 
 | `/preview` , `/preview-result/<run_id>` | POST/GET | Generate stills only (fast iteration); brand-safe critique if `is_brand` |
 | `/api/estimate` | POST | Server-side cost estimate (no client-side cost logic) |
 | `/pricing` , `/models` , `/voices` | GET | Expose `pricing.json`, `model_router.catalog()`, ElevenLabs voices |
+| `/balances` | GET | Live AI-vendor credit/balance probe (`agents/balances.all_balances()`); read-only, each vendor degrades independently |
+| `/ips` | GET | HOB IP/property list for the watermark dropdown (`agents/watermark.list_ips()`); flags which IPs have a PNG present |
 | `/generate-music` | POST | Suno generation; accepts `captions` + `mood` for auto-brief |
 | `/extract-brief` | POST | `brand.extract_brief()` — parse-only, verbatim field extraction |
 | `/browse-dirs` | GET | List folders + media count under `ASSETS_BROWSE_ROOT` |
@@ -485,6 +542,17 @@ Post-pass called in `_run_inner` after assembly. Burns disclosure + corner logo 
 | `/output/<run_id>` , `/download/<run_id>` | GET | Stream / download the MP4 |
 | `/clip/<run_id>/<frame_id>` | GET | Serve ONE finished clip for progressive reveal during a render |
 | `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
+| `/redo-motion` | POST | Rebuild one frame's motion from the approved still; returns a refreshed clip preview |
+| `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4`, `edit_list.json`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
+| `/posting-kit` | POST | Story-mode-only posting kit: IG caption seed, hashtags, cover-frame id |
+| `/story-intake` | POST | STR-2 draft scaffold: regex-based long story text → editable Format B frame script, behind commercial governance |
+| `/hook-workshop` | POST | STR-5 draft scaffold: low-cost opener candidates with no fake score/predictor, behind commercial governance |
+| `/caption-variants` | POST | STR-4 draft scaffold: language-variant placeholders only until real LLM/operator translation is wired, behind commercial governance |
+| `/render-variants` | POST | STR-3b pilot: governed rerender payload descriptors for multi-format/cutdown work |
+| `/retry/<run_id>` | POST | Re-dispatch a stored run payload; content-hash caches provide resume semantics |
+| `/asset-library/register` | POST | Register an allowed local asset in the lightweight asset library |
+| `/brand-approval` | POST | Store a lightweight brand approval/audit record |
+| `/project-version` | POST | Store a lightweight project/reel version record |
 | `/guide` | GET | Serve `docs/OPERATOR_GUIDE.html` |
 | `/media` | GET | Serve asset thumbnails (validates path via `_path_allowed`) |
 | `/upload-photo` | POST | Accept file upload; save to session assets dir |
@@ -594,5 +662,6 @@ temp dir for debugging; success cleans it unless `--keep-temp`.
 - `effective_timecodes()` must be used for **all** audio timing in the brand overlay path (voiceover adelay, ducking windows). Using raw cumulative durations causes drift at crossfade junctions.
 - The approval gate uses the `"kenburns"` string as a per-frame `model_id` sentinel. `web_app._video_model_for()`, `clip_builder._resolve_model_id()`, and `pricing.estimate(approved_ids=…)` must stay in lockstep — change one and the quote diverges from the render. Lipsync frames are never auto-rejected (their audio drives the clip).
 - Progressive-reveal sub-shot mapping is `segment_id.split("_")[0]` → parent `frame_id`; only the first sub-shot per frame reveals (later ones are ignored for display). Frame ids must not themselves contain `_` or the mapping breaks.
+- **Spend governance is reserve→release→settle, never a single write.** `governance.reserve_spend()` (`BEGIN IMMEDIATE`, serialized across SQLite connections) holds the estimate *before* dispatch; `release_reservation()` must be called on BOTH the success and failure paths of every spend route (it's idempotent), then `record_cost_event()` settles the actual. The `cost_events` table is **append-only** — never read-modify-write a JSON blob, or the cap races under concurrent operators. A killed process can orphan a reservation; `sweep_stale_reservations(ttl_seconds=HOB_RESERVATION_TTL_SEC, default 7200)` runs once on web startup to release holds older than the TTL so a crash can't permanently inflate a cap.
 - macOS assumptions: `sips` (HEIC), Baskerville font dir. Cloud/Linux needs alternatives; Montserrat is bundled and safe.
 - `main.py` is the **legacy** voiceover pipeline; maintained path is `run_caption.py` / `web_app.py`.

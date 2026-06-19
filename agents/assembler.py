@@ -440,32 +440,50 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
 
 def apply_brand_overlay(in_path: str, out_path: str, disclosure_text: str = "",
                         logo_path: str = "", logo_corner: str = "tr",
-                        disclosure_secs: float = 3.0):
+                        disclosure_secs: float = 3.0,
+                        watermark_path: str = "", width: int = 0, height: int = 0):
     """
-    Brand post-pass (isolated re-encode, so the 4 assembly branches stay untouched):
-      · burns a small "Paid partnership with …" disclosure top-centre for the
-        first `disclosure_secs`
-      · optionally overlays a brand logo bug in a corner for the whole video
-    No-op (plain copy) when neither is requested. Degrades to copy on ffmpeg error.
+    Final overlay post-pass (isolated re-encode, so the assembly branches stay untouched):
+      · `watermark_path`: HOB IP/property PNG laid FULL-FRAME over the whole video
+        (both story and brand modes) — its alpha shows the video through. Scaled to
+        width×height when given; otherwise composited at native size.
+      · `disclosure_text` (brand): burns "Paid partnership with …" top-centre for the
+        first `disclosure_secs`.
+      · `logo_path` (brand): a small advertiser logo bug in a corner for the whole video.
+    No-op (plain copy) when nothing is requested. Degrades to copy on ffmpeg error.
+    Layer order: video → IP watermark → advertiser logo → disclosure (top).
     """
     import shutil
+    has_wm   = bool(watermark_path) and os.path.exists(watermark_path)
     has_logo = bool(logo_path) and os.path.exists(logo_path)
     has_disc = bool(disclosure_text)
-    if not has_logo and not has_disc:
+    if not has_wm and not has_logo and not has_disc:
         shutil.copy2(in_path, out_path)
         return out_path
 
     inputs = ["-i", in_path]
+    idx = 1
+    wm_idx = logo_idx = None
+    if has_wm:
+        inputs += ["-i", watermark_path]; wm_idx = idx; idx += 1
     if has_logo:
-        inputs += ["-i", logo_path]
+        inputs += ["-i", logo_path]; logo_idx = idx; idx += 1
 
     chain, last = [], "[0:v]"
+    if has_wm:
+        # Full-frame IP watermark for the whole duration; PNG alpha does the blend.
+        if width and height:
+            chain.append(f"[{wm_idx}:v]scale={width}:{height}[wm]")
+            chain.append(f"{last}[wm]overlay=0:0[vw]")
+        else:
+            chain.append(f"{last}[{wm_idx}:v]overlay=0:0[vw]")
+        last = "[vw]"
     if has_logo:
         margin = 40
         pos = {"tr": f"W-w-{margin}:{margin}", "tl": f"{margin}:{margin}",
                "br": f"W-w-{margin}:H-h-{margin}", "bl": f"{margin}:H-h-{margin}"}.get(
                logo_corner, f"W-w-{margin}:{margin}")
-        chain.append(f"[1:v]scale=-1:90[lg]")
+        chain.append(f"[{logo_idx}:v]scale=-1:90[lg]")
         chain.append(f"{last}[lg]overlay={pos}[v1]")
         last = "[v1]"
     if has_disc:

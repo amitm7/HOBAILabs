@@ -118,6 +118,7 @@ window.buildBrandPayload = () => ({
     vo_voice_id: bval('b-vo-voice'),
     music_mode: bradio('music-mode') || 'ai',
     music_audio_path: brandState.music_audio_path,
+    rights_confirmed: bel('b-rights')?.checked || false,
     disclosure: true,
     mandatories: { logo: true, cta: true, disclosure: true, product_beat: true },
   },

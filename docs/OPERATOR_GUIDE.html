@@ -319,6 +319,8 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <h2 id="cost">8 · The 💰 cost panel — read it before Generate</h2>
 <p>After you parse, a cost estimate appears and updates live as you change settings. <b>Check it before pressing Generate.</b> Want it cheaper? Use <b>Dev</b> tier, prefer <b>real photos/videos</b>, and keep lip-sync to a few shots.</p>
 
+<div class="box big"><b>💳 AI Credits panel (top of the page).</b> Shows how much credit is left on each AI service so you can recharge <i>before</i> a render fails mid-way. Live balances show today for <b>ElevenLabs</b> (voice), <b>Kling</b> (video), <b>Suno</b> (music), and <b>fal.ai</b> (images/video). A <b style="color:#b91c1c">red "recharge!"</b> means that wallet is empty. Some services (OpenAI, Gemini, Higgsfield, Hedra, SyncLabs) don't publish a balance — they show "—" and you check their own dashboard. Hit <b>↻ Refresh</b> after topping up.</div>
+
 <h2 id="iterate">8b · Iterate without re-rendering — redo, approve, live clips</h2>
 <p>You don't have to render the whole video and hope. Treat the tool as a <b>draft machine you steer</b>: preview the stills, fix the frames you don't like, approve the rest, and only pay to animate what you've approved. Three controls make this fast.</p>
 
@@ -346,6 +348,17 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 
 <h3>🎬 Live clip reveal — watch it build</h3>
 <p>While a render runs, <b>each frame's clip appears in its card the moment it's done</b> — you don't wait for the whole video. The card shows <i>⏳ animating…</i>, then flips to a looping <b>🎬 clip ready</b> preview. If an early clip looks wrong you can stop, fix that frame with 🔄, untick it, and re-run — without having waited for all ten.</p>
+
+<h3>Timeline, safe-zone, posting kit, and export</h3>
+<ul>
+<li><b>Timeline strip:</b> after parsing, a horizontal strip shows frame order and duration so you can judge rhythm before rendering.</li>
+<li><b>Reels safe-zone:</b> bottom captions are raised by default, and the output preview shows Instagram's bottom UI safe area.</li>
+<li><b>Keyword highlight:</b> wrap a word in <code>==double equals==</code>, e.g. <code>I had ==nothing== left</code>, to colour that phrase in captions.</li>
+<li><b>Text Card:</b> choose <b>Text Card</b> on a frame, or write <code>[layout: text_card]</code>, for a full-screen bold statement card.</li>
+<li><b>Posting kit:</b> story mode can generate hashtags and pick a cover frame from the <code>Caption:</code> block. Brand copy remains operator-supplied.</li>
+<li><b>Export clips + edit list:</b> after a completed run, download a zip with clips and <code>edit_list.json</code> for a human editor.</li>
+<li><b>Redo motion:</b> retry only the motion for one approved still without regenerating the image.</li>
+</ul>
 
 <h2 id="arc">9 · How to build a story that lands</h2>
 <table>
@@ -534,6 +547,7 @@ End-card: Auto-generated CTA</div>
 <tr><td>Disclosure (auto-added)</td><td>This one is always satisfied — the tool adds "Paid partnership with [Brand]" automatically</td></tr>
 </table>
 <div class="box warn"><b>The Instagram "Paid Partnership" label is separate.</b> The tool burns a text disclosure into the video file. You still need to set Instagram's native <b>Paid Partnership with Brand</b> label when posting — that's done inside the Instagram app, not here.</div>
+<div class="box warn"><b>Consent and rights are also mandatory.</b> Brand mode includes a confirmation that you have consent / likeness / content rights for real people, product assets, logo, VO, and music. The render is blocked until that is checked.</div>
 
 <h3 id="brand-faq">13f · Brand mode quick fixes</h3>
 <table>

@@ -1,0 +1,9 @@
+{
+  "_comment": "HOB IP / property watermarks. Each reel belongs to ONE IP; its transparent PNG is laid over the whole video (both story and brand modes). This is HOB's own property branding — separate from a brand-collab advertiser logo. To add/rename an IP: edit this map and drop a matching transparent PNG into deploy/watermarks/. Recommended PNG: full-frame at the reel resolution (1080x1920 portrait) with transparency everywhere except the mark.",
+  "ips": {
+    "HOB Originals": "hob_originals.png",
+    "The HOB Show": "the_hob_show.png",
+    "Unfiltered HOB": "unfiltered_hob.png",
+    "The Unplanned HOB": "the_unplanned_hob.png"
+  }
+}
