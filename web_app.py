@@ -714,6 +714,11 @@ def retry_run(run_id: str):
         return jsonify({"error": "No stored payload for run"}), 404
     data = stored["payload"]
     session_id = data.get("session_id", run_id)
+    data["session_id"] = session_id
+    from agents import governance
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
+    if spend_missing:
+        return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
     run_dir = RUNS_DIR / session_id
     run_dir.mkdir(parents=True, exist_ok=True)
     with _runs_lock:
@@ -890,7 +895,10 @@ def redo_still():
     session_id = data.get("session_id", str(uuid.uuid4()))
     data["session_id"] = session_id
     from agents import governance
-    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
+    # Estimate cost for just this one frame — not the whole payload — so we don't
+    # falsely burn the spend cap when only a single image is being regenerated.
+    _single_frame_data = {**data, "frames": [frame_payload]}
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(_single_frame_data), run_id=session_id)
     if spend_missing:
         return jsonify({"error": spend_missing[0]}), 400
     run_dir = RUNS_DIR / session_id
@@ -905,8 +913,27 @@ def redo_still():
     brand         = data.get("brand") if data.get("mode") == "brand" else None
 
     # Build just this one frame through the shared frame builder, then regenerate.
+    # For AI-generate specs (ai_portrait / ai_symbolic) and fresh uploads, clear
+    # visual_path so _build_frames_from_payload honours the photo_spec instead of
+    # silently reusing the stale cached result that visual_path points at.
+    # Real-photo frames (photo_spec="") keep visual_path — the still IS the photo.
+    # The normal render path keeps visual_path too, so redo results are reused there.
+    _ps = (frame_payload.get("photo_spec") or "").strip()
+    _vp_base = os.path.basename(frame_payload.get("visual_path") or "")
+    _VIDEO_EXTS_STILL = {".mp4", ".mov", ".avi", ".m4v", ".webm", ".mkv"}
+    # Clear visual_path when the user explicitly chose AI generation, uploaded a new
+    # photo, OR the existing visual_path is itself an AI-generated file (covers "auto"
+    # frames that fell through to the AI fallback — their photo_spec is "" but the
+    # file is named ai_portrait_* / ai_symbolic_*).
+    # Also clear when visual_path is a VIDEO — a video has no "still" to redo;
+    # the only meaningful result is an AI portrait, regardless of whether the user
+    # explicitly switched the type selector to AI Portrait first.
+    _clear_vp = (_ps.startswith("ai_") or _ps == "uploaded"
+                 or _vp_base.startswith("ai_portrait_") or _vp_base.startswith("ai_symbolic_")
+                 or os.path.splitext(_vp_base)[1].lower() in _VIDEO_EXTS_STILL)
+    frame_for_build = {**frame_payload, "visual_path": "" if _clear_vp else frame_payload.get("visual_path", "")}
     one = dict(data)
-    one["frames"] = [frame_payload]
+    one["frames"] = [frame_for_build]
     try:
         frames = _build_frames_from_payload(one, max_frame_dur)
         # Force a fresh image even if a same-prompt cached file exists — the editor
@@ -931,7 +958,7 @@ def redo_still():
     is_video = bool(vp and os.path.splitext(vp)[1].lower() in _VIDEO_EXTS)
     try:
         from agents import governance
-        estimate_usd = _estimate_payload_cost(data)
+        estimate_usd = _estimate_payload_cost(_single_frame_data)
         governance.release_reservation(data, run_id=session_id, reason="redo_still_done")
         governance.record_cost_event(
             governance.project_key(data),
@@ -966,7 +993,10 @@ def redo_motion():
     session_id = data.get("session_id", str(uuid.uuid4()))
     data["session_id"] = session_id
     from agents import governance
-    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
+    # Single-frame estimate only — the full payload includes all frames' animation
+    # which would massively overstate the reservation and falsely block the redo.
+    _single_frame_data_m = {**data, "frames": [frame_payload]}
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(_single_frame_data_m), run_id=session_id)
     if spend_missing:
         return jsonify({"error": spend_missing[0]}), 400
     run_dir = RUNS_DIR / session_id
@@ -1010,7 +1040,7 @@ def redo_motion():
             run.setdefault("clips", {})[frame["frame_id"]] = dst
 
         try:
-            estimate_usd = _estimate_payload_cost(data)
+            estimate_usd = _estimate_payload_cost(_single_frame_data_m)
             governance.release_reservation(data, run_id=session_id, reason="redo_motion_done")
             governance.record_cost_event(
                 governance.project_key(data),
@@ -1157,10 +1187,8 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
 
     # Per-frame redo: delete ALL cached stills for these frame_ids so the
     # prompt-hash file-reuse check misses and a fresh image is generated.
-    # Also inject a variation seed on the frame so even an identical prompt
-    # produces a different image (the user explicitly asked for something new).
     if force_regen_ids:
-        import glob, time
+        import glob
         for fid in force_regen_ids:
             for old in glob.glob(os.path.join(assets_dir, f"ai_portrait_{fid}_*.jpg")) \
                      + glob.glob(os.path.join(assets_dir, f"ai_symbolic_{fid}_*.jpg")):
@@ -1168,12 +1196,6 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                     os.remove(old)
                 except OSError:
                     pass
-            # Stamp a unique variation token on the frame so the LLM scene-design
-            # call (and therefore the prompt hash) changes even if nothing else did.
-            for f in frames:
-                if f.get("frame_id") == fid:
-                    f.setdefault("scene", {})
-                    f["scene"]["_redo_seed"] = str(int(time.time() * 1000))
 
     # Brand campaign context for visual direction (NOT on-screen copy).
     extra_context = ""
@@ -1187,6 +1209,16 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
         design_all_scenes(design_frames, subject_name=subject_name,
                           subject_description=subject_description, mood=mood,
                           extra_context=extra_context)
+
+    # Redo variation seed: stamped AFTER scene design so it survives the f["scene"]
+    # assignment inside design_all_scenes. This makes even an identical director-note
+    # produce a different prompt hash → a genuinely fresh image each time.
+    if force_regen_ids:
+        import time
+        for f in frames:
+            if f.get("frame_id") in force_regen_ids:
+                f.setdefault("scene", {})
+                f["scene"]["_redo_seed"] = str(int(time.time() * 1000))
 
     # Apply mood to every AI image prompt
     mood_suffix = MOOD_MAP.get(mood, "")

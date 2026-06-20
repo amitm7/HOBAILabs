@@ -1,6 +1,6 @@
 # HOBAILabs — Low-Level Design (LLD)
 
-**Revision:** 2026-06-18 · current `main` branch
+**Revision:** 2026-06-20 · current `main` branch
 **Companion:** [HLD.md](HLD.md) — system context, flow, decisions
 **Audience:** engineers modifying the pipeline. File references are clickable.
 
@@ -576,11 +576,27 @@ The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 These three share the frame-card UI and the `_run_inner` path, so both story and
 brand modes get them automatically.
 
-- **Per-frame redo** (`/redo-still`): the UI sends one frame's current settings;
-  `_generate_stills(..., force_regen_ids={fid})` deletes that frame's cached
-  `ai_*_{fid}_*.jpg` so the prompt-hash reuse check misses and the image is
-  regenerated. Returns `{frame_id, path, is_video, exists}`. Synchronous — no
-  thread, no SSE.
+- **Per-frame redo** (`/redo-still`): the UI sends one frame's current settings.
+  Before calling `_build_frames_from_payload`, the route strips `visual_path` from
+  the frame payload whenever `photo_spec` is `ai_portrait`/`ai_symbolic`/`uploaded`
+  **or** the existing `visual_path` basename starts with `ai_portrait_`/`ai_symbolic_`
+  (catches "auto" frames that fell through to AI generation). This prevents the old
+  cached file silently overriding the current photo_spec.
+  `_generate_stills(..., force_regen_ids={fid})` then deletes that frame's cached
+  `ai_*_{fid}_*.jpg` and, **after** `design_all_scenes` completes, stamps a
+  millisecond `_redo_seed` onto `frame["scene"]` so even an unchanged director note
+  produces a different prompt hash → genuinely different image each time.
+  Spend is reserved for **the single frame only** (not the full payload).
+  Returns `{frame_id, path, is_video, exists}`. Synchronous — no thread, no SSE.
+- **Per-frame motion redo** (`/redo-motion`): the UI sends one frame's current settings
+  after a still has been approved. Spend is reserved for **the single frame only** —
+  not the full payload (which would sum all frames' animation costs and falsely block
+  the redo). Deletes the matching BlobCache key for that frame's clip so the next
+  `build_clips` call re-generates it, then returns the new clip path. Synchronous.
+- **Retry** (`/retry/<run_id>`): re-loads the stored payload from `run_store` and
+  re-dispatches it through the normal `_run_inner` path. Since 2026-06-20 this route
+  runs the standard `governance.reserve_spend` check before dispatch — previously it
+  bypassed spend governance entirely.
 - **Progressive reveal**: `build_clips(..., on_clip_ready=cb)` fires `cb(segment_id,
   clip_path)` the instant each clip lands (cached, Ken Burns, or polled). In
   `_run_inner` the callback copies the clip into `run_dir/clip_{frame_id}.mp4`
@@ -634,6 +650,13 @@ Empty string means "infer from the story".
 (e.g. after editing the director note) auto-busts the still and regenerates. The old scheme
 (`ai_portrait_{fid}.jpg`) silently reused stale images when prompts changed.
 
+**Redo-still cache clearing:** `/redo-still` strips `visual_path` from the frame
+payload for AI-type and uploaded frames before calling `_build_frames_from_payload`,
+so the priority rule (`payload_visual` beats `photo_spec`) cannot silently reuse the
+old file. File deletion via `force_regen_ids` then ensures even a cache-hit filename
+produces a fresh request. This clearing only happens in the redo route — the normal
+render path deliberately reuses approved results without re-paying.
+
 ---
 
 ## 17. Concurrency & Failure Matrix
@@ -676,6 +699,18 @@ temp dir for debugging; success cleans it unless `--keep-temp`.
 - `effective_timecodes()` must be used for **all** audio timing in the brand overlay path (voiceover adelay, ducking windows). Using raw cumulative durations causes drift at crossfade junctions.
 - The approval gate uses the `"kenburns"` string as a per-frame `model_id` sentinel. `web_app._video_model_for()`, `clip_builder._resolve_model_id()`, and `pricing.estimate(approved_ids=…)` must stay in lockstep — change one and the quote diverges from the render. Lipsync frames are never auto-rejected (their audio drives the clip).
 - Progressive-reveal sub-shot mapping is `segment_id.split("_")[0]` → parent `frame_id`; only the first sub-shot per frame reveals (later ones are ignored for display). Frame ids must not themselves contain `_` or the mapping breaks.
+- **`_redo_seed` must be injected AFTER `design_all_scenes`.** `design_all_scenes` does
+  `f["scene"] = scene` (full dict replacement) for every frame inside a futures loop.
+  Any value injected into `f["scene"]` before that call is silently lost. The seed is
+  stamped in a second pass immediately after `design_all_scenes` returns, so it
+  survives into the prompt-hash computation in `image_generator.py`.
+- **Redo-still/redo-motion estimate ONE frame, not all frames.** `_estimate_payload_cost`
+  sums over `data.get("frames", [])`. Passing the full payload to a per-frame redo
+  inflates the reservation by N× and will falsely trigger the spend cap. Always pass
+  `{**data, "frames": [frame_payload]}` to the estimator in these routes.
+- **Every spend route must call `reserve_spend` before dispatch** — including `/retry`.
+  Content-hash caches do not prevent overspend if the cache is cold; governance must
+  be applied at the route level regardless of cache hit probability.
 - **Spend governance is reserve→release→settle, never a single write.** `governance.reserve_spend()` (`BEGIN IMMEDIATE`, serialized across SQLite connections) holds the estimate *before* dispatch; `release_reservation()` must be called on BOTH the success and failure paths of every spend route (it's idempotent), then `record_cost_event()` settles the actual. The `cost_events` table is **append-only** — never read-modify-write a JSON blob, or the cap races under concurrent operators. A killed process can orphan a reservation; `sweep_stale_reservations(ttl_seconds=HOB_RESERVATION_TTL_SEC, default 7200)` runs once on web startup to release holds older than the TTL so a crash can't permanently inflate a cap.
 - macOS assumptions: `sips` (HEIC), Baskerville font dir. Cloud/Linux needs alternatives; Montserrat is bundled and safe.
 - `main.py` is the **legacy** voiceover pipeline; maintained path is `run_caption.py` / `web_app.py`.
