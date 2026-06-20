@@ -1229,10 +1229,17 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                                                          reference_path=ref)
             first_portrait_by_speaker.setdefault(sid, f["visual_path"])
 
-    # Edit pass — prompt-hashed filename so identical edits are reused (no re-pay)
+    _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v", ".webm", ".mkv"}
+    # Edit pass — prompt-hashed filename so identical edits are reused (no re-pay).
+    # Videos are skipped — the image-edit API only accepts JPEG/PNG/WebP.
     for f in frames:
         prompt = f.get("edit_prompt", "")
-        if prompt and f.get("visual_path") and os.path.exists(f["visual_path"]):
+        vp = f.get("visual_path", "")
+        if os.path.splitext(vp)[1].lower() in _VIDEO_EXTS:
+            if prompt:
+                print(f"[ImageEditor] {f['frame_id']}: skipping edit on video source (API does not accept video)")
+            continue
+        if prompt and vp and os.path.exists(vp):
             from agents.image_editor import edit_image
             src = f["visual_path"]
             phash = hashlib.md5(prompt.encode()).hexdigest()[:8]
