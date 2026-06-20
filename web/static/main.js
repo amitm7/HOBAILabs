@@ -615,13 +615,13 @@ function renderFrameCards(frames) {
 
         ${previewHtml}
 
-        <div class="frame-iter-row" id="iter-${f.frame_id}" style="display:none">
-          <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}">🔄 Redo still</button>
-          <button type="button" class="btn-secondary btn-small redo-motion-btn" data-frame="${f.frame_id}">Redo motion</button>
-          <button type="button" class="btn-secondary btn-small suggest-frame-btn" data-frame="${f.frame_id}" title="Look at this frame's image and suggest the best camera move + director note">✨ Suggest from image</button>
-          <label class="approval-toggle" data-frame="${f.frame_id}" title="Untick to skip paid animation — this frame uses free Ken Burns instead">
+        <div class="frame-iter-row" id="iter-${f.frame_id}" style="display:flex">
+          <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}" title="Regenerate just this image fresh">🔄 Redo still</button>
+          <button type="button" class="btn-secondary btn-small redo-motion-btn" id="redo-motion-${f.frame_id}" data-frame="${f.frame_id}" title="Re-roll only the animation, keeping the image" style="display:none">Redo motion</button>
+          <button type="button" class="btn-secondary btn-small suggest-frame-btn" id="suggest-btn-${f.frame_id}" data-frame="${f.frame_id}" title="Run Preview Stills first — then this suggests best camera + note from the actual image" style="display:none">✨ Suggest from image</button>
+          <label class="approval-toggle" data-frame="${f.frame_id}" title="Untick to skip paid animation — frame stays in the video using free Ken Burns">
             <input type="checkbox" class="approval-cb" data-frame="${f.frame_id}" checked>
-            <span class="approval-label">✓ Approved for animation</span>
+            <span class="approval-label">✓ Animate this frame</span>
           </label>
         </div>
 
@@ -1095,12 +1095,19 @@ function applyPreviewStills(stills) {
       const url = `/media?path=${encodeURIComponent(s.path)}&t=${Date.now()}`;
       prev.classList.remove('placeholder');
       prev.innerHTML = s.is_video
-        ? `<video src="${url}#t=0.5" muted playsinline preload="metadata" style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#000"></video><span class="preview-label">🎬 generated still</span>`
-        : `<img src="${url}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#222"><span class="preview-label">✅ this image will be animated</span>`;
+        ? `<video src="${url}#t=0.5" muted playsinline preload="metadata" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;background:#000"
+             onclick="window.open('${url}','_blank')" title="Click to view full size"></video><span class="preview-label">🎬 generated still</span>`
+        : `<img src="${url}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;background:#222"
+             onclick="window.open('${url}','_blank')" title="Click to view full size"><span class="preview-label">✅ click image to preview full size</span>`;
     }
-    // Reveal the per-frame redo + approval controls once a still exists.
-    const iter = el(`iter-${s.frame_id}`);
-    if (iter && s.exists) iter.style.display = 'flex';
+    // Once a still exists: reveal the Preview-gated buttons (Redo motion + ✨ Suggest).
+    // 🔄 Redo still and ✓ Animate are always visible from parse.
+    if (s.exists) {
+      const rm = el(`redo-motion-${s.frame_id}`);
+      const sb = el(`suggest-btn-${s.frame_id}`);
+      if (rm) rm.style.display = '';
+      if (sb) sb.style.display = '';
+    }
   });
 }
 

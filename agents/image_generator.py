@@ -167,10 +167,11 @@ def _image_cached(path: str) -> bool:
     return os.path.exists(path) and os.path.getsize(path) >= _MIN_IMAGE_BYTES
 
 
-def _prompt_hash(model_id: str, prompt: str) -> str:
-    """Short hash of model + prompt for the cache filename — a changed mood,
-    director note, or model produces a new file instead of serving a stale one."""
-    return hashlib.md5(f"{model_id}|{prompt}".encode()).hexdigest()[:8]
+def _prompt_hash(model_id: str, prompt: str, frame_id: str = "") -> str:
+    """Short hash of model + frame_id + prompt for the cache filename.
+    frame_id is included so two frames with identical prompts never share a file
+    (they're different beats and should produce different images)."""
+    return hashlib.md5(f"{model_id}|{frame_id}|{prompt}".encode()).hexdigest()[:8]
 
 
 def _file_hash(path: str) -> str:
@@ -213,9 +214,10 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
 
     use_ref = bool(reference_path) and os.path.exists(reference_path)
     chosen  = "gpt_image_ref" if use_ref else (model_id or "flux")
-    hash_src = prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "")
+    seed = frame.get("scene", {}).get("_redo_seed", "")
+    hash_src = prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "") + seed
     out_path = os.path.join(
-        assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, hash_src)}.jpg")
+        assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, hash_src, frame_id)}.jpg")
 
     if _image_cached(out_path):
         print(f"[ImageGen] Portrait ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
@@ -257,8 +259,10 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
         )
 
     chosen = model_id or "gpt_image"
+    # _redo_seed is injected by redo-still so even the same prompt produces a new file.
+    seed = frame.get("scene", {}).get("_redo_seed", "")
     out_path = os.path.join(
-        assets_dir, f"ai_symbolic_{frame_id}_{_prompt_hash(chosen, prompt)}.jpg")
+        assets_dir, f"ai_symbolic_{frame_id}_{_prompt_hash(chosen, prompt + seed, frame_id)}.jpg")
 
     if _image_cached(out_path):
         print(f"[ImageGen] Symbolic ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")

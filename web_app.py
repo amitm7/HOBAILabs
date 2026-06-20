@@ -1155,10 +1155,12 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
     except Exception as e:
         print(f"[Layout] text-card render failed ({e}) — continuing with normal visual generation")
 
-    # Per-frame redo: drop any cached still for these frames so the prompt-hash
-    # file-reuse check misses and the image regenerates fresh.
+    # Per-frame redo: delete ALL cached stills for these frame_ids so the
+    # prompt-hash file-reuse check misses and a fresh image is generated.
+    # Also inject a variation seed on the frame so even an identical prompt
+    # produces a different image (the user explicitly asked for something new).
     if force_regen_ids:
-        import glob
+        import glob, time
         for fid in force_regen_ids:
             for old in glob.glob(os.path.join(assets_dir, f"ai_portrait_{fid}_*.jpg")) \
                      + glob.glob(os.path.join(assets_dir, f"ai_symbolic_{fid}_*.jpg")):
@@ -1166,6 +1168,12 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                     os.remove(old)
                 except OSError:
                     pass
+            # Stamp a unique variation token on the frame so the LLM scene-design
+            # call (and therefore the prompt hash) changes even if nothing else did.
+            for f in frames:
+                if f.get("frame_id") == fid:
+                    f.setdefault("scene", {})
+                    f["scene"]["_redo_seed"] = str(int(time.time() * 1000))
 
     # Brand campaign context for visual direction (NOT on-screen copy).
     extra_context = ""
