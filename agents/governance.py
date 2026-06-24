@@ -52,6 +52,14 @@ def _conn() -> sqlite3.Connection:
             "payload_json TEXT NOT NULL DEFAULT '{}', "
             "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
         )
+        # Gap #4: bind consent to the specific AI-likeness modality (face / voice)
+        # of a named real person, not just a generic rights checkbox.
+        for _col in ("face", "voice"):
+            if _col not in _columns(con, "consent_records"):
+                try:
+                    con.execute(f"ALTER TABLE consent_records ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass
         _migrate_legacy_cost(con, legacy_cost)
         _migrate_legacy_consent(con, legacy_consent)
         con.commit()
@@ -148,6 +156,80 @@ def record_consent(data: dict, *, confirmed_by: str = "") -> int | None:
             data.get("mode", "story"),
             confirmed_by or data.get("operator_id", ""),
             json.dumps({"subject": subject_key, "mode": data.get("mode", "story")}, sort_keys=True),
+        ),
+    )
+    _conn().commit()
+    return int(cur.lastrowid)
+
+
+def likeness_modalities(data: dict) -> dict:
+    """Which AI-likeness modalities a render uses on a *named real person*.
+
+    The authenticity moat (MARKET_FIT_REVIEW §4): AI rendering of a real person's
+    face or voice must be a consented, labeled exception. `ai_symbolic` / real
+    footage need nothing here.
+      face  -> any frame is an AI portrait (`photo_spec == "ai_portrait"`)
+      voice -> a cloned/synthetic voice of the subject (voice_clone or lip-synced)
+    """
+    subject = (data.get("subject_name") or "").strip()
+    if not subject:
+        return {"subject": "", "face": False, "voice": False}
+    frames = data.get("frames") or []
+    face = any((f.get("photo_spec") or "").strip() == "ai_portrait" for f in frames)
+    voice = bool(data.get("voice_clone")) or any(f.get("lipsync") for f in frames)
+    return {"subject": subject, "face": face, "voice": voice}
+
+
+def _recorded_likeness(subject: str, project: str) -> dict:
+    """Modalities already consented for this subject+project (DB truth)."""
+    rows = _conn().execute(
+        "SELECT face, voice FROM consent_records WHERE subject_key=? AND project_key=?",
+        (subject, project),
+    ).fetchall()
+    return {
+        "face": any(r["face"] for r in rows),
+        "voice": any(r["voice"] for r in rows),
+    }
+
+
+def validate_likeness_consent(data: dict) -> list[str]:
+    """Block messages for AI face/voice use of a real person lacking consent.
+
+    Satisfied either by a prior recorded grant or by a grant supplied in this
+    request (`data["likeness_consent"] = {"face": true, "voice": true}`). Pure read.
+    """
+    need = likeness_modalities(data)
+    if not need["subject"] or not (need["face"] or need["voice"]):
+        return []
+    recorded = _recorded_likeness(need["subject"], project_key(data))
+    granted = data.get("likeness_consent") or {}
+    missing = []
+    for modality in ("face", "voice"):
+        if need[modality] and not recorded[modality] and not granted.get(modality):
+            missing.append(
+                f"Record consent for AI {modality} likeness of '{need['subject']}' "
+                f"(this attacks the authenticity moat — see MARKET_FIT_REVIEW §4)"
+            )
+    return missing
+
+
+def record_likeness_consent(data: dict, *, confirmed_by: str = "") -> int | None:
+    """Persist a face/voice consent grant supplied in the request. Idempotent-ish:
+    only writes the modalities both *needed* and *granted* in this payload."""
+    need = likeness_modalities(data)
+    granted = data.get("likeness_consent") or {}
+    face = int(bool(need["face"] and granted.get("face")))
+    voice = int(bool(need["voice"] and granted.get("voice")))
+    if not need["subject"] or not (face or voice):
+        return None
+    cur = _conn().execute(
+        "INSERT INTO consent_records(subject_key, project_key, mode, confirmed_by, payload_json, face, voice) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            need["subject"], project_key(data), data.get("mode", "story"),
+            confirmed_by or data.get("operator_id", ""),
+            json.dumps({"subject": need["subject"], "face": bool(face), "voice": bool(voice)}, sort_keys=True),
+            face, voice,
         ),
     )
     _conn().commit()

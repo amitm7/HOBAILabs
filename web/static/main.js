@@ -1358,7 +1358,20 @@ el('run-btn').addEventListener('click', async () => {
   el('progress-panel').scrollIntoView({ behavior: 'smooth' });
 
   try {
-    const res = await post('/run', payload);
+    let res = await post('/run', payload);
+    // Gap #4: AI face/voice of a real person is gated. Ask the operator to take
+    // responsibility for the likeness, then resend with an explicit consent grant.
+    if (res.needs_likeness_consent) {
+      const n = res.needs_likeness_consent;
+      const mods = ['face', 'voice'].filter(m => n[m]);
+      const ok = confirm(
+        `This render uses AI ${mods.join(' + ')} of "${n.subject}".\n\n` +
+        `Per HOB's authenticity policy this must be a consented, labeled exception.\n` +
+        `Confirm you have ${n.subject}'s consent for AI ${mods.join(' & ')} use?`);
+      if (!ok) { el('run-btn').disabled = false; logLine('✗ Render cancelled — no likeness consent.', 'err'); return; }
+      payload.likeness_consent = { face: !!n.face, voice: !!n.voice };
+      res = await post('/run', payload);
+    }
     if (res.missing && res.missing.length) {
       // Brand hard-block: required items missing — show the checklist, don't render.
       el('run-btn').disabled = false;

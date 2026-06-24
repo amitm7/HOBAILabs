@@ -835,7 +835,14 @@ def run_pipeline(operator: str):
     missing = governance.validate_consent(data)
     if missing:
         return jsonify({"error": "Consent / rights requirements missing", "missing": missing}), 400
-    governance.record_consent(data)
+    governance.record_consent(data, confirmed_by=operator)
+    # Gap #4: AI face/voice of a named real person needs explicit, modality-specific
+    # consent before any spend — the authenticity-moat gate.
+    likeness_missing = governance.validate_likeness_consent(data)
+    if likeness_missing:
+        return jsonify({"error": "Likeness consent required", "missing": likeness_missing,
+                        "needs_likeness_consent": governance.likeness_modalities(data)}), 400
+    governance.record_likeness_consent(data, confirmed_by=operator)
     spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=session_id)
     if spend_missing:
         return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
