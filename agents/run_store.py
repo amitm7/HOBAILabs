@@ -186,6 +186,36 @@ def load(run_id: str) -> dict | None:
     return {**meta, "log": logs, "events": []}
 
 
+def list_performance(limit: int = 100) -> list[dict]:
+    """Runs that have a logged performance signal, best-performing first.
+
+    Completes the feedback loop (Gap #3): the capture stub writes performance_*,
+    this is the read/aggregation path so operators can see what actually performed
+    and later correlate it against the run payload.
+    """
+    rows = _conn().execute(
+        "SELECT run_id, status, performance_views, performance_likes, "
+        "performance_note, performance_by, updated_at FROM runs "
+        "WHERE performance_views IS NOT NULL OR performance_likes IS NOT NULL "
+        "OR performance_note != '' "
+        "ORDER BY COALESCE(performance_views, 0) DESC, COALESCE(performance_likes, 0) DESC "
+        "LIMIT ?",
+        (limit,),
+    )
+    return [dict(r) for r in rows]
+
+
+def performance_summary() -> dict:
+    """Roll-up across all runs with a logged result."""
+    row = _conn().execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(performance_views), 0) AS views, "
+        "COALESCE(SUM(performance_likes), 0) AS likes FROM runs "
+        "WHERE performance_views IS NOT NULL OR performance_likes IS NOT NULL "
+        "OR performance_note != ''"
+    ).fetchone()
+    return {"runs_with_data": row["n"], "total_views": row["views"], "total_likes": row["likes"]}
+
+
 def append_log(run_id: str, line: str) -> None:
     _conn().execute(
         "INSERT INTO run_logs(run_id, line) VALUES (?, ?)",

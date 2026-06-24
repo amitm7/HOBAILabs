@@ -1061,6 +1061,14 @@ def provenance_for_run(run_id: str):
     return jsonify({"label": None}), 404
 
 
+@app.route("/performance", methods=["GET"])
+@auth.require_operator()
+def performance_list(operator: str):
+    """Completed feedback loop (Gap #3): which reels performed, best first."""
+    from agents import run_store
+    return jsonify({"runs": run_store.list_performance(), "summary": run_store.performance_summary()})
+
+
 @app.route("/performance/<run_id>", methods=["POST"])
 @auth.require_operator()
 def performance_feedback(run_id: str, operator: str):

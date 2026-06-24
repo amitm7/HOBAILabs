@@ -1519,7 +1519,29 @@ function savePerformanceNote(runId) {
     note:  el('perf-note').value,
   }).then(res => {
     if (ack) ack.textContent = res && res.ok ? '✓ saved' : '✗ ' + ((res && res.error) || 'failed');
+    if (res && res.ok) loadPerformance();   // refresh the leaderboard
   }).catch(() => { if (ack) ack.textContent = '✗ failed'; });
+}
+
+// Completed feedback loop (Gap #3): show which reels actually performed.
+async function loadPerformance() {
+  const tbl = el('performance-table'), sum = el('performance-summary');
+  if (!tbl) return;
+  let data;
+  try { data = await fetch('/performance').then(r => r.ok ? r.json() : null); } catch (e) { return; }
+  if (!data) { if (sum) sum.textContent = 'Log in to view performance.'; return; }
+  const s = data.summary || {};
+  if (sum) sum.textContent = `${s.runs_with_data || 0} reels logged · ${s.total_views || 0} views · ${s.total_likes || 0} likes`;
+  const runs = data.runs || [];
+  if (!runs.length) { tbl.innerHTML = '<span class="muted">No results logged yet.</span>'; return; }
+  const esc = t => String(t == null ? '' : t).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--text-dim)"><th>Run</th><th>Views</th><th>Likes</th><th>Note</th><th>By</th></tr>
+    ${runs.map(r => `<tr style="border-top:1px solid var(--border)">
+      <td><code>${esc(r.run_id).slice(0,8)}</code></td><td>${r.performance_views ?? '—'}</td>
+      <td>${r.performance_likes ?? '—'}</td><td>${esc(r.performance_note)}</td>
+      <td class="muted">${esc(r.performance_by)}</td></tr>`).join('')}
+  </table>`;
 }
 
 // ── AI credits (live vendor balances) ──────────────────────────────────────
