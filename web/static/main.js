@@ -1471,8 +1471,24 @@ function showOutput(runId) {
   el('download-btn').href = `/download/${runId}`;
   const exportBtn = el('export-btn');
   if (exportBtn) exportBtn.href = `/export/${runId}`;
+  renderProvenance(runId);
   renderPerformanceFeedback(runId);
   el('output-panel').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Provenance / authenticity label (Gap #5) ───────────────────────────────────
+async function renderProvenance(runId) {
+  const box = el('provenance-label');
+  if (!box) return;
+  box.innerHTML = '';
+  let p;
+  try { p = await fetch(`/provenance/${runId}`).then(r => r.ok ? r.json() : null); } catch (e) { return; }
+  if (!p || !p.label) return;
+  const glyph = { real: '🟢', ai_symbolic: '🔵', ai_portrait: '🟠' }[p.tier] || '•';
+  const bg = p.real_person_ai ? 'rgba(255,165,0,.12)' : 'rgba(120,120,120,.12)';
+  box.innerHTML = `<span title="Authenticity / provenance"
+    style="display:inline-block;padding:4px 10px;border-radius:6px;background:${bg};border:1px solid var(--border);font-size:13px">
+    ${glyph} ${p.label}</span>`;
 }
 
 // ── Post-publish feedback loop (seed) ──────────────────────────────────────

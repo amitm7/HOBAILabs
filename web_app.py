@@ -850,6 +850,14 @@ def run_pipeline(operator: str):
     run_dir = RUNS_DIR / session_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # Gap #5: write the provenance/authenticity summary as a run artifact so it can
+    # be served, badged in the UI, and shipped in the editor export.
+    try:
+        from agents import provenance
+        (run_dir / "provenance.json").write_text(json.dumps(provenance.summarize(data), indent=2))
+    except Exception as e:
+        print(f"[Provenance] skipped ({e})")
+
     with _runs_lock:
         _runs[session_id] = {"status": "running", "log": [], "output_path": None,
                              "clips": {}, "events": []}
@@ -1018,8 +1026,9 @@ def export_run(run_id: str):
     zip_path = run_dir / "editor_export.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.write(manifest, "edit_list.json")
-        # Importable timeline + standard captions for the editor's own NLE.
-        for extra in ("timeline.fcpxml", "captions.srt"):
+        # Importable timeline + standard captions for the editor's own NLE,
+        # plus the provenance/authenticity summary (Gap #5) for disclosure.
+        for extra in ("timeline.fcpxml", "captions.srt", "provenance.json"):
             p = run_dir / extra
             if p.exists():
                 z.write(p, extra)
@@ -1029,6 +1038,27 @@ def export_run(run_id: str):
         if output_path.exists():
             z.write(output_path, "output.mp4")
     return send_file(zip_path, as_attachment=True, download_name=f"{run_id}_editor_export.zip")
+
+
+@app.route("/provenance/<run_id>")
+def provenance_for_run(run_id: str):
+    """Authenticity/provenance summary for a run (Gap #5). Real vs AI-symbolic vs
+    AI-likeness-of-a-real-person, with a disclosable label."""
+    pf = RUNS_DIR / run_id / "provenance.json"
+    if pf.exists():
+        try:
+            return jsonify(json.loads(pf.read_text()))
+        except Exception:
+            pass
+    # Fall back to computing from the stored payload if the artifact is absent.
+    try:
+        from agents import run_store, provenance
+        stored = run_store.load(run_id) or {}
+        if stored.get("payload"):
+            return jsonify(provenance.summarize(stored["payload"]))
+    except Exception:
+        pass
+    return jsonify({"label": None}), 404
 
 
 @app.route("/performance/<run_id>", methods=["POST"])
