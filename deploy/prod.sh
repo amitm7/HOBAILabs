@@ -12,11 +12,12 @@ AWS_ACCOUNT_ID="117572456595"
 ECR_REPO="hobailabs"
 EC2_INSTANCE_ID="i-0813ff001cc8cc694"  # HOBAILabs instance
 EC2_USER="ec2-user"
-IMAGE_TAG="prod-$(date +%Y%m%d-%H%M%S)"
-LATEST_TAG="prod-latest"
-
+# Deploy reaches the box over SSH (the instance is not SSM-registered). Override
+# either via env: EC2_HOST=1.2.3.4 SSH_KEY=~/.ssh/key.pem ./deploy/prod.sh
 EC2_HOST="${EC2_HOST:-13.202.0.21}"            # public IP / DNS of the instance
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/hobailabs-key.pem}" # path to the .pem used to SSH in
+IMAGE_TAG="prod-$(date +%Y%m%d-%H%M%S)"
+LATEST_TAG="prod-latest"
 
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo "HOBAILabs Production Deployment"
@@ -58,6 +59,7 @@ cd "$(dirname "$0")/.."
 
 if ! docker buildx build \
     --platform linux/arm64 \
+    --build-arg CACHEBUST="$IMAGE_TAG" \
     -t "$ECR_REPO:$IMAGE_TAG" \
     -t "$ECR_REPO:$LATEST_TAG" \
     -f Dockerfile \
@@ -103,6 +105,8 @@ echo ""
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Step 4: Update EC2 instance over SSH
+# (The instance is not SSM-registered, so we deploy via SSH. The box pulls from
+#  ECR using its own instance role — no creds are sent over the wire.)
 
 echo "[4/5] Updating EC2 instance ($EC2_USER@$EC2_HOST) over SSH..."
 
@@ -114,11 +118,18 @@ fi
 
 REMOTE_IMG="$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
 
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$EC2_USER@$EC2_HOST" bash -s <<EOF
+# Run the pull + recreate on the box. Heredoc is quoted-expanded locally so the
+# concrete image tag / region are baked in before they reach the remote shell.
+# ssh is the `if` condition directly — robust under `set -e` and avoids a
+# fragile separate `$?` test.
+if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$EC2_USER@$EC2_HOST" bash -s <<EOF
 set -e
+echo "  → logging Docker into ECR"
 aws ecr get-login-password --region $AWS_REGION \
   | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+echo "  → pulling $REMOTE_IMG"
 sudo docker pull $REMOTE_IMG
+echo "  → recreating hob_prod"
 sudo docker rm -f hob_prod || true
 sudo docker run -d --name hob_prod --restart unless-stopped \
   -p 7860:7860 \
@@ -127,13 +138,13 @@ sudo docker run -d --name hob_prod --restart unless-stopped \
   -v /srv/hob:/data \
   $REMOTE_IMG
 sleep 3
+echo "  → recent logs:"
 sudo docker logs hob_prod 2>&1 | tail -10
 EOF
-
-if [ $? -eq 0 ]; then 
+then
     echo "✓ EC2 container updated successfully"
 else
-    echo "❌ SSH deploy failed — check key path, host, and security-group port 22"
+    echo "❌ SSH deploy failed — check the key path, host, and security-group port 22"
     exit 1
 fi
 

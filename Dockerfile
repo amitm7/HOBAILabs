@@ -22,7 +22,10 @@ RUN fc-cache -f
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# App code
+# App code. CACHEBUST changes every deploy (prod.sh passes the timestamped image
+# tag) so this COPY always re-copies current source — the pip layer above stays
+# cached, but docs/templates/code never go stale in the image.
+ARG CACHEBUST=0
 COPY . .
 
 # Caches/outputs are written under $HOME/.hob_cache and the system temp dir.
