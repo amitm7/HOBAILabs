@@ -95,5 +95,24 @@ Located at `/hobailabs/*` in SSM Parameter Store (SecureString):
 - `SUNO_API_KEY`
 - `OPENAI_API_KEY`
 - `GOOGLE_API_KEY`
+- `HOB_AUTH_SECRET` — **required**: 32+ random hex that signs operator JWTs. Without it,
+  tokens reset on every restart and differ per gunicorn worker (random logouts). Generate:
+  `python -c "import secrets;print(secrets.token_hex(32))"`.
 
-See `deploy/userdata.sh` for how they are loaded on startup.
+See `deploy/userdata.sh` for how they are loaded on startup. Non-secret persistence config
+(`HOB_RUNS_DB`, `HOB_GOVERNANCE_DB`, `HOB_DB_DIR`, `HOB_RUNS_DIR`, `HOB_COOKIE_SECURE`) is
+appended by `userdata.sh`/`run.sh` so SQLite state lands on the `/data/.hob_cache` EBS volume
+and survives redeploys — do not also set these in SSM.
+
+## Operator auth (required since the P0 auth change)
+
+The app now gates money/rights routes behind operator login. After the first deploy, seed
+operators once (the DB is on the persistent volume, so this survives restarts):
+
+```bash
+docker exec hobailabs python -m agents.auth add-operator amit amit@hob.tv --role admin
+docker exec hobailabs python -m agents.auth add-operator <editor> <email> --role operator
+```
+
+`--password` is optional (a strong one is generated and printed). Do **not** set
+`HOB_AUTH_DISABLED` in production. For local dev only, `HOB_AUTH_DISABLED=1` bypasses auth.

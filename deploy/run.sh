@@ -40,6 +40,16 @@ grep -q '^AWS_REGION='        "$ENV_FILE" || echo "AWS_REGION=${AWS_REGION}"    
 grep -q '^BEDROCK_REGION='    "$ENV_FILE" || echo "BEDROCK_REGION=${BEDROCK_REGION}" >> "$ENV_FILE"
 grep -q '^HOB_CACHE_BACKEND=' "$ENV_FILE" || echo "HOB_CACHE_BACKEND=fs"            >> "$ENV_FILE"
 
+# Durable state on the EBS volume: pin every SQLite store + run outputs under the
+# mounted /data/.hob_cache so operators/consent/performance survive redeploys (they
+# default to ephemeral /tmp otherwise). HOB_COOKIE_SECURE: auth cookie is Secure
+# behind Caddy TLS. HOB_AUTH_SECRET stays a real SSM secret (not set here).
+grep -q '^HOB_RUNS_DB='       "$ENV_FILE" || echo "HOB_RUNS_DB=/data/.hob_cache/db/hob_runs.db"             >> "$ENV_FILE"
+grep -q '^HOB_GOVERNANCE_DB=' "$ENV_FILE" || echo "HOB_GOVERNANCE_DB=/data/.hob_cache/db/hob_governance.db" >> "$ENV_FILE"
+grep -q '^HOB_DB_DIR='        "$ENV_FILE" || echo "HOB_DB_DIR=/data/.hob_cache/db"                          >> "$ENV_FILE"
+grep -q '^HOB_RUNS_DIR='      "$ENV_FILE" || echo "HOB_RUNS_DIR=/data/.hob_cache/runs"                      >> "$ENV_FILE"
+grep -q '^HOB_COOKIE_SECURE=' "$ENV_FILE" || echo "HOB_COOKIE_SECURE=1"                                     >> "$ENV_FILE"
+
 # 3. (Re)start the container. Bound to localhost — Caddy terminates TLS in front.
 echo "[run] (re)starting container …"
 docker rm -f hobailabs >/dev/null 2>&1 || true
