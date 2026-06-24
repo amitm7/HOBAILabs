@@ -104,6 +104,108 @@ def brand_page():
     return render_template("brand.html")
 
 
+@app.route("/studio")
+def studio_page():
+    """Studio Mode (MODE3): type a brief → full reel, with a reusable identity library."""
+    return render_template("studio.html")
+
+
+# ── Studio Mode: identity library + shot planning (MODE3_PLAN) ────────────────
+
+def _talent_public(t: dict) -> dict:
+    """Talent row + a /media URL the browser can preview (paths are confined)."""
+    return {"id": t["id"], "name": t["name"], "descriptor": t.get("descriptor", ""),
+            "ref_url": f"/media?path={t['ref_path']}" if t.get("ref_path") else ""}
+
+
+def _product_public(p: dict) -> dict:
+    return {"id": p["id"], "name": p["name"], "specs": p.get("specs", {}),
+            "ref_url": f"/media?path={p['ref_path']}" if p.get("ref_path") else ""}
+
+
+@app.route("/api/talents", methods=["GET", "POST"])
+def api_talents():
+    from agents import product_surface as ps
+    if request.method == "GET":
+        return jsonify({"talents": [_talent_public(t) for t in ps.list_talents()]})
+    name = (request.form.get("name") or "").strip()
+    descriptor = (request.form.get("descriptor") or "").strip()
+    file = request.files.get("photo")
+    if not file:
+        return jsonify({"error": "a reference photo is required"}), 400
+    lib = RUNS_DIR / "_library" / "talents"
+    lib.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename).suffix.lower() or ".jpg"
+    save_path = lib / f"{uuid.uuid4().hex}{ext}"
+    file.save(str(save_path))
+    try:
+        t = ps.register_talent(name, str(save_path), descriptor=descriptor)
+        return jsonify({"talent": _talent_public(t)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/talents/<talent_id>", methods=["DELETE"])
+def api_delete_talent(talent_id):
+    from agents import product_surface as ps
+    return jsonify({"deleted": ps.delete_talent(talent_id)})
+
+
+@app.route("/api/products", methods=["GET", "POST"])
+def api_products():
+    from agents import product_surface as ps
+    if request.method == "GET":
+        return jsonify({"products": [_product_public(p) for p in ps.list_products()]})
+    name = (request.form.get("name") or "").strip()
+    specs = {}
+    raw_specs = (request.form.get("specs") or "").strip()
+    if raw_specs:
+        try:
+            specs = json.loads(raw_specs)
+        except Exception:
+            specs = {}
+    file = request.files.get("photo")
+    if not file:
+        return jsonify({"error": "a reference photo is required"}), 400
+    lib = RUNS_DIR / "_library" / "products"
+    lib.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename).suffix.lower() or ".jpg"
+    save_path = lib / f"{uuid.uuid4().hex}{ext}"
+    file.save(str(save_path))
+    try:
+        p = ps.register_product(name, str(save_path), specs=specs)
+        return jsonify({"product": _product_public(p)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/products/<product_id>", methods=["DELETE"])
+def api_delete_product(product_id):
+    from agents import product_surface as ps
+    return jsonify({"deleted": ps.delete_product(product_id)})
+
+
+@app.route("/api/studio/plan", methods=["POST"])
+def api_studio_plan():
+    """Expand a free-text brief into an editable frames[] list (MODE3 P2)."""
+    data = request.json or {}
+    brief = (data.get("brief") or "").strip()
+    if not brief:
+        return jsonify({"error": "Enter a brief first."}), 400
+    scope = data.get("scope", "general")
+    mood = data.get("mood", "")
+    from agents import product_surface as ps
+    from agents import shot_planner
+    talent = ps.get_talent(data["talent_id"]) if data.get("talent_id") else None
+    product = ps.get_product(data["product_id"]) if data.get("product_id") else None
+    try:
+        frames = shot_planner.plan(brief, scope=scope, talent=talent,
+                                   product=product, mood=mood)
+        return jsonify({"frames": frames})
+    except Exception as e:
+        return jsonify({"error": str(e), "frames": []}), 500
+
+
 @app.route("/guide")
 def guide_page():
     from flask import send_from_directory
@@ -273,18 +375,28 @@ def _commercial_gate(data: dict, estimate_usd: float = 0.0) -> tuple[list[str], 
 
 @app.route("/story-intake", methods=["POST"])
 def story_intake():
-    """STR-2 pilot: long story → editable frame script."""
+    """STR-2: raw story/notes/transcript -> editable Format B frame draft."""
     data = request.json or {}
     consent_missing, spend_missing = _commercial_gate(data, 0.0)
     if consent_missing or spend_missing:
         return jsonify({"error": "Commercial gate blocked", "missing": consent_missing + spend_missing}), 400
-    from agents.growth import story_to_script
-    return jsonify({
-        "status": "draft_scaffold",
-        "confidence": "placeholder",
-        "note": "Editable regex segmentation draft; review before rendering.",
-        "script": story_to_script(data.get("story", ""), int(data.get("max_frames", 10) or 10)),
-    })
+    from agents.growth import story_to_draft
+    try:
+        target_seconds = int(data.get("target_seconds") or 45)
+    except Exception:
+        target_seconds = 45
+    try:
+        max_frames = int(data.get("max_frames", 10) or 10)
+    except Exception:
+        max_frames = 10
+    draft = story_to_draft(
+        data.get("story", ""),
+        max_frames,
+        target_seconds=target_seconds,
+        tone=data.get("tone", ""),
+        audience=data.get("audience", ""),
+    )
+    return jsonify(draft)
 
 
 @app.route("/hook-workshop", methods=["POST"])
@@ -864,6 +976,33 @@ def export_run(run_id: str):
     return send_file(zip_path, as_attachment=True, download_name=f"{run_id}_editor_export.zip")
 
 
+@app.route("/performance/<run_id>", methods=["POST"])
+def performance_feedback(run_id: str):
+    """Seed of the post-publish feedback loop: capture how a finished reel performed.
+
+    Optional/non-blocking — stored on the existing run row via run_store. Only the
+    finished output panel exposes this, so no in-flight save() is racing these fields.
+    """
+    from agents import run_store
+    if not run_store.load(run_id):           # don't create phantom rows for unknown runs
+        return jsonify({"error": "unknown run"}), 404
+    data = request.get_json(silent=True) or {}   # never 500 on a malformed/empty body
+
+    def _int(v):
+        try:
+            return max(0, int(v)) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    run_store.save(
+        run_id,
+        performance_views=_int(data.get("views")),
+        performance_likes=_int(data.get("likes")),
+        performance_note=str(data.get("note", ""))[:2000],   # cap free text
+    )
+    return jsonify({"ok": True, "run_id": run_id})
+
+
 @app.route("/clip/<run_id>/<frame_id>")
 def clip(run_id: str, frame_id: str):
     """Serve a single finished clip for progressive reveal during a render."""
@@ -1107,6 +1246,28 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
         else:
             visual_path = ""
 
+        # Studio Mode (MODE3): resolve locked Talent/Product references. A talent
+        # gives every uses_talent shot a face to lock to (reference-edit identity);
+        # a product gives product beats the REAL product image (passthrough), so
+        # micro-detail (gold, diamonds, logos) is never re-invented by a model.
+        talent_id = (fd.get("talent_id") or "").strip()
+        product_id = (fd.get("product_id") or "").strip()
+        talent_ref_path = ""
+        if talent_id or product_id:
+            try:
+                from agents import product_surface as _ps
+                if talent_id and fd.get("uses_talent", True):
+                    tal = _ps.get_talent(talent_id)
+                    if tal and tal.get("ref_path") and os.path.exists(tal["ref_path"]):
+                        talent_ref_path = tal["ref_path"]
+                if product_id and fd.get("product_beat") and not visual_path:
+                    prd = _ps.get_product(product_id)
+                    if prd and prd.get("ref_path") and os.path.exists(prd["ref_path"]):
+                        visual_path = prd["ref_path"]   # real product → i2v start frame
+                        photo_spec = ""
+            except Exception as _e:
+                print(f"[Studio] identity resolve skipped for {fd.get('frame_id')} ({_e})")
+
         frames.append({
             "frame_id":        fd["frame_id"],
             "caption":         caption,
@@ -1128,6 +1289,12 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             # Per-frame caption overrides (blank = use the global caption style).
             "caption_position":  (fd.get("caption_position") or "").strip(),
             "caption_max_lines": fd.get("caption_max_lines") or "",
+            # Studio Mode identity + per-shot controls (harmless in story/brand).
+            "talent_id":       talent_id,
+            "product_id":      product_id,
+            "talent_ref_path": talent_ref_path,
+            "negative_prompt": (fd.get("negative_prompt") or "").strip(),
+            "continuity_lock": (fd.get("continuity_lock") or "").strip(),
         })
 
     # Resolve speaker_id → gender/age/label. Prefer the cast carried from the
@@ -1228,6 +1395,14 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
             if ip:
                 f["scene"]["image_prompt"] = ip + ". " + mood_suffix
 
+    # Studio Mode: a per-shot continuity lock (outfit/styling that must not change)
+    # is appended to the image prompt so generation respects it across shots.
+    for f in frames:
+        lock = (f.get("continuity_lock") or "").strip()
+        ip = f.get("scene", {}).get("image_prompt", "")
+        if lock and ip:
+            f["scene"]["image_prompt"] = ip + ". Keep consistent: " + lock
+
     # Image generation (cache-aware via generate_* file checks).
     # The router picks the image model per shot (cost-tier aware); real photos
     # return "passthrough" and are never sent to an image model.
@@ -1249,7 +1424,13 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
             "image", f, cost_tier, override=f.get("image_model_override", ""))
         mid = "" if img_model == model_router.PASSTHROUGH else img_model
         sid = f.get("speaker_id", "narrator")
-        ref = first_portrait_by_speaker.get(sid, "") if face_ref else ""
+        # Studio Mode: an explicit locked Talent reference wins over the auto
+        # per-speaker face_ref, so every shot locks to the same chosen face.
+        talent_ref = (f.get("talent_ref_path") or "").strip()
+        if talent_ref and os.path.exists(talent_ref):
+            ref = talent_ref
+        else:
+            ref = first_portrait_by_speaker.get(sid, "") if face_ref else ""
         if ps == "ai_portrait":
             f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid,
                                                          reference_path=ref)
@@ -1541,6 +1722,7 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                 "clip_ready":        bool(f.get("lipsync_clip_path")),
                 "lipsync_clip_path": f.get("lipsync_clip_path", ""),
                 "has_lipsync_audio": bool(f.get("lipsync_clip_path")),
+                "negative_prompt":   f.get("negative_prompt", ""),
                 # Router picks the video model per shot (cost-tier aware), unless
                 # the approval gate forced this frame to Ken Burns.
                 "model_id":          _video_model_for(f),

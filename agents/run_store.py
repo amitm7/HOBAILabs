@@ -34,8 +34,24 @@ def _conn() -> sqlite3.Connection:
             "run_id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'running', "
             "payload_json TEXT NOT NULL DEFAULT '{}', run_dir TEXT NOT NULL DEFAULT '', "
             "output_path TEXT NOT NULL DEFAULT '', edit_list_path TEXT NOT NULL DEFAULT '', "
-            "error TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
+            "error TEXT NOT NULL DEFAULT '', "
+            "performance_views INTEGER, performance_likes INTEGER, "
+            "performance_note TEXT NOT NULL DEFAULT '', "
+            "updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
         )
+        # Back-compat: add the post-publish feedback columns to DBs created before this
+        # change. Guarded by _columns() and wrapped because each threading.local
+        # connection re-runs _conn(); two fresh connections can race the ADD COLUMN.
+        for _col, _ddl in (
+            ("performance_views", "INTEGER"),
+            ("performance_likes", "INTEGER"),
+            ("performance_note", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if _col not in _columns(con, "runs"):
+                try:
+                    con.execute(f"ALTER TABLE runs ADD COLUMN {_col} {_ddl}")
+                except sqlite3.OperationalError:
+                    pass  # another connection added it first
         con.execute(
             "CREATE TABLE IF NOT EXISTS run_logs ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, line TEXT NOT NULL, "
@@ -101,14 +117,20 @@ def save(run_id: str, **fields) -> None:
         "output_path": fields.get("output_path", existing.get("output_path", "")),
         "edit_list_path": fields.get("edit_list_path", existing.get("edit_list_path", "")),
         "error": fields.get("error", existing.get("error", "")),
+        "performance_views": fields.get("performance_views", existing.get("performance_views")),
+        "performance_likes": fields.get("performance_likes", existing.get("performance_likes")),
+        "performance_note": fields.get("performance_note", existing.get("performance_note", "")),
     }
     _conn().execute(
-        "INSERT INTO runs(run_id, status, payload_json, run_dir, output_path, edit_list_path, error, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s','now')) "
+        "INSERT INTO runs(run_id, status, payload_json, run_dir, output_path, edit_list_path, error, "
+        "performance_views, performance_likes, performance_note, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now')) "
         "ON CONFLICT(run_id) DO UPDATE SET "
         "status=excluded.status, payload_json=excluded.payload_json, run_dir=excluded.run_dir, "
         "output_path=excluded.output_path, edit_list_path=excluded.edit_list_path, "
-        "error=excluded.error, updated_at=strftime('%s','now')",
+        "error=excluded.error, performance_views=excluded.performance_views, "
+        "performance_likes=excluded.performance_likes, performance_note=excluded.performance_note, "
+        "updated_at=strftime('%s','now')",
         (
             run_id,
             data["status"],
@@ -117,6 +139,9 @@ def save(run_id: str, **fields) -> None:
             data["output_path"],
             data["edit_list_path"],
             data["error"],
+            data["performance_views"],
+            data["performance_likes"],
+            data["performance_note"],
         ),
     )
     _conn().commit()
@@ -137,6 +162,9 @@ def _load_meta(run_id: str) -> dict | None:
         "output_path": row["output_path"],
         "edit_list_path": row["edit_list_path"],
         "error": row["error"],
+        "performance_views": row["performance_views"],
+        "performance_likes": row["performance_likes"],
+        "performance_note": row["performance_note"],
     }
 
 

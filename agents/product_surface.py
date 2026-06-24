@@ -13,6 +13,7 @@ import os
 import sqlite3
 import tempfile
 import threading
+import uuid
 from pathlib import Path
 
 _DB_PATH = Path(os.environ.get(
@@ -50,6 +51,21 @@ def _conn() -> sqlite3.Connection:
             "CREATE TABLE IF NOT EXISTS versions ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, version TEXT NOT NULL, "
             "payload_hash TEXT NOT NULL, payload_json TEXT NOT NULL, output_path TEXT NOT NULL DEFAULT '', "
+            "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
+        )
+        # Studio Mode identity library (MODE3_PLAN §3). Reference images themselves
+        # live in the assets table (kind="talent"|"product"); these tables carry the
+        # human-facing name + metadata and point at the asset by sha256.
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS talents ("
+            "id TEXT PRIMARY KEY, name TEXT NOT NULL, ref_sha256 TEXT NOT NULL, "
+            "descriptor TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL DEFAULT 'default', "
+            "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
+        )
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS products ("
+            "id TEXT PRIMARY KEY, name TEXT NOT NULL, ref_sha256 TEXT NOT NULL, "
+            "specs_json TEXT NOT NULL DEFAULT '{}', owner TEXT NOT NULL DEFAULT 'default', "
             "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
         )
         _migrate_legacy_assets(con, legacy_assets)
@@ -235,6 +251,94 @@ def save_version(project_id: str, payload: dict, output_path: str = "") -> dict:
         "output_path": output_path,
     }
     return record
+
+
+# ── Studio Mode identity library (talents + products) ─────────────────────────
+
+def _short_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def register_talent(name: str, ref_path: str, *, descriptor: str = "",
+                    owner: str = "default", consent_flag: bool = False) -> dict:
+    """Save a reusable Talent (a locked face reference) for Studio Mode.
+    The reference image is registered in the assets table; this row points at it."""
+    asset = register_asset(ref_path, kind="talent", consent_flag=consent_flag, owner=owner)
+    tid = _short_id("tal")
+    _conn().execute(
+        "INSERT INTO talents(id, name, ref_sha256, descriptor, owner) VALUES (?, ?, ?, ?, ?)",
+        (tid, name.strip() or "Untitled talent", asset["sha256"], descriptor.strip(), owner),
+    )
+    _conn().commit()
+    return get_talent(tid)
+
+
+def get_talent(talent_id: str) -> dict | None:
+    row = _conn().execute("SELECT * FROM talents WHERE id=?", (talent_id,)).fetchone()
+    if not row:
+        return None
+    asset = get_asset(row["ref_sha256"]) or {}
+    return {
+        "id": row["id"], "name": row["name"], "ref_sha256": row["ref_sha256"],
+        "ref_path": asset.get("path", ""), "descriptor": row["descriptor"],
+        "owner": row["owner"], "created_at": row["created_at"],
+    }
+
+
+def list_talents(owner: str = "default") -> list[dict]:
+    rows = _conn().execute(
+        "SELECT id FROM talents WHERE owner=? ORDER BY created_at DESC", (owner,)
+    ).fetchall()
+    return [t for t in (get_talent(r["id"]) for r in rows) if t]
+
+
+def delete_talent(talent_id: str) -> bool:
+    cur = _conn().execute("DELETE FROM talents WHERE id=?", (talent_id,))
+    _conn().commit()
+    return cur.rowcount > 0
+
+
+def register_product(name: str, ref_path: str, *, specs: dict | None = None,
+                     owner: str = "default", consent_flag: bool = False) -> dict:
+    """Save a reusable Product (a locked product reference + specs) for Studio Mode."""
+    asset = register_asset(ref_path, kind="product", consent_flag=consent_flag, owner=owner)
+    pid = _short_id("prd")
+    _conn().execute(
+        "INSERT INTO products(id, name, ref_sha256, specs_json, owner) VALUES (?, ?, ?, ?, ?)",
+        (pid, name.strip() or "Untitled product", asset["sha256"],
+         json.dumps(specs or {}, sort_keys=True), owner),
+    )
+    _conn().commit()
+    return get_product(pid)
+
+
+def get_product(product_id: str) -> dict | None:
+    row = _conn().execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
+    if not row:
+        return None
+    asset = get_asset(row["ref_sha256"]) or {}
+    try:
+        specs = json.loads(row["specs_json"] or "{}")
+    except Exception:
+        specs = {}
+    return {
+        "id": row["id"], "name": row["name"], "ref_sha256": row["ref_sha256"],
+        "ref_path": asset.get("path", ""), "specs": specs,
+        "owner": row["owner"], "created_at": row["created_at"],
+    }
+
+
+def list_products(owner: str = "default") -> list[dict]:
+    rows = _conn().execute(
+        "SELECT id FROM products WHERE owner=? ORDER BY created_at DESC", (owner,)
+    ).fetchall()
+    return [p for p in (get_product(r["id"]) for r in rows) if p]
+
+
+def delete_product(product_id: str) -> bool:
+    cur = _conn().execute("DELETE FROM products WHERE id=?", (product_id,))
+    _conn().commit()
+    return cur.rowcount > 0
 
 
 def approval_history(project_id: str) -> list[dict]:

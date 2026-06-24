@@ -18,6 +18,7 @@ agents/
   image_matcher.py        opt-in LLM content match (describe → assign); SQLite cache
   scene_intelligence.py   LLM director: treatment pass + per-frame scene design + vision-grounded motion
   llm.py                  pluggable chat()/vision brain (OpenAI|Bedrock|Gemini), 3 tiers + JSON schema
+  shot_planner.py         Studio mode: brief (+scope/talent/product) → frames[] (cached, schema, fallback)
   model_router.py         shot → model id (pure logic over config/models.json)
   image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends); prompt-hash cache
   image_editor.py         [edit:] pass on a still (gpt-image)
@@ -30,9 +31,11 @@ agents/
   layout.py               LAY-0 layout seam; text-card preset renders to stills
   governance.py           F1/F2 consent + spend gate; append-only cost_events ledger,
                           reserve→release→settle spend model, startup stale-reservation sweep
-  growth.py               STR-2/3b/4/5 pilot helpers (drafts/descriptors, no auto-spend)
+  growth.py               STR-2 LLM story→Format B draft + STR-3b/4/5 helpers
+                          (editable drafts/descriptors, no auto-spend)
   run_store.py            F3 restart-safe run payload/status/log bridge
-  product_surface.py      SQLite stand-ins for assets, approvals, project versions
+  product_surface.py      SQLite stand-ins for assets, approvals, project versions,
+                          + Studio identity library (talents, products) CRUD
   suggestions.py          fast-tier batch → camera/edit/note chips per frame
   coverage.py             multi-shot B-roll: LLM vision assign + duration split
   lipsync_coordinator.py  audio → CDN → Hedra/SyncLabs → lipsync_clip_path
@@ -60,6 +63,7 @@ deploy/fonts/
 ~/.hob_cache/
   kling_clips/            animation clips (BlobCache; S3-backed when enabled)
   scene_designs/          per-frame JSON (MD5-keyed)
+  shot_plans/             Studio brief→frames plans (MD5 of brief+scope+talent+product)
   image_descriptions.db   SQLite WAL (image content-hash keyed)
   lipsync_clips/          finished lip-sync clips (BlobCache)
   lipsync_audio/          ElevenLabs TTS segments (BlobCache)
@@ -308,6 +312,48 @@ Returns `"Paid partnership with {name}"` or `"Paid partnership with the brand"` 
 
 ---
 
+## 7b. Studio mode (MODE3) — `shot_planner.py` + identity library
+
+→ [agents/shot_planner.py](../agents/shot_planner.py), [agents/product_surface.py](../agents/product_surface.py). See [MODE3_PLAN.md](MODE3_PLAN.md).
+
+Studio mode is the third front door (`/studio`), a mode-hook over the shared
+engine (like brand). The user types a brief; `shot_planner.plan()` expands it to
+the SAME `frames[]` schema the other doors produce, so `_build_frames_from_payload`
+→ `_generate_stills` → `clip_builder` → `assembler` run unchanged.
+
+### `shot_planner.plan(brief, *, scope, talent, product, mood) -> list[dict]`
+- One reasoning-tier LLM call (`json_schema=_PLAN_SCHEMA`), cached at
+  `~/.hob_cache/shot_plans/<md5>.json` (key = brief+scope+talent+product).
+- `scope="commerce"` → one locked subject × N camera setups (intro→…→product
+  hero→final), product beats flagged. `scope="general"` → emotional beats.
+- Graceful fallback to a sentence/line split so a failure never blocks the user.
+- `DEFAULT_NEGATIVE` is the per-shot negative prompt prefilled on each frame.
+
+### Identity library (`product_surface.py`)
+- `register_talent / get_talent / list_talents / delete_talent` — a reusable face;
+  the reference image is stored in the `assets` table (kind="talent").
+- `register_product / get_product / list_products / delete_product` — a reusable
+  product (reference image + `specs`).
+- Reference resolution happens in `web_app._build_frames_from_payload`:
+  `talent_id` (+`uses_talent`) → `frame["talent_ref_path"]` (used by
+  `generate_contextual_image(reference_path=…)` for the identity-edit lock);
+  `product_id` on a product beat → the real product image becomes the i2v start
+  frame (passthrough, never regenerated).
+
+### New `frame` keys
+`talent_id`, `product_id`, `talent_ref_path`, `negative_prompt`, `continuity_lock`,
+`uses_talent`, `studio_scope` (payload). `continuity_lock` is appended to the
+image prompt in `_generate_stills`; `negative_prompt` is threaded into
+`clip_builder._kling_submit` (falls back to `DEFAULT_KLING_NEGATIVE`).
+
+### Governance (MODE3_PLAN §2)
+AI may draft on-screen lines in Studio; all frame text still passes Gate A
+(`safety.moderate_frames` in `_generate_stills`). Regulated ad claims / CTA /
+disclosure remain user-supplied verbatim only when running **brand** mode
+(`mode=="brand"`); Studio is not brand mode.
+
+---
+
 ## 8. `suggestions.py` — AI suggestion chips
 
 **Entry:** `suggest_for_frames(frames, max_each=3) -> None`
@@ -541,6 +587,12 @@ The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 |---|---|---|
 | `/` | GET | Story mode UI shell |
 | `/brand` | GET | Brand / Ad mode UI shell |
+| `/studio` | GET | Studio mode UI shell (prompt → reel + identity library) |
+| `/api/talents` | GET/POST | List talents / register a talent (name + descriptor + reference photo) |
+| `/api/talents/<id>` | DELETE | Delete a talent |
+| `/api/products` | GET/POST | List products / register a product (name + specs JSON + reference photo) |
+| `/api/products/<id>` | DELETE | Delete a product |
+| `/api/studio/plan` | POST | `shot_planner.plan(brief, scope, talent, product)` → editable `frames[]` |
 | `/parse-script` | POST | `parse_frame_script` → frame cards + cast + suggestion chips |
 | `/suggest-frame` | POST | Vision-grounded per-frame suggestion (`suggest_from_image`) → best camera + director note; validates the still path, cached, no-op on failure |
 | `/preview` , `/preview-result/<run_id>` | POST/GET | Generate stills only (fast iteration); brand-safe critique if `is_brand` |
@@ -558,8 +610,9 @@ The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 | `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
 | `/redo-motion` | POST | Rebuild one frame's motion from the approved still; returns a refreshed clip preview |
 | `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4`, `edit_list.json`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
+| `/performance/<run_id>` | POST | Post-publish feedback stub (seed of the performance loop): optional `{views, likes, note}` for a finished run → `run_store.save()` writes the `runs.performance_views` / `performance_likes` (nullable INTEGER) / `performance_note` (TEXT) columns. 404 on unknown run (no phantom rows); `get_json(silent=True)` + int coercion + note cap so a bad body never 500s. Upsert, so re-POST updates in place. |
 | `/posting-kit` | POST | Story-mode-only posting kit: IG caption seed, hashtags, cover-frame id |
-| `/story-intake` | POST | STR-2 draft scaffold: regex-based long story text → editable Format B frame script, behind commercial governance |
+| `/story-intake` | POST | STR-2 LLM-assisted raw story/notes/transcript → editable Format B frame draft + `frames_meta`; falls back to deterministic draft if LLM is unavailable; behind commercial governance |
 | `/hook-workshop` | POST | STR-5 draft scaffold: low-cost opener candidates with no fake score/predictor, behind commercial governance |
 | `/caption-variants` | POST | STR-4 draft scaffold: language-variant placeholders only until real LLM/operator translation is wired, behind commercial governance |
 | `/render-variants` | POST | STR-3b pilot: governed rerender payload descriptors for multi-format/cutdown work |
@@ -699,6 +752,7 @@ temp dir for debugging; success cleans it unless `--keep-temp`.
 - `effective_timecodes()` must be used for **all** audio timing in the brand overlay path (voiceover adelay, ducking windows). Using raw cumulative durations causes drift at crossfade junctions.
 - The approval gate uses the `"kenburns"` string as a per-frame `model_id` sentinel. `web_app._video_model_for()`, `clip_builder._resolve_model_id()`, and `pricing.estimate(approved_ids=…)` must stay in lockstep — change one and the quote diverges from the render. Lipsync frames are never auto-rejected (their audio drives the clip).
 - Progressive-reveal sub-shot mapping is `segment_id.split("_")[0]` → parent `frame_id`; only the first sub-shot per frame reveals (later ones are ignored for display). Frame ids must not themselves contain `_` or the mapping breaks.
+- **`/redo-still` on a video-matched frame auto-generates an AI portrait.** A `.mov`/`.mp4`/etc. `visual_path` has no meaningful "still" to redo — so the route always clears `visual_path` when the extension is a video type, regardless of `photo_spec`. The frame then falls through to `generate_contextual_image` just like any other AI-generate frame. This is correct: if the user wants to keep the video they should not click Redo Still.
 - **`_redo_seed` must be injected AFTER `design_all_scenes`.** `design_all_scenes` does
   `f["scene"] = scene` (full dict replacement) for every frame inside a futures loop.
   Any value injected into `f["scene"]` before that call is silently lost. The seed is

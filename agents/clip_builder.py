@@ -287,9 +287,16 @@ def _kling_camera_control(motion_prompt: str):
     return None  # static / ambient / unrecognized → no structured camera move
 
 
+# Default Kling negative prompt. Studio Mode can override it per shot (the
+# masterclass "hard negative" discipline); story/brand keep this default.
+DEFAULT_KLING_NEGATIVE = ("blurry, distorted, text, watermark, subtitles, captions, logo, "
+                          "low quality, static, morphing faces, extra limbs, flickering")
+
+
 def _kling_submit(image_path: str, segment_text: str, duration: float,
                   width: int, height: int, motion_prompt: str = "",
-                  force_5s: bool = False, kling_mode: str = "pro") -> str:
+                  force_5s: bool = False, kling_mode: str = "pro",
+                  negative_prompt: str = "") -> str:
     """Submit a task to Kling and return task_id immediately (non-blocking)."""
     aspect = "9:16" if height > width else ("16:9" if width > height else "1:1")
     # Kling v3 supports exact durations 3–15s; clamp and round to nearest int
@@ -302,8 +309,7 @@ def _kling_submit(image_path: str, segment_text: str, duration: float,
         "model_name": "kling-v3",
         "image": _image_to_base64(image_path),
         "prompt": _kling_motion_prompt(segment_text, motion_prompt),
-        "negative_prompt": "blurry, distorted, text, watermark, subtitles, captions, logo, "
-                           "low quality, static, morphing faces, extra limbs, flickering",
+        "negative_prompt": (negative_prompt or "").strip() or DEFAULT_KLING_NEGATIVE,
         "cfg_scale": 0.5,
         "mode": kling_mode,
         "duration": kling_dur,
@@ -534,6 +540,7 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
             item["_kling_text"]     = item.get("text", "")
             item["_kling_motion"]   = motion
             item["_kling_dur"]      = duration
+            item["_kling_negative"] = item.get("negative_prompt", "")
             item["_kling_deferred"] = True
             return {**item, "clip_path": clip_path, "pending": True}
 
@@ -641,6 +648,7 @@ def build_clips(assignments: list[dict], temp_dir: str,
                                     width, height, motion_prompt=item["_kling_motion"],
                                     force_5s=item.get("_force_5s", False),
                                     kling_mode=item.get("_kling_mode", "pro"),
+                                    negative_prompt=item.get("_kling_negative", ""),
                                 )
                                 break
                             except Exception as se:

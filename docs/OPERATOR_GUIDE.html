@@ -87,6 +87,10 @@
   <a href="#brand-beats">13d · Writing the ad script &amp; marking product beats</a>
   <a href="#brand-hard-block">13e · Mandatories hard-block</a>
   <a href="#brand-faq">13f · Brand mode quick fixes</a>
+  <a href="#studio">14 · Studio Mode — type a brief, get a reel</a>
+  <a href="#studio-library">14a · Identity library (Talent &amp; Product)</a>
+  <a href="#studio-plan">14b · Brief → shots</a>
+  <a href="#studio-controls">14c · Per-shot controls</a>
 </div>
 
 <h2 id="what">1 · What it does (in one minute)</h2>
@@ -95,7 +99,7 @@
 
 <h2 id="flow">2 · The 8 steps, start to finish</h2>
 <div class="step"><div class="num">1</div><div><b>Subject</b> — type the person's name + a short look description.</div></div>
-<div class="step"><div class="num">2</div><div><b>Paste your story</b>, then click <b>📁 Browse folder…</b> and choose the folder with your photos/videos (they upload to the tool). Click <span class="kbd">Parse Frames →</span>.</div></div>
+<div class="step"><div class="num">2</div><div><b>Start your reel</b> either by pasting a frame-by-frame script, or by choosing <b>I have a story</b> and pasting raw story text/notes/transcript. The AI draft path fills an editable script first; review it before preview/render. Then click <b>📁 Browse folder…</b> and choose the folder with your photos/videos (they upload to the tool). Manual scripts use <span class="kbd">Parse Frames →</span>; AI drafts parse after the draft is created.</div></div>
 <div class="step"><div class="num">3</div><div><b>Frame cards</b> appear — one per line. Tweak the picture, mood note, and camera on each.</div></div>
 <div class="step"><div class="num">4</div><div><b>Target length</b> — pick 30/45/60/90s or Auto.</div></div>
 <div class="step"><div class="num">5</div><div><b>Style & Quality</b> — start in <b>Dev</b> (cheap) while testing.</div></div>
@@ -143,7 +147,8 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <div class="box tip"><b>You don't have to type anything fancy.</b> Everything below (picture, mood, camera, lip-sync) can be set by <b>clicking on the frame card</b> after you parse. The bracket tags shown later are just the typed shortcut for the same buttons.</div>
 
 <h3>Adding your own photos &amp; videos</h3>
-<p>Click <b>📁 Browse folder…</b> (next to the script box) and pick the folder on your computer that holds the photos/videos for this story. The tool uploads them and matches the right one to each shot automatically.</p>
+<p>In story mode, start with either <b>I already have a frame script</b> for full control, or <b>I have a story</b> to let the AI create an editable frame draft from raw notes/transcript. The AI does not render directly from the raw story; it fills the script/frame cards so you can review first.</p>
+<p>Click <b>📁 Browse folder…</b> (next to the start panel) and pick the folder on your computer that holds the photos/videos for this story. The tool uploads them and matches the right one to each shot automatically.</p>
 <ul>
 <li>Put all the media for one story in <b>a single folder</b> first, then browse to it.</li>
 <li>Supported: JPG, PNG, HEIC, WEBP images and MP4, MOV, M4V, WEBM videos.</li>
@@ -357,6 +362,7 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <li><b>Text Card:</b> choose <b>Text Card</b> on a frame, or write <code>[layout: text_card]</code>, for a full-screen bold statement card.</li>
 <li><b>Posting kit:</b> story mode can generate hashtags and pick a cover frame from the <code>Caption:</code> block. Brand copy remains operator-supplied.</li>
 <li><b>Export clips + edit list:</b> after a completed run, download a zip with clips and <code>edit_list.json</code> for a human editor.</li>
+<li><b>Did this reel perform?</b> after a completed run, the output panel has an optional <b>views / likes / note</b> capture — fill it in once the reel is posted and click <b>Save</b>. It's stored with the run as the seed of a performance-feedback loop.</li>
 <li><b>Redo motion:</b> retry only the motion for one approved still without regenerating the image.</li>
 </ul>
 
@@ -560,9 +566,34 @@ End-card: Auto-generated CTA</div>
 <tr><td>End-card text is wrong</td><td>Edit the CTA text field and the brand name field — the end card is built from those.</td></tr>
 </table>
 
+<h2 id="studio">14 · Studio Mode — type a brief, get a reel</h2>
+<p>Open <b>🎬 Studio mode</b> from the top link. Instead of writing a script, you
+describe the reel in plain words and the AI drafts the shots. It uses the same
+engine (Preview, cost, Generate, export) plus a reusable <b>identity library</b>.</p>
+
+<h3 id="studio-library">14a · Identity library (Talent &amp; Product)</h3>
+<p>Save a <b>Talent</b> (a face) and/or a <b>Product</b> (a photo + specs) once.
+Studio <b>locks them across every shot</b> so the same person and the same product
+appear consistently — and they're reusable in future reels. On shots you mark
+<b>🛍 Product beat</b>, the <b>real product image is used directly</b> (never
+re-generated), so logos and fine detail stay exact.</p>
+
+<h3 id="studio-plan">14b · Brief → shots</h3>
+<p>Pick a <b>scope</b> — <b>Commerce</b> (product / fashion / jewelry ads) or
+<b>General</b> (any idea) — write your brief, and click <b>✨ Plan shots</b>. The AI
+returns editable shot cards (on-screen line, camera move, shot size). Edit any card
+before Preview/Render. The AI may draft the on-screen lines here (you edit them);
+all text still passes the safety check.</p>
+
+<h3 id="studio-controls">14c · Per-shot controls</h3>
+<p>Each shot card adds a <b>Talent</b>/<b>Product</b> selector, a <b>Negative
+prompt</b> (what to avoid), and a <b>Continuity lock</b> (outfit/styling that must
+not change). Sensible defaults are prefilled; tweak per shot as needed.</p>
+
 <hr>
 <p class="muted">Story mode workflow: <b>Write short lines → Parse → set Picture + Note + Camera per shot → Dev test → Production final → Download.</b><br>
 Brand mode workflow: <b>Fill brief → upload logo + product → write ad script → Parse → tick 🛍 product beats → Preview Stills → Generate Ad → Download.</b><br>
+Studio mode workflow: <b>Save Talent/Product → pick scope → write brief → ✨ Plan shots → edit cards → Preview Stills → Generate Reel → Download.</b><br>
 When unsure, leave models on <b>Auto</b> and start in <b>Dev</b>.</p>
 
 </body>
