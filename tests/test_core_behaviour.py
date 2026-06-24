@@ -358,6 +358,76 @@ Full social caption.
         version = save_version("project-unit", {"version": "v1"}, "out.mp4")
         self.assertEqual(version["output_path"], "out.mp4")
 
+    # ── P0/P1 gaps ─────────────────────────────────────────────────────────────
+    def test_operator_auth_gates_money_routes_and_roles(self):
+        from agents import auth
+        os.environ.pop("HOB_AUTH_DISABLED", None)
+        op = f"op-{os.getpid()}"
+        appr = f"appr-{os.getpid()}"
+        try:
+            auth.add_operator(op, "", "pw", "operator")
+            auth.add_operator(appr, "", "pw", "approver")
+        except Exception:
+            pass  # already seeded in a prior run on the shared temp DB
+        with app.test_client() as c:
+            self.assertEqual(c.post("/run", json={}).status_code, 401)        # gated
+            self.assertEqual(c.post("/login", json={"operator_id": op, "password": "bad"}).status_code, 401)
+            self.assertEqual(c.post("/login", json={"operator_id": op, "password": "pw"}).status_code, 200)
+            # operator role cannot brand-approve; approver can
+            self.assertEqual(c.post("/brand-approval", json={"project_id": "p"}).status_code, 403)
+            c.post("/logout")
+            c.post("/login", json={"operator_id": appr, "password": "pw"})
+            self.assertEqual(c.post("/brand-approval", json={"project_id": "p"}).status_code, 200)
+
+    def test_likeness_consent_gate(self):
+        from agents import governance as g
+        data = {"subject_name": "RealPerson", "session_id": f"lk-{os.getpid()}",
+                "frames": [{"photo_spec": "ai_portrait", "lipsync": True}]}
+        self.assertEqual(len(g.validate_likeness_consent(data)), 2)            # face + voice
+        data["likeness_consent"] = {"face": True, "voice": True}
+        self.assertEqual(g.validate_likeness_consent(data), [])                # granted in payload
+        # ai_symbolic / no subject are never gated
+        self.assertEqual(g.validate_likeness_consent({"subject_name": "X", "frames": [{"photo_spec": "ai_symbolic"}]}), [])
+        self.assertEqual(g.validate_likeness_consent({"frames": [{"photo_spec": "ai_portrait"}]}), [])
+
+    def test_provenance_tiers(self):
+        from agents import provenance as p
+        self.assertEqual(p.summarize({"subject_name": "L", "frames": [{"photo_spec": "ai_portrait"}]})["tier"], "ai_portrait")
+        self.assertTrue(p.summarize({"subject_name": "L", "voice_clone": True, "frames": []})["real_person_ai"])
+        self.assertEqual(p.summarize({"frames": [{"photo_spec": "ai_symbolic"}]})["tier"], "ai_symbolic")
+        self.assertEqual(p.summarize({"frames": [{"photo_spec": "me.jpg"}]})["tier"], "real")
+
+    def test_vendor_fallback_chain(self):
+        cat = model_router.catalog()
+        # every model has a configured cross-vendor fallback chain
+        self.assertEqual([m for m in cat["models"] if not cat.get("fallbacks", {}).get(m)], [])
+        # a simulated outage degrades to the next vendor
+        tried = []
+
+        def attempt(mid):
+            tried.append(mid)
+            if mid in ("nano_banana", "flux"):
+                raise RuntimeError("no balance")
+            return f"/img/{mid}.png"
+
+        res, used = model_router.run_with_fallback(
+            ["nano_banana", "flux", "gpt_image"], attempt, axis="image", logger=lambda m: None)
+        self.assertEqual(used, "gpt_image")
+        self.assertEqual(tried, ["nano_banana", "flux", "gpt_image"])
+        with self.assertRaises(RuntimeError):
+            model_router.run_with_fallback(["flux"], lambda m: (_ for _ in ()).throw(RuntimeError("down")))
+
+    def test_feedback_loop_list_and_summary(self):
+        rid = f"perf-{os.getpid()}"
+        run_store.save(rid, status="done", performance_views=777, performance_likes=42,
+                       performance_note="unit", performance_by="unit-op")
+        rows = run_store.list_performance()
+        mine = [r for r in rows if r["run_id"] == rid]
+        self.assertEqual(len(mine), 1)
+        self.assertEqual(mine[0]["performance_views"], 777)
+        self.assertEqual(mine[0]["performance_by"], "unit-op")
+        self.assertGreaterEqual(run_store.performance_summary()["total_views"], 777)
+
 
 if __name__ == "__main__":
     unittest.main()

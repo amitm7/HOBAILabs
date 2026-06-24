@@ -14,6 +14,22 @@ authenticity outranks a gap that adds creative surface.
 Size: **S** ≤ a few days · **M** ~1–2 wk · **L** = a subsystem.
 Priority: **P0** commercial floor · **P1** near-term · **P2** post-floor.
 
+### Status (2026-06-24) — all P0 + P1 landed
+
+| # | Gap | Priority | Status |
+|---|-----|----------|--------|
+| 1 | Operator auth / identity | P0 | ✅ shipped — `agents/auth.py`, JWT + roles, money/rights routes gated |
+| 2 | Durable DB (Postgres) | P0 | ✅ shipped (config-driven) — `agents/db.py`, `HOB_DB_URL` switch; SQLite default, Postgres-ready. Migrating the legacy per-store SQLite bridges (run_store/governance) onto it is the mechanical follow-on for the RDS cutover. |
+| 3 | Performance feedback loop | P1 | ✅ shipped — capture + read path (`GET /performance` leaderboard + summary) |
+| 4 | Consent tied to subject + face/voice | P0 | ✅ shipped — `governance` likeness gate on `/run` |
+| 5 | Authenticity labeling / provenance | P1 | ✅ shipped — `agents/provenance.py`, per-run `provenance.json`, UI badge, export |
+| 8 | Vendor fallbacks on every axis | P1 | ✅ shipped — `config/models.json` fallback chains + `model_router.run_with_fallback` |
+| 6 | Asset library / memory | P2 | ⬜ remaining (needs the RDS cutover, GAP #2) |
+| 7 | Real dubbing / translation | P2 | ⬜ remaining |
+| 9 | Real virality scoring on hooks | P2 | ⬜ remaining (candidate provider: higgsfield MCP `virality_predictor`) |
+
+The original register and its rationale follow.
+
 | # | Gap | Why it matters for HOB | Size | Priority | Acceptance ("done") | Cross-link |
 |---|-----|------------------------|------|----------|---------------------|------------|
 | 1 | **Operator auth / identity** | No auth today — anyone reaching the server can run, spend, and act as HOB. The commercial floor. | M | **P0** | Authenticated operator identity gates every run/spend/approval; actions attributable to a person. | [PRODUCT_IDEAS §Build deeply #6](PRODUCT_IDEAS.md) (governance hardening) |
