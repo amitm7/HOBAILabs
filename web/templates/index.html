@@ -11,6 +11,7 @@
 <header>
   <h1>HOBAILabs</h1>
   <span>Story → Reel Pipeline — <a href="/studio" style="color:var(--accent2,#6cf)">🎬 Studio mode</a> · <a href="/brand" style="color:var(--accent2,#6cf)">🛍 Brand / Ad mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
+  <div id="auth-bar" style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px"></div>
 </header>
 
 <main>
@@ -457,6 +458,7 @@ Caption:
           <span>Reels UI safe zone</span>
         </div>
       </div>
+      <div id="provenance-label" style="margin:10px 0"></div>
       <div class="output-actions">
         <a id="download-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">
           ⬇ Download .mp4
@@ -465,6 +467,19 @@ Caption:
           Export clips + edit list
         </a>
       </div>
+      <div id="performance-feedback" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <!-- ── Performance loop (Gap #3) ───────────────────────── -->
+  <div class="card" id="performance-card">
+    <div class="card-header">
+      <h2>📊 Performance</h2>
+      <button class="btn-secondary btn-small" id="performance-refresh" onclick="loadPerformance()">↻ Refresh</button>
+    </div>
+    <div class="card-body">
+      <div id="performance-summary" class="muted" style="margin-bottom:8px"></div>
+      <div id="performance-table" class="muted">Log a result on a finished reel, then refresh to see what performed.</div>
     </div>
   </div>
 

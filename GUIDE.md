@@ -325,6 +325,7 @@ The **💰 Estimated Cost** panel appears after parsing. Shows a per-category br
 - **Clips appear in each frame card as they finish** (progressive reveal) — you don't wait for the whole render
 - Video plays automatically when done
 - Click **⬇ Download .mp4** to save
+- **Did this reel perform?** (optional) — once you've posted it, come back to the output panel and jot the **views / likes** and a short **note** (e.g. "hook landed, drop-off at 3s"), then **Save**. It's stored with the run so we can later learn what actually performed.
 
 ### Step 9 (optional): Finish in your own editor (Premiere / DaVinci Resolve / Final Cut)
 The app generates an **80–90% ready reel**. For the final polish — fine timing, grading, sound design, anything bespoke — hand it off to the editor's own licensed tool instead of re-doing it in-app:

@@ -1,7 +1,7 @@
 # HOBAILabs — Product Backlog (creative + strategic ideas)
 
 **Created:** 2026-06-19 · parked thinking, not yet scheduled
-**Companion plans:** [ROADMAP.md](../ROADMAP.md) (P0–P3 feature roadmap) · [SCALE_PLAN.md](SCALE_PLAN.md) (infra/scale phases) · [BRAND_PLAN.md](BRAND_PLAN.md) (B1 done, B2 here) · [WORK_PLAN.md](WORK_PLAN.md) (storage/matching)
+**Companion plans:** [ROADMAP.md](../ROADMAP.md) (P0–P3 feature roadmap) · [SCALE_PLAN.md](SCALE_PLAN.md) (infra/scale phases) · [BRAND_PLAN.md](BRAND_PLAN.md) (B1 done, B2 here) · [WORK_PLAN.md](WORK_PLAN.md) (storage/matching) · [MARKET_FIT_REVIEW.md](MARKET_FIT_REVIEW.md) (OODA review) · [GAP_BACKLOG.md](GAP_BACKLOG.md) (missing-capabilities register)
 
 This is the consolidated wishlist from two design conversations: (1) the **editor's
 composition wishlist** (layout / text-as-design / timing / edit-surface) and (2) the

@@ -3,7 +3,7 @@
 **Product:** AI story-to-reel & brand-ad pipeline (Instagram Reels / YouTube Shorts)
 **Revision:** 2026-06-18 · current `main` branch
 **Companion docs:** [LLD.md](LLD.md) — module-level internals · [SCALE_PLAN.md](SCALE_PLAN.md) — multi-user scale phasing · [BRAND_PLAN.md](BRAND_PLAN.md) — brand mode spec
-**Source of truth for behaviour:** [OPERATOR_GUIDE.html](OPERATOR_GUIDE.html) (user view) · [GUIDE.md](../GUIDE.md) · [ROADMAP.md](../ROADMAP.md) (forward plan)
+**Source of truth for behaviour:** [OPERATOR_GUIDE.html](OPERATOR_GUIDE.html) (user view) · [GUIDE.md](../GUIDE.md) · [ROADMAP.md](../ROADMAP.md) (forward plan) · [MARKET_FIT_REVIEW.md](MARKET_FIT_REVIEW.md) + [GAP_BACKLOG.md](GAP_BACKLOG.md) (strategic review & gaps)
 
 ---
 

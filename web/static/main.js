@@ -103,6 +103,47 @@ function postForm(url, formData) {
   return fetch(url, { method: 'POST', body: formData }).then(r => r.json());
 }
 
+// ── Operator auth (Gap #1) ─────────────────────────────────────────────────────
+// The token lives in an httpOnly cookie, so every same-origin fetch carries it.
+// We only render identity + a login form here, and prompt on 401.
+async function refreshAuthBar() {
+  const bar = el('auth-bar');
+  if (!bar) return;
+  let me = { operator: null };
+  try { me = await fetch('/me').then(r => r.json()); } catch (e) {}
+  if (me.operator) {
+    bar.innerHTML = `<span class="muted">👤 ${me.operator} <span style="opacity:.7">(${me.role})</span></span>
+      <button type="button" class="btn-secondary btn-small" onclick="logoutOperator()">Log out</button>`;
+  } else {
+    bar.innerHTML = `<button type="button" class="btn-primary btn-small" onclick="showLogin()">Log in</button>`;
+  }
+}
+
+function showLogin(msg) {
+  const bar = el('auth-bar');
+  if (!bar) return;
+  bar.innerHTML = `
+    <input id="login-id" placeholder="operator" style="width:110px">
+    <input id="login-pw" type="password" placeholder="password" style="width:120px"
+           onkeydown="if(event.key==='Enter')loginOperator()">
+    <button type="button" class="btn-primary btn-small" onclick="loginOperator()">Sign in</button>
+    <span id="login-msg" class="muted" style="color:#e66">${msg || ''}</span>`;
+  const idEl = el('login-id'); if (idEl) idEl.focus();
+}
+
+async function loginOperator() {
+  const res = await post('/login', { operator_id: el('login-id').value, password: el('login-pw').value });
+  if (res && res.ok) refreshAuthBar();
+  else showLogin('invalid credentials');
+}
+
+async function logoutOperator() {
+  await post('/logout', {});
+  refreshAuthBar();
+}
+
+document.addEventListener('DOMContentLoaded', refreshAuthBar);
+
 // ── Music toggles ─────────────────────────────────────────────────────────
 
 let voicesLoaded = false;
@@ -1317,7 +1358,20 @@ el('run-btn').addEventListener('click', async () => {
   el('progress-panel').scrollIntoView({ behavior: 'smooth' });
 
   try {
-    const res = await post('/run', payload);
+    let res = await post('/run', payload);
+    // Gap #4: AI face/voice of a real person is gated. Ask the operator to take
+    // responsibility for the likeness, then resend with an explicit consent grant.
+    if (res.needs_likeness_consent) {
+      const n = res.needs_likeness_consent;
+      const mods = ['face', 'voice'].filter(m => n[m]);
+      const ok = confirm(
+        `This render uses AI ${mods.join(' + ')} of "${n.subject}".\n\n` +
+        `Per HOB's authenticity policy this must be a consented, labeled exception.\n` +
+        `Confirm you have ${n.subject}'s consent for AI ${mods.join(' & ')} use?`);
+      if (!ok) { el('run-btn').disabled = false; logLine('✗ Render cancelled — no likeness consent.', 'err'); return; }
+      payload.likeness_consent = { face: !!n.face, voice: !!n.voice };
+      res = await post('/run', payload);
+    }
     if (res.missing && res.missing.length) {
       // Brand hard-block: required items missing — show the checklist, don't render.
       el('run-btn').disabled = false;
@@ -1417,7 +1471,77 @@ function showOutput(runId) {
   el('download-btn').href = `/download/${runId}`;
   const exportBtn = el('export-btn');
   if (exportBtn) exportBtn.href = `/export/${runId}`;
+  renderProvenance(runId);
+  renderPerformanceFeedback(runId);
   el('output-panel').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Provenance / authenticity label (Gap #5) ───────────────────────────────────
+async function renderProvenance(runId) {
+  const box = el('provenance-label');
+  if (!box) return;
+  box.innerHTML = '';
+  let p;
+  try { p = await fetch(`/provenance/${runId}`).then(r => r.ok ? r.json() : null); } catch (e) { return; }
+  if (!p || !p.label) return;
+  const glyph = { real: '🟢', ai_symbolic: '🔵', ai_portrait: '🟠' }[p.tier] || '•';
+  const bg = p.real_person_ai ? 'rgba(255,165,0,.12)' : 'rgba(120,120,120,.12)';
+  box.innerHTML = `<span title="Authenticity / provenance"
+    style="display:inline-block;padding:4px 10px;border-radius:6px;background:${bg};border:1px solid var(--border);font-size:13px">
+    ${glyph} ${p.label}</span>`;
+}
+
+// ── Post-publish feedback loop (seed) ──────────────────────────────────────
+// Optional "did this reel perform?" capture. Non-blocking; numbers are sortable
+// signal for the future performance loop, the note is free text.
+function renderPerformanceFeedback(runId) {
+  const box = el('performance-feedback');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="muted" style="margin-bottom:6px">Did this reel perform? <span style="opacity:.7">(optional)</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="perf-views" type="number" min="0" placeholder="views" style="width:110px"
+             onkeydown="if(event.key==='Enter')savePerformanceNote('${runId}')">
+      <input id="perf-likes" type="number" min="0" placeholder="likes" style="width:110px"
+             onkeydown="if(event.key==='Enter')savePerformanceNote('${runId}')">
+      <input id="perf-note" type="text" placeholder="note (e.g. hook landed, drop-off at 3s)" style="flex:1;min-width:180px"
+             onkeydown="if(event.key==='Enter')savePerformanceNote('${runId}')">
+      <button type="button" class="btn-secondary" onclick="savePerformanceNote('${runId}')">Save</button>
+      <span id="perf-ack" class="muted" style="opacity:.8"></span>
+    </div>`;
+}
+
+function savePerformanceNote(runId) {
+  const ack = el('perf-ack');
+  post(`/performance/${runId}`, {
+    views: el('perf-views').value,
+    likes: el('perf-likes').value,
+    note:  el('perf-note').value,
+  }).then(res => {
+    if (ack) ack.textContent = res && res.ok ? '✓ saved' : '✗ ' + ((res && res.error) || 'failed');
+    if (res && res.ok) loadPerformance();   // refresh the leaderboard
+  }).catch(() => { if (ack) ack.textContent = '✗ failed'; });
+}
+
+// Completed feedback loop (Gap #3): show which reels actually performed.
+async function loadPerformance() {
+  const tbl = el('performance-table'), sum = el('performance-summary');
+  if (!tbl) return;
+  let data;
+  try { data = await fetch('/performance').then(r => r.ok ? r.json() : null); } catch (e) { return; }
+  if (!data) { if (sum) sum.textContent = 'Log in to view performance.'; return; }
+  const s = data.summary || {};
+  if (sum) sum.textContent = `${s.runs_with_data || 0} reels logged · ${s.total_views || 0} views · ${s.total_likes || 0} likes`;
+  const runs = data.runs || [];
+  if (!runs.length) { tbl.innerHTML = '<span class="muted">No results logged yet.</span>'; return; }
+  const esc = t => String(t == null ? '' : t).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--text-dim)"><th>Run</th><th>Views</th><th>Likes</th><th>Note</th><th>By</th></tr>
+    ${runs.map(r => `<tr style="border-top:1px solid var(--border)">
+      <td><code>${esc(r.run_id).slice(0,8)}</code></td><td>${r.performance_views ?? '—'}</td>
+      <td>${r.performance_likes ?? '—'}</td><td>${esc(r.performance_note)}</td>
+      <td class="muted">${esc(r.performance_by)}</td></tr>`).join('')}
+  </table>`;
 }
 
 // ── AI credits (live vendor balances) ──────────────────────────────────────

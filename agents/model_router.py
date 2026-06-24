@@ -127,3 +127,58 @@ def select_model(kind: str, shot: dict, cost_tier: str = "draft",
 
     # 4. Fallback to the configured default for this kind.
     return cat.get("defaults", {}).get(kind, "")
+
+
+# ── Vendor fallbacks (Gap #8) ──────────────────────────────────────────────────
+def fallbacks_for(model_id: str) -> list[str]:
+    """Configured cross-vendor alternates for a model (config/models.json)."""
+    return [m for m in catalog().get("fallbacks", {}).get(model_id, []) if m in models()]
+
+
+def candidates(kind: str, shot: dict, cost_tier: str = "draft", override: str = "") -> list[str]:
+    """Ordered failover chain for a shot: primary, then same-slot routing prefs,
+    then the primary's configured alternates, then the kind default. Deduped,
+    existing models only. Real/passthrough media yields just that sentinel."""
+    primary = select_model(kind, shot, cost_tier, override)
+    if primary in ("", PASSTHROUGH) or kind == "image" and (_is_real_media(shot) or _is_video_source(shot)):
+        return [primary] if primary else []
+
+    cat = catalog()
+    shot_type = _image_shot_type(shot) if kind == "image" else _video_shot_type(shot)
+    tier = cost_tier if cost_tier in ("draft", "premium") else "draft"
+    ordered = [primary]
+    ordered += cat.get("routing", {}).get(kind, {}).get(shot_type, {}).get(tier, [])
+    ordered += fallbacks_for(primary)
+    ordered.append(cat.get("defaults", {}).get(kind, ""))
+
+    seen, out = set(), []
+    for mid in ordered:
+        if mid and mid in models() and mid not in seen:
+            seen.add(mid)
+            out.append(mid)
+    return out
+
+
+def run_with_fallback(cands, attempt, *, axis: str = "", logger=None):
+    """Try each candidate model until one succeeds; return (result, model_id).
+
+    `attempt(model_id)` performs the real vendor call. A raised exception or a
+    falsy result is treated as a failure and the next candidate is tried, so one
+    vendor outage degrades independently. Raises the last error if all fail.
+    """
+    last_exc = None
+    for mid in cands:
+        try:
+            result = attempt(mid)
+        except Exception as e:           # vendor error / no key / no balance / timeout
+            last_exc = e
+            if logger:
+                logger(f"[fallback] {axis or 'vendor'}: {mid} failed ({e}); trying next")
+            continue
+        if result:
+            return result, mid
+        if logger:
+            logger(f"[fallback] {axis or 'vendor'}: {mid} returned no result; trying next")
+    if last_exc:
+        raise last_exc
+    raise RuntimeError(f"all vendors failed for {axis or 'axis'}: {list(cands)}")

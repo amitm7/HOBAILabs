@@ -118,18 +118,28 @@ def _generate_with_model(model_id: str, prompt: str, out_path: str) -> str:
 
 def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str) -> str:
     """
-    Try model_id; on failure fall back to a known-reliable model so a single
-    flaky provider never breaks a render. `fallback` is a model id (e.g. flux,
-    gpt_image) tried if the chosen model errors.
+    Try the chosen model, then its full configured cross-vendor fallback chain
+    (Gap #8), so a single flaky/over-quota provider never breaks a render. The
+    chain comes from config/models.json `fallbacks`; `fallback` is appended as a
+    final known-reliable backstop for back-compat with existing call sites.
     """
     chosen = model_id or fallback
-    try:
-        return _generate_with_model(chosen, prompt, out_path)
-    except Exception as e:
-        if fallback and fallback != chosen:
-            print(f"[ImageGen] {chosen} failed ({e}) → falling back to {fallback}")
-            return _generate_with_model(fallback, prompt, out_path)
-        raise
+    chain = [chosen] + model_router.fallbacks_for(chosen)
+    if fallback and fallback not in chain:
+        chain.append(fallback)
+    seen, ordered = set(), []
+    for mid in chain:
+        if mid and mid not in seen:
+            seen.add(mid)
+            ordered.append(mid)
+    result, used = model_router.run_with_fallback(
+        ordered,
+        lambda mid: _generate_with_model(mid, prompt, out_path),
+        axis="image", logger=print,
+    )
+    if used != chosen:
+        print(f"[ImageGen] served by fallback vendor '{used}' (primary '{chosen}' unavailable)")
+    return result
 
 
 def _generate_image_checked(model_id: str, prompt: str, out_path: str,

@@ -33,7 +33,10 @@ agents/
                           reserve→release→settle spend model, startup stale-reservation sweep
   growth.py               STR-2 LLM story→Format B draft + STR-3b/4/5 helpers
                           (editable drafts/descriptors, no auto-spend)
-  run_store.py            F3 restart-safe run payload/status/log bridge
+  run_store.py            F3 restart-safe run payload/status/log bridge; performance_* (Gap #3)
+  db.py                   Gap #2 storage switch: SQLite default / Postgres via HOB_DB_URL
+  auth.py                 Gap #1 operator identity: operators table, HS256 JWT, require_operator, CLI
+  provenance.py           Gap #5 authenticity tiers (real / ai_symbolic / real-person AI)
   product_surface.py      SQLite stand-ins for assets, approvals, project versions,
                           + Studio identity library (talents, products) CRUD
   suggestions.py          fast-tier batch → camera/edit/note chips per frame
@@ -610,6 +613,18 @@ The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 | `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
 | `/redo-motion` | POST | Rebuild one frame's motion from the approved still; returns a refreshed clip preview |
 | `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4`, `edit_list.json`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
+| `/performance/<run_id>` | POST | Post-publish feedback (Gap #3): `{views, likes, note}` for a finished run → `run_store.save()` writes `runs.performance_views`/`performance_likes` (nullable INT) / `performance_note` (TEXT) / `performance_by` (verified operator). 404 on unknown run; `get_json(silent=True)` + int coercion + note cap so a bad body never 500s; upsert. **Gated by `auth.require_operator`.** |
+| `/performance` | GET | Completed feedback loop (Gap #3): leaderboard (`run_store.list_performance()`, best-performing first) + roll-up summary. Gated. |
+| `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). |
+| `/login` , `/logout` , `/me` | POST / POST / GET | Operator auth (Gap #1): `authenticate()` → HS256 JWT in an httpOnly cookie; `/me` reports the current operator. Seed operators with `python -m agents.auth add-operator`. |
+
+**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
+
+**Storage (Gap #2).** `agents/db.py` selects SQLite (default) or Postgres from `HOB_DB_URL`; new stores (`auth`) route through it dialect-neutrally. The legacy per-store SQLite bridges migrate onto it for the RDS cutover (SCALE_PLAN Phase 2).
+
+**Likeness consent (Gap #4).** `agents/governance.{likeness_modalities,validate_likeness_consent,record_likeness_consent}` gate AI face/voice of a *named real person* on `/run`, recorded against `consent_records.{face,voice}` and the verified operator.
+
+**Vendor fallbacks (Gap #8).** `config/models.json` `fallbacks` + `model_router.{candidates,run_with_fallback}` give each generation axis an independent cross-vendor failover chain.
 | `/posting-kit` | POST | Story-mode-only posting kit: IG caption seed, hashtags, cover-frame id |
 | `/story-intake` | POST | STR-2 LLM-assisted raw story/notes/transcript → editable Format B frame draft + `frames_meta`; falls back to deterministic draft if LLM is unavailable; behind commercial governance |
 | `/hook-workshop` | POST | STR-5 draft scaffold: low-cost opener candidates with no fake score/predictor, behind commercial governance |

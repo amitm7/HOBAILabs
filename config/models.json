@@ -87,6 +87,21 @@
     }
   },
 
+  "fallbacks": {
+    "_note": "Gap #8 — per-model ordered alternates for vendor failover. Each chain prefers a DIFFERENT backend first so one vendor outage/price-spike degrades independently. The router (model_router.run_with_fallback) tries the primary, then these in order. Same kind only.",
+    "flux":        ["nano_banana", "gpt_image", "seedream"],
+    "gpt_image":   ["flux", "nano_banana", "seedream"],
+    "seedream":    ["flux", "gpt_image", "nano_banana"],
+    "nano_banana": ["flux", "gpt_image", "seedream"],
+
+    "kling_std":   ["hailuo", "seedance", "kling_pro"],
+    "kling_pro":   ["seedance", "veo", "kling_std"],
+    "higgsfield":  ["kling_std", "seedance", "hailuo"],
+    "seedance":    ["kling_std", "hailuo", "veo"],
+    "veo":         ["kling_pro", "seedance", "kling_std"],
+    "hailuo":      ["kling_std", "seedance", "kling_pro"]
+  },
+
   "defaults": {
     "image": "flux",
     "video": "kling_std"
