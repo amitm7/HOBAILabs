@@ -15,6 +15,9 @@ EC2_USER="ec2-user"
 IMAGE_TAG="prod-$(date +%Y%m%d-%H%M%S)"
 LATEST_TAG="prod-latest"
 
+EC2_HOST="${EC2_HOST:-13.202.0.21}"            # public IP / DNS of the instance
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/hobailabs-key.pem}" # path to the .pem used to SSH in
+
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo "HOBAILabs Production Deployment"
 echo "════════════════════════════════════════════════════════════════════════════════"
@@ -99,71 +102,39 @@ echo "  $ECR_REGISTRY/$ECR_REPO:$LATEST_TAG"
 echo ""
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Step 4: Update EC2 instance via SSM
+# Step 4: Update EC2 instance over SSH
 
-echo "[4/5] Updating EC2 instance ($EC2_INSTANCE_ID)..."
+echo "[4/5] Updating EC2 instance ($EC2_USER@$EC2_HOST) over SSH..."
 
-# Build commands as a JSON array
-CMD_PULL="docker pull $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
-CMD_STOP="docker rm -f hob_prod || true"
-CMD_RUN="docker run -d --name hob_prod --restart unless-stopped -p 7860:7860 -e AWS_REGION=$AWS_REGION -e BEDROCK_REGION=us-east-1 -e LLM_PROVIDER=bedrock --env-file /etc/hobailabs.env -v /srv/hob:/data $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
-CMD_WAIT="sleep 3"
-CMD_LOG="docker logs hob_prod | tail -10"
+if [ ! -f "$SSH_KEY" ]; then
+    echo "❌ SSH key not found at: $SSH_KEY"
+    echo "   Set the right path:  SSH_KEY=~/.ssh/your-key.pem ./deploy/prod.sh"
+    exit 1
+fi
 
-# Create properly escaped JSON parameters
-PARAMS=$(jq -n --arg cmd1 "$CMD_PULL" --arg cmd2 "$CMD_STOP" --arg cmd3 "$CMD_RUN" --arg cmd4 "$CMD_WAIT" --arg cmd5 "$CMD_LOG" \
-  '{commands: [$cmd1, $cmd2, $cmd3, $cmd4, $cmd5]}')
+REMOTE_IMG="$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
 
-# Send command to EC2 via SSM
-CMD_ID=$(aws ssm send-command \
-    --document-name "AWS-RunShellScript" \
-    --targets "Key=InstanceIds,Values=$EC2_INSTANCE_ID" \
-    --parameters "$PARAMS" \
-    --region "$AWS_REGION" \
-    --profile "$AWS_PROFILE" \
-    --query 'Command.CommandId' \
-    --output text)
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$EC2_USER@$EC2_HOST" bash -s <<EOF
+set -e
+aws ecr get-login-password --region $AWS_REGION \
+  | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+sudo docker pull $REMOTE_IMG
+sudo docker rm -f hob_prod || true
+sudo docker run -d --name hob_prod --restart unless-stopped \
+  -p 7860:7860 \
+  -e AWS_REGION=$AWS_REGION -e BEDROCK_REGION=us-east-1 -e LLM_PROVIDER=bedrock \
+  --env-file /etc/hobailabs.env \
+  -v /srv/hob:/data \
+  $REMOTE_IMG
+sleep 3
+sudo docker logs hob_prod 2>&1 | tail -10
+EOF
 
-echo "✓ Command sent to EC2 (Command ID: $CMD_ID)"
-echo "  Waiting for execution (may take 30s)..."
-echo ""
-
-# Poll for command completion
-for i in {1..30}; do
-    STATUS=$(aws ssm get-command-invocation \
-        --command-id "$CMD_ID" \
-        --instance-id "$EC2_INSTANCE_ID" \
-        --region "$AWS_REGION" \
-        --profile "$AWS_PROFILE" \
-        --query 'Status' \
-        --output text 2>/dev/null || echo "")
-
-    if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ]; then
-        break
-    fi
-    sleep 1
-done
-
-# Get the output
-OUTPUT=$(aws ssm get-command-invocation \
-    --command-id "$CMD_ID" \
-    --instance-id "$EC2_INSTANCE_ID" \
-    --region "$AWS_REGION" \
-    --profile "$AWS_PROFILE" \
-    --query 'StandardOutputContent' \
-    --output text 2>/dev/null || echo "")
-
-if [ "$STATUS" = "Success" ]; then
+if [ $? -eq 0 ]; then 
     echo "✓ EC2 container updated successfully"
-    echo ""
-    echo "Output from EC2:"
-    echo "$OUTPUT" | tail -10
 else
-    echo "⚠️  Command status: $STATUS"
-    if [ ! -z "$OUTPUT" ]; then
-        echo "Output:"
-        echo "$OUTPUT"
-    fi
+    echo "❌ SSH deploy failed — check key path, host, and security-group port 22"
+    exit 1
 fi
 
 echo ""
