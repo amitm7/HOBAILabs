@@ -280,12 +280,24 @@ el('sb-close')?.addEventListener('click', () => {
   el('server-browser').style.display = 'none';
 });
 
-// ── Parse script ──────────────────────────────────────────────────────────
+// ── Parse script / story intake ───────────────────────────────────────────
 
-el('parse-btn').addEventListener('click', async () => {
+function setInputMode(mode) {
+  const isStory = mode === 'story';
+  el('story-intake-panel').style.display = isStory ? 'block' : 'none';
+  el('manual-script-panel').style.display = isStory ? 'none' : 'block';
+  el('mode-manual-label')?.classList.toggle('active', !isStory);
+  el('mode-story-label')?.classList.toggle('active', isStory);
+}
+
+document.querySelectorAll('input[name="story-input-mode"]').forEach(radio => {
+  radio.addEventListener('change', () => setInputMode(radio.value));
+});
+
+async function parseCurrentScript() {
   const script    = el('script-input').value.trim();
   const assetsDir = el('assets-dir').value.trim();
-  if (!script) { alert('Paste a script first.'); return; }
+  if (!script) { alert('Paste a script first, or use "I have a story" to draft frames.'); return; }
 
   el('parse-btn').disabled = true;
   el('parse-btn').textContent = 'Parsing…';
@@ -331,6 +343,52 @@ el('parse-btn').addEventListener('click', async () => {
   } finally {
     el('parse-btn').disabled = false;
     el('parse-btn').textContent = 'Parse Frames →';
+  }
+}
+
+el('parse-btn').addEventListener('click', parseCurrentScript);
+
+el('draft-story-btn')?.addEventListener('click', async () => {
+  const story = el('raw-story-input')?.value.trim() || '';
+  if (!story) { alert('Paste the raw story first.'); return; }
+  const btn = el('draft-story-btn');
+  const status = el('story-draft-status');
+  btn.disabled = true;
+  btn.textContent = 'Drafting frames...';
+  if (status) status.textContent = 'Calling story director...';
+  try {
+    const res = await post('/story-intake', {
+      story,
+      max_frames: parseInt(el('story-max-frames')?.value || '10', 10),
+      target_seconds: parseInt(el('story-target-sec')?.value || '45', 10),
+      tone: el('story-tone')?.value || '',
+      audience: 'Instagram Reels viewers',
+      assets_dir: el('assets-dir')?.value.trim() || '',
+      subject_name: el('subject-name')?.value.trim() || '',
+      subject_description: el('subject-description')?.value.trim() || '',
+    });
+    if (res.error) throw new Error(res.error);
+    el('script-input').value = res.script || '';
+    setInputMode('manual');
+    const manualRadio = document.querySelector('input[name="story-input-mode"][value="manual"]');
+    if (manualRadio) manualRadio.checked = true;
+    const draftNote = el('story-draft-note');
+    if (draftNote) {
+      draftNote.style.display = 'block';
+      draftNote.className = `draft-note ${res.status === 'ai_draft' ? 'ok' : 'warn'}`;
+      draftNote.textContent = `${res.status === 'ai_draft' ? 'AI draft' : 'Fallback draft'}: ${res.note || 'Review and edit before preview/render.'}`;
+    }
+    if (status) {
+      const label = res.status === 'ai_draft' ? 'AI draft ready' : 'Fallback draft ready';
+      status.innerHTML = `<span class="${res.status === 'ai_draft' ? 'text-green' : 'text-dim'}">${label}. Review before render.</span>`;
+    }
+    await parseCurrentScript();
+  } catch (err) {
+    if (status) status.innerHTML = `<span class="text-red">Draft failed: ${escHtml(err.message)}</span>`;
+    else alert('Draft failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Draft frames with AI';
   }
 });
 
@@ -842,6 +900,9 @@ function renderFrameCards(frames) {
     if (window.HOB_MODE === 'brand' && typeof window.augmentBrandCard === 'function') {
       window.augmentBrandCard(card, f);
     }
+    if (window.HOB_MODE === 'studio' && typeof window.augmentStudioCard === 'function') {
+      window.augmentStudioCard(card, f);
+    }
 
     // Wire photo upload
     card.querySelector(`input[type="file"][data-frame]`).addEventListener('change', async (e) => {
@@ -996,10 +1057,16 @@ function buildPayload() {
       video_model_override: ov.model_override || '',
       video_start_sec: vstartEl  ? parseFloat(vstartEl.value)||0    : (f.video_start_sec  || 0),
       speaker_id:      ov.speaker_id || f.speaker_id || 'narrator',
-      product_beat:    ov.product_beat || false,   // brand mode (ignored in story mode)
+      product_beat:    ov.product_beat !== undefined ? ov.product_beat : (f.product_beat || false),
       layout:           ov.layout !== undefined ? ov.layout : (f.layout || {}),
       caption_position:  el(`cappos-${f.frame_id}`)?.value || '',     // '' = use global
       caption_max_lines: el(`caplines-${f.frame_id}`)?.value || '',   // '' = use global
+      // Studio Mode identity + per-shot controls (ignored in story/brand).
+      talent_id:        ov.talent_id !== undefined ? ov.talent_id : (f.talent_id || ''),
+      product_id:       ov.product_id !== undefined ? ov.product_id : (f.product_id || ''),
+      uses_talent:      f.uses_talent !== undefined ? f.uses_talent : true,
+      negative_prompt:  ov.negative_prompt !== undefined ? ov.negative_prompt : (f.negative_prompt || ''),
+      continuity_lock:  ov.continuity_lock !== undefined ? ov.continuity_lock : (f.continuity_lock || ''),
     };
   });
 
@@ -1040,8 +1107,34 @@ function buildPayload() {
   if (window.HOB_MODE === 'brand' && typeof window.buildBrandPayload === 'function') {
     Object.assign(payload, window.buildBrandPayload());
   }
+  // Studio mode: merge mode + scope (studio.js owns the brief/library panel).
+  if (window.HOB_MODE === 'studio' && typeof window.buildStudioPayload === 'function') {
+    Object.assign(payload, window.buildStudioPayload());
+  }
   return payload;
 }
+
+// Studio Mode: let studio.js drop a planned frames[] straight into the editor,
+// reusing the exact same population path as Parse Frames.
+window.applyStudioPlan = (frames, cast) => {
+  parsedFrames = frames || [];
+  parsedCast = cast || [];
+  postingCaption = '';
+  frameOverrides = {};
+  speakerVoices = {};
+  frameApprovals = {};
+  previewReady = false;
+  framePreviewPath = {};
+  renderCastPanel(parsedCast);
+  renderFrameCards(parsedFrames);
+  renderPostingKitPanel();
+  el('frames-card').style.display = 'block';
+  el('frames-count').textContent = `${parsedFrames.length} frames`;
+  const presetSec = parseInt(el('target-sec')?.value || '0');
+  if (presetSec > 0) redistributeDurations(presetSec); else updateTotalDur();
+  el('frames-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  loadModels().then(() => { populateModelSelects(); populateFrameModelSelects(); renderCostEstimate(); });
+};
 
 // ── Preview Stills (cheap pre-check before paying for animation) ───────────
 

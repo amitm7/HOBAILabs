@@ -31,7 +31,7 @@
 
 ## 0. What This App Does (Plain English)
 
-You give the app a **story written as short lines** (a script) and a **folder of photos/videos**. It returns a **finished vertical video** ready to post on Instagram Reels or YouTube Shorts — with captions on screen, background music, and cinematic camera movement on each photo.
+You give the app either a **frame-by-frame script** or a **raw story/notes/transcript**, plus an optional **folder of photos/videos**. It returns a **finished vertical video** ready to post on Instagram Reels or YouTube Shorts — with captions on screen, background music, and cinematic camera movement on each photo.
 
 **Think of it like an automated video editor with a film director's brain.** For each line of your story, it decides what should be on screen, how the camera should move, and how it should feel emotionally — then assembles everything into one reel.
 
@@ -231,6 +231,30 @@ Bold animated/ kinetic on-screen text (price tags, badges, word-by-word callouts
 and product picture-in-picture are **Phase B2** — B1 uses bold static captions as
 the on-screen text.
 
+## 3d. Studio Mode (`/studio`)
+
+A third page where you **type a brief and get a full reel** — no script to write.
+It shares the same engine plus an **identity library**. Open it from the **🎬
+Studio mode** link in the header. See [docs/MODE3_PLAN.md](docs/MODE3_PLAN.md).
+
+**How it works:**
+- **Identity library** — save a **Talent** (a face) and/or a **Product** (a photo
+  + specs) once. Studio locks them across every shot, so the same person and the
+  same product appear consistently. They're reusable across future reels.
+- **Brief → shots** — pick a scope (*Commerce* for product/fashion/jewelry ads, or
+  *General* for any idea), write a plain-language brief, and click **✨ Plan shots**.
+  The AI drafts editable shot cards: on-screen line, camera move, and shot size.
+- **Product fidelity** — on shots you mark **🛍 Product beat**, the *real* product
+  image is used directly (never re-generated), so logos and fine detail stay exact.
+- **Per-shot controls** — each card has a **Talent**/**Product** selector, a
+  **Negative prompt** (what to avoid), and a **Continuity lock** (outfit/styling
+  that must not change). Sensible defaults are prefilled.
+- **The AI may draft on-screen lines** here (you edit them). All text still passes
+  the safety moderation gate. Regulated ad claims/CTA/disclosure stay
+  operator-supplied only in **Brand mode**.
+- Everything else — Preview Stills, cost estimate, Generate, editor hand-off — is
+  the same as the other modes.
+
 ## 4. Web UI — Step by Step
 
 ### Step 1: Subject (optional)
@@ -242,12 +266,18 @@ the on-screen text.
   `woman, 30s, strong features, traditional clothing`). Helps most with the
   **Consistent face** toggle; safe to leave empty.
 
-### Step 2: Paste Script + Set Assets Folder
-- **Script box**: Paste your Format B script
+### Step 2: Start from a Script or a Raw Story + Set Assets Folder
+- **I already have a frame script**: paste your Format B script, then click **Parse Frames →**.
+- **I have a story**: paste raw story text, notes, or a transcript. Choose max frames,
+  target length, and tone, then click **Draft frames with AI**. The app fills an
+  editable Format B script and parses it into frame cards.
+- **Important:** AI drafts only. Always review/edit the generated frames before
+  previewing or rendering.
 - **Assets folder**: Full path to your photos/videos folder, or use **Browse
   folder…** / **Server folder…**
   - Leave blank for AI-only generation
-- Click **Parse Frames →**
+- If you used manual mode, click **Parse Frames →**. If you used story mode, the
+  generated script is parsed automatically after drafting.
 - After parsing: check `✓ N photos matched` — this confirms auto-matching worked
 - On parse the app also **detects who speaks each beat** and **suggests** a camera
   move, image edit, and director note per frame (see below).

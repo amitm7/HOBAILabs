@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import unittest
 
@@ -188,6 +189,42 @@ Full social caption.
             self.assertTrue(kit.get_json()["hashtags"])
 
     def test_growth_pilot_routes(self):
+        from agents import llm
+        original_chat = llm.chat
+
+        def fake_chat(*_args, **_kwargs):
+            return json.dumps({
+                "frames": [
+                    {
+                        "role": "hook",
+                        "caption": "I started small.",
+                        "voiceover": "I started small.",
+                        "visual_need": "real_photo_preferred",
+                        "media_query": "early humble beginning",
+                        "motion_hint": "slow push-in",
+                        "duration": 4,
+                        "confidence": "high",
+                        "operator_note": "Use a real early photo if available.",
+                    },
+                    {
+                        "role": "outcome",
+                        "caption": "Then I won.",
+                        "voiceover": "Then I won.",
+                        "visual_need": "ai_symbolic",
+                        "media_query": "victory moment",
+                        "motion_hint": "crane up",
+                        "duration": 4,
+                        "confidence": "medium",
+                        "operator_note": "Check that the ending is factual.",
+                    },
+                ],
+                "posting_caption": "I started small. Then I won.",
+                "tone_note": "Respectful founder journey.",
+            })
+
+        llm.chat = fake_chat
+        self.addCleanup(lambda: setattr(llm, "chat", original_chat))
+
         with app.test_client() as client:
             blocked = client.post("/story-intake", json={"mode": "brand", "story": "A real story."})
             self.assertEqual(blocked.status_code, 400)
@@ -195,8 +232,12 @@ Full social caption.
             story = client.post("/story-intake", json=ok_payload)
             self.assertEqual(story.status_code, 200)
             story_json = story.get_json()
-            self.assertEqual(story_json["status"], "draft_scaffold")
+            self.assertEqual(story_json["status"], "ai_draft")
             self.assertIn("Frame 1", story_json["script"])
+            self.assertIn("frames_meta", story_json)
+            parsed = client.post("/parse-script", json={"script": story_json["script"], "assets_dir": ""})
+            self.assertEqual(parsed.status_code, 200)
+            self.assertGreaterEqual(len(parsed.get_json()["frames"]), 2)
             hooks = client.post("/hook-workshop", json={**ok_payload, "frames": [{"caption": "My first line"}]})
             self.assertEqual(hooks.status_code, 200)
             hooks_json = hooks.get_json()
@@ -209,6 +250,24 @@ Full social caption.
             self.assertIn("Hindi", variants_json["variants"])
             self.assertEqual(variants_json["variants"]["Hindi"][0]["draft_caption"], "")
             self.assertIn("source_caption", variants_json["variants"]["Hindi"][0])
+
+    def test_story_intake_fallback_remains_parseable(self):
+        from agents import llm
+        from agents.growth import story_to_draft
+        original_chat = llm.chat
+        llm.chat = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline"))
+        self.addCleanup(lambda: setattr(llm, "chat", original_chat))
+
+        draft = story_to_draft("I started small. Then I won.", max_frames=4)
+        self.assertEqual(draft["status"], "fallback_draft")
+        self.assertIn("Frame 1", draft["script"])
+        self.assertIn("Caption:", draft["script"])
+        with tempfile.TemporaryDirectory() as td:
+            script = os.path.join(td, "draft.txt")
+            with open(script, "w", encoding="utf-8") as fp:
+                fp.write(draft["script"])
+            frames = parse_frame_script(script, "")
+        self.assertGreaterEqual(len(frames), 1)
 
     def test_run_store_persists_payload_and_logs(self):
         run_id = f"unit-run-{os.getpid()}"

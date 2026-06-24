@@ -16,6 +16,7 @@ finished, captioned, scored **9:16 MP4** — for two distinct use cases sharing 
 |---|---|---|
 | **Story / creator mode** | `/` | HOB team creating personal story reels |
 | **Brand / Ad mode (B1)** | `/brand` | Creator + brand partners doing paid collabs |
+| **Studio mode (MODE3)** | `/studio` | Prompt → full reel with a reusable Talent/Product identity library; commerce + general scopes |
 
 The defining product principle is **realism preservation + test-cheap/finish-expensive**:
 real user media is never AI-regenerated; per-shot routing uses cheap models in Dev and
@@ -32,10 +33,11 @@ premium in Production.
 - Suggestion chips (camera / image-edit / director note per frame)
 - Brand / Ad mode (B1): brief extraction, brand kit, product beats, mandatories hard-block, CTA end-card, disclosure, VO-over-ducked-music
 - Font options: Montserrat (bundled), Satoshi (drop-in when licensed)
-- Governed roadmap thin slices: caption safe-zone, keyword highlights, read-only
-  timeline, story-mode posting kit, text-card layout preset, lightweight editor
-  export, redo-motion clip refresh, consent/spend governance, restart-safe run
-  metadata, and SQLite stand-ins for asset/approval/version records.
+- Governed roadmap thin slices: AI story→editable frame draft intake, caption
+  safe-zone, keyword highlights, read-only timeline, story-mode posting kit,
+  text-card layout preset, lightweight editor export, redo-motion clip refresh,
+  consent/spend governance, restart-safe run metadata, and SQLite stand-ins for
+  asset/approval/version records.
 
 **Out of scope (today):** multi-tenant accounts, persistent job DB, batch/queue
 production, beat-synced cuts, kinetic motion-graphics (B2), multi-platform export,
@@ -86,6 +88,9 @@ CLIP-based scoring — these are on the roadmap (§9).
 |---|---|---|
 | **Web UI** | Flask + server-rendered templates + SSE | Parse script, preview stills, estimate cost, stream progress logs, serve/download output and lightweight editor exports. Per-`run_id` state is mirrored to a lightweight run store. |
 | **Brand UI layer** | `brand.html` + `brand.js` (hooks into `main.js`) | Additional brief panel, brand-kit uploads, mandatories checklist, product-beat toggles. No fork of the engine. |
+| **Studio UI layer** | `studio.html` + `studio.js` (hooks into `main.js`) | Brief→shots planner, reusable Talent/Product identity library, per-shot talent/product/negative/continuity controls. Same hook pattern as brand; no fork. |
+| **Shot planner** | `agents/shot_planner.py` | One cached LLM call: brief (+scope, +locked talent/product) → editable `frames[]`. Graceful sentence-split fallback. |
+| **Identity library** | `agents/product_surface.py` (`talents`, `products`) | SQLite-backed reusable Talent (face) + Product (ref + specs) assets, locked across shots/runs. |
 | **CLI** | `argparse` + `run_caption.py` | Headless render; dry-run cost plan; all flags the UI exposes. |
 | **Render pipeline** | `agents/*` Python modules | The actual work: parse → treatment → scene-design → cast → assign visuals → edit → lip-sync → animate → caption → assemble → (brand post-pass). |
 | **Cast module** | `agents/cast.py` | Detect speakers per frame, build cast list, resolve voice priority per speaker. |
@@ -137,6 +142,13 @@ frame = {
   # ── brand mode extras ──
   "product_beat": False,       # real product shot — skip AI gen if True
   "suggestions": { "camera": [...], "edit": [...], "note": [...] },
+
+  # ── studio mode extras (MODE3) ──
+  "talent_id": "tal_…",        # locked reusable face (product_surface.talents)
+  "product_id": "prd_…",       # locked reusable product (product_surface.products)
+  "talent_ref_path": "/abs/…", # resolved talent reference → identity-edit lock
+  "negative_prompt": "...",    # per-shot Kling negative (default if blank)
+  "continuity_lock": "...",    # outfit/styling that must not change (→ image prompt)
 
   # ── per-frame caption overrides (blank = use global caption_style) ──
   "caption_position": "top",   # bottom|middle|top — overrides global default

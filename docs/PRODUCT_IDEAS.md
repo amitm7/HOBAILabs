@@ -19,9 +19,9 @@ with deep investment only where HOB has a moat.
 
 These are worth serious internal investment because they support the real moat:
 
-1. **`STR-2` real story -> script intake.** Replace the current draft scaffold with
-   real LLM-assisted segmentation from long stories first; voice memo/transcription
-   can follow.
+1. **`STR-2` real story -> script intake.** The first LLM-assisted editable draft
+   flow is in scope now: raw story -> frame script -> human edit -> render. Voice
+   memo/transcription can follow.
 2. **Better media matching / reusable HOB asset intelligence.** Build the asset
    memory that knows which real photos, clips, generated stills, voices, music, and
    brand kits belong to which story beats.
@@ -49,12 +49,13 @@ investment.
 
 ### Current thin-slice reality
 
-The current codebase includes useful scaffolds for `/story-intake`, `/hook-workshop`,
+The current codebase includes useful bridges for `/story-intake`, `/hook-workshop`,
 `/caption-variants`, `/render-variants`, consent/spend governance, run persistence,
 asset records, and brand approval rows. Treat these as **bridges**, not final product
 implementations:
 
-- Story intake is draft segmentation, not real long-form story understanding.
+- Story intake is an LLM-assisted editable draft path, not voice memo/transcription
+  or a direct-to-render automation.
 - Hook workshop returns editable draft hooks, not validated virality predictions.
 - Caption variants are placeholders, not translations or dubbing.
 - Multi-format variants are descriptors, not a full re-render/export product.
@@ -154,9 +155,9 @@ and integrations.
 - [ ] **STR-2 · Story → script intake (the missing engine)** — **L** — **Build Deeply.** Paste a 2,000-word story
   (or drop a voice memo / interview audio → transcribe) → AI segments it into a frame-by-frame
   reel script with suggested beats. Widens the funnel 10×; matches how HOB actually sources
-  content. **Highest-leverage single bet.** The current `/story-intake` route is only a
-  labelled draft scaffold; the must-have version needs real LLM-assisted segmentation and
-  editable beat confidence. *Dep: none (upstream of the whole pipeline).*
+  content. **Highest-leverage single bet.** The current `/story-intake` route now creates
+  an editable LLM-assisted Format B draft; voice memo/transcription, deeper media matching,
+  and richer beat confidence remain future deepening. *Dep: none (upstream of the whole pipeline).*
 - [ ] **STR-3a · Posting kit (cheap, no new render)** — **S** — **mostly done as a thin slice.** Generate the Instagram caption +
   hashtags from the already-parsed `Caption:` block (story-mode only — the one place AI copy is
   welcome) and pick a cover/thumbnail frame. **No extra render spend, no real-person risk** → ships
@@ -264,9 +265,9 @@ Owner + a one-line "done" each — lightweight, not a process doc.*
   may it exist; readiness floor = may it go default/at scale.)*
 - **`F5` identity** grows with operator count — light at 2–3 trusted people, required at 10+.
 
-Behind the gate: `STR-2` real story intake, any production multi-language/dubbing, any hook
+Behind the gate: scaled `STR-2` real story intake, any production multi-language/dubbing, any hook
 workshop that creates paid image/motion variants, and any multi-format/cutdown workflow that
-re-renders. Today these are scaffold/payload routes, not final products.
+re-renders. Today these are editable draft/payload routes, not direct-to-render products.
 
 ### Must-have order from here
 1. `STR-2` real story -> script intake.
@@ -306,7 +307,7 @@ friction.
   `STR-4` multi-language, and `STR-5` hook workshop multiply spend. Track A's `F2` spend caps +
   ledger + estimator coverage must arrive *with* those features (they're behind the commercial gate),
   not after — or unit economics break and bills can't be attributed.
-- **Scaffolds are not products.** `/story-intake`, `/hook-workshop`, `/caption-variants`,
+- **Drafts are not final products.** `/story-intake`, `/hook-workshop`, `/caption-variants`,
   `/render-variants`, lightweight approvals, and SQLite governance are useful bridges, but they
   should not be sold internally as completed moat features.
 - **Consent / PII / content-rights is a policy gate, not a feature.** HOB's raw material is real

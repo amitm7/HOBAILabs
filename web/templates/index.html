@@ -10,7 +10,7 @@
 
 <header>
   <h1>HOBAILabs</h1>
-  <span>Story → Reel Pipeline — <a href="/brand" style="color:var(--accent2,#6cf)">🛍 Brand / Ad mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
+  <span>Story → Reel Pipeline — <a href="/studio" style="color:var(--accent2,#6cf)">🎬 Studio mode</a> · <a href="/brand" style="color:var(--accent2,#6cf)">🛍 Brand / Ad mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
 </header>
 
 <main>
@@ -53,10 +53,10 @@
     </div>
   </div>
 
-  <!-- ── Script ──────────────────────────────────────────── -->
+  <!-- ── Start / Script ──────────────────────────────────── -->
   <div class="card">
     <div class="card-header">
-      <h2>Story Script</h2>
+      <h2>Start Your Reel</h2>
       <button class="btn-secondary btn-small" id="parse-btn">Parse Frames →</button>
     </div>
     <div class="card-body">
@@ -100,7 +100,66 @@
         <span id="assets-status"></span>
       </div>
 
-      <div class="field" style="margin-top:14px">
+      <div class="start-help">
+        <b>How to start:</b> pick one of the two ways below.
+        <b>“I already have a frame script”</b> — paste a finished Format B script and click <b>Parse Frames →</b>.
+        <b>“I have a story”</b> — paste raw text and let AI draft editable frames first. Either way, you review and edit the frame cards before Preview/Render.
+      </div>
+
+      <div class="input-mode-tabs" style="margin-top:14px">
+        <label class="input-mode-option active" id="mode-manual-label">
+          <input type="radio" name="story-input-mode" value="manual" checked>
+          I already have a frame script
+        </label>
+        <label class="input-mode-option" id="mode-story-label">
+          <input type="radio" name="story-input-mode" value="story">
+          I have a story
+        </label>
+      </div>
+
+      <div id="story-intake-panel" class="story-intake-panel" style="display:none">
+        <ol class="story-steps">
+          <li>Paste your raw story, notes, or interview transcript below.</li>
+          <li>Set max frames, target length, and tone.</li>
+          <li>Click <b>Draft frames with AI</b> — it writes an editable script.</li>
+          <li>Review &amp; edit the frame cards that appear (AI never renders directly).</li>
+          <li>Then run <b>Preview Stills</b> and <b>Generate</b> as usual.</li>
+        </ol>
+        <div class="field">
+          <label>Raw story / notes / transcript</label>
+          <textarea id="raw-story-input" style="min-height:150px"
+            placeholder="Paste the full story here. The AI will draft editable frame-by-frame beats before you render."></textarea>
+          <small>AI drafts only. You will review and edit frames before preview/render.</small>
+        </div>
+        <div class="grid-3">
+          <div class="field">
+            <label>Max frames</label>
+            <input type="number" id="story-max-frames" min="4" max="20" value="10">
+          </div>
+          <div class="field">
+            <label>Target length</label>
+            <select id="story-target-sec">
+              <option value="30">30s</option>
+              <option value="45" selected>45s</option>
+              <option value="60">60s</option>
+              <option value="90">90s</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tone</label>
+            <select id="story-tone">
+              <option value="emotional, respectful, hopeful">Emotional / respectful</option>
+              <option value="inspiring founder journey">Founder journey</option>
+              <option value="cinematic human story">Cinematic human story</option>
+              <option value="brand-safe testimonial">Brand-safe testimonial</option>
+            </select>
+          </div>
+        </div>
+        <button type="button" class="btn-primary" id="draft-story-btn">Draft frames with AI</button>
+        <span id="story-draft-status" class="text-dim"></span>
+      </div>
+
+      <div class="field" id="manual-script-panel" style="margin-top:14px">
         <textarea id="script-input"
           placeholder="Paste your Reels script here (Format B):
 
@@ -116,6 +175,7 @@ I was just an Assamese girl, living in a 1RK...
 Caption:
 (Social media caption here — not shown in video)"></textarea>
         <small>Supports [photo: filename|ai_portrait|ai_symbolic], [note: director instructions], [duration: 7s], [edit: add rain], [start: 3s] per frame</small>
+        <div id="story-draft-note" class="draft-note" style="display:none"></div>
       </div>
     </div>
   </div>
