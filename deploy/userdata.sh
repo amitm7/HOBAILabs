@@ -36,6 +36,14 @@ LLM_PROVIDER=openai
 AWS_REGION=ap-south-1
 BEDROCK_REGION=us-east-1
 HOB_CACHE_BACKEND=fs
+# Durable state on the EBS volume (default /tmp is ephemeral → would wipe
+# operators/consent/performance on redeploy). HOB_COOKIE_SECURE: Secure cookie
+# behind Caddy TLS. HOB_AUTH_SECRET stays a real SSM SecureString.
+HOB_RUNS_DB=/data/.hob_cache/db/hob_runs.db
+HOB_GOVERNANCE_DB=/data/.hob_cache/db/hob_governance.db
+HOB_DB_DIR=/data/.hob_cache/db
+HOB_RUNS_DIR=/data/.hob_cache/runs
+HOB_COOKIE_SECURE=1
 EOF
 
 # App container (bound to localhost; Caddy terminates TLS in front)
