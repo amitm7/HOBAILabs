@@ -16,7 +16,9 @@ import zipfile
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, make_response, render_template, request, send_file
+
+from agents import auth
 
 load_dotenv(override=True)
 
@@ -93,6 +95,45 @@ class _LogCapture:
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+
+# ── Operator auth (Gap #1) ─────────────────────────────────────────────────────
+# Money/rights routes are gated by @auth.require_operator. The token rides in an
+# httpOnly cookie so existing same-origin fetch() calls carry it transparently;
+# Bearer is also accepted for API clients. Seed operators with:
+#   python -m agents.auth add-operator <id> <email> --role approver
+_AUTH_COOKIE = "hob_token"
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    token = auth.authenticate(str(data.get("operator_id", "")), str(data.get("password", "")))
+    if not token:
+        return jsonify({"error": "invalid credentials"}), 401
+    claims = auth.verify_token(token) or {}
+    resp = make_response(jsonify({"ok": True, "operator": claims.get("sub"), "role": claims.get("role")}))
+    # Secure flag honoured behind TLS in prod; SameSite=Lax keeps the cookie on
+    # same-origin XHR while blocking cross-site CSRF on the gated POSTs.
+    resp.set_cookie(_AUTH_COOKIE, token, httponly=True, samesite="Lax",
+                    secure=bool(os.environ.get("HOB_COOKIE_SECURE")), max_age=auth._TOKEN_TTL)
+    return resp
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    resp = make_response(jsonify({"ok": True}))
+    resp.delete_cookie(_AUTH_COOKIE)
+    return resp
+
+
+@app.route("/me")
+def whoami():
+    claims = auth.verify_token(request.cookies.get(_AUTH_COOKIE, ""))
+    if not claims and os.environ.get("HOB_AUTH_DISABLED") == "1":
+        claims = {"sub": "dev", "role": "admin"}
+    return jsonify({"operator": claims.get("sub"), "role": claims.get("role")} if claims
+                   else {"operator": None})
+
 
 @app.route("/")
 def index():
@@ -457,15 +498,18 @@ def asset_register():
 
 
 @app.route("/brand-approval", methods=["POST"])
-def brand_approval():
+@auth.require_operator("approver")
+def brand_approval(operator: str):
     data = request.json or {}
     project_id = data.get("project_id") or data.get("session_id") or "default"
     from agents.product_surface import record_approval
-    return jsonify({"approval": record_approval(project_id, data, approver=data.get("approver") or data.get("operator_id", ""))})
+    # Approver identity comes from the verified token, never the request body.
+    return jsonify({"approval": record_approval(project_id, data, approver=operator)})
 
 
 @app.route("/project-version", methods=["POST"])
-def project_version():
+@auth.require_operator()
+def project_version(operator: str):
     data = request.json or {}
     project_id = data.get("project_id") or data.get("session_id") or "default"
     from agents.product_surface import save_version
@@ -771,8 +815,10 @@ def _estimate_payload_cost(data: dict) -> float:
 
 
 @app.route("/run", methods=["POST"])
-def run_pipeline():
+@auth.require_operator()
+def run_pipeline(operator: str):
     data = request.json or {}
+    data["operator_id"] = operator   # verified identity, not client-supplied
     err = _check_assets_dir(data)
     if err:
         return err
@@ -818,7 +864,8 @@ def run_pipeline():
 
 
 @app.route("/retry/<run_id>", methods=["POST"])
-def retry_run(run_id: str):
+@auth.require_operator()
+def retry_run(run_id: str, operator: str):
     """Re-dispatch a stored run payload; paid work should hit content caches."""
     from agents import run_store
     stored = run_store.load(run_id)
@@ -842,7 +889,8 @@ def retry_run(run_id: str):
 
 
 @app.route("/preview", methods=["POST"])
-def preview_stills():
+@auth.require_operator()
+def preview_stills(operator: str):
     """
     Generate only the STILL images (cheap) — no animation, no assembly.
     Lets the user see every image and add edits before paying for Kling/Higgsfield.
@@ -977,11 +1025,12 @@ def export_run(run_id: str):
 
 
 @app.route("/performance/<run_id>", methods=["POST"])
-def performance_feedback(run_id: str):
-    """Seed of the post-publish feedback loop: capture how a finished reel performed.
+@auth.require_operator()
+def performance_feedback(run_id: str, operator: str):
+    """Post-publish feedback loop: capture how a finished reel performed.
 
-    Optional/non-blocking — stored on the existing run row via run_store. Only the
-    finished output panel exposes this, so no in-flight save() is racing these fields.
+    Stored on the existing run row via run_store. Only the finished output panel
+    exposes this, so no in-flight save() is racing these fields.
     """
     from agents import run_store
     if not run_store.load(run_id):           # don't create phantom rows for unknown runs
@@ -994,11 +1043,13 @@ def performance_feedback(run_id: str):
         except (TypeError, ValueError):
             return None
 
+    note = str(data.get("note", ""))[:2000]
     run_store.save(
         run_id,
         performance_views=_int(data.get("views")),
         performance_likes=_int(data.get("likes")),
-        performance_note=str(data.get("note", ""))[:2000],   # cap free text
+        performance_note=note,
+        performance_by=operator,          # verified operator who logged the result
     )
     return jsonify({"ok": True, "run_id": run_id})
 

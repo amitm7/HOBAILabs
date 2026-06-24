@@ -103,6 +103,47 @@ function postForm(url, formData) {
   return fetch(url, { method: 'POST', body: formData }).then(r => r.json());
 }
 
+// ── Operator auth (Gap #1) ─────────────────────────────────────────────────────
+// The token lives in an httpOnly cookie, so every same-origin fetch carries it.
+// We only render identity + a login form here, and prompt on 401.
+async function refreshAuthBar() {
+  const bar = el('auth-bar');
+  if (!bar) return;
+  let me = { operator: null };
+  try { me = await fetch('/me').then(r => r.json()); } catch (e) {}
+  if (me.operator) {
+    bar.innerHTML = `<span class="muted">👤 ${me.operator} <span style="opacity:.7">(${me.role})</span></span>
+      <button type="button" class="btn-secondary btn-small" onclick="logoutOperator()">Log out</button>`;
+  } else {
+    bar.innerHTML = `<button type="button" class="btn-primary btn-small" onclick="showLogin()">Log in</button>`;
+  }
+}
+
+function showLogin(msg) {
+  const bar = el('auth-bar');
+  if (!bar) return;
+  bar.innerHTML = `
+    <input id="login-id" placeholder="operator" style="width:110px">
+    <input id="login-pw" type="password" placeholder="password" style="width:120px"
+           onkeydown="if(event.key==='Enter')loginOperator()">
+    <button type="button" class="btn-primary btn-small" onclick="loginOperator()">Sign in</button>
+    <span id="login-msg" class="muted" style="color:#e66">${msg || ''}</span>`;
+  const idEl = el('login-id'); if (idEl) idEl.focus();
+}
+
+async function loginOperator() {
+  const res = await post('/login', { operator_id: el('login-id').value, password: el('login-pw').value });
+  if (res && res.ok) refreshAuthBar();
+  else showLogin('invalid credentials');
+}
+
+async function logoutOperator() {
+  await post('/logout', {});
+  refreshAuthBar();
+}
+
+document.addEventListener('DOMContentLoaded', refreshAuthBar);
+
 // ── Music toggles ─────────────────────────────────────────────────────────
 
 let voicesLoaded = false;

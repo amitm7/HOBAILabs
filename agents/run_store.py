@@ -37,6 +37,7 @@ def _conn() -> sqlite3.Connection:
             "error TEXT NOT NULL DEFAULT '', "
             "performance_views INTEGER, performance_likes INTEGER, "
             "performance_note TEXT NOT NULL DEFAULT '', "
+            "performance_by TEXT NOT NULL DEFAULT '', "
             "updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
         )
         # Back-compat: add the post-publish feedback columns to DBs created before this
@@ -46,6 +47,7 @@ def _conn() -> sqlite3.Connection:
             ("performance_views", "INTEGER"),
             ("performance_likes", "INTEGER"),
             ("performance_note", "TEXT NOT NULL DEFAULT ''"),
+            ("performance_by", "TEXT NOT NULL DEFAULT ''"),
         ):
             if _col not in _columns(con, "runs"):
                 try:
@@ -120,17 +122,18 @@ def save(run_id: str, **fields) -> None:
         "performance_views": fields.get("performance_views", existing.get("performance_views")),
         "performance_likes": fields.get("performance_likes", existing.get("performance_likes")),
         "performance_note": fields.get("performance_note", existing.get("performance_note", "")),
+        "performance_by": fields.get("performance_by", existing.get("performance_by", "")),
     }
     _conn().execute(
         "INSERT INTO runs(run_id, status, payload_json, run_dir, output_path, edit_list_path, error, "
-        "performance_views, performance_likes, performance_note, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now')) "
+        "performance_views, performance_likes, performance_note, performance_by, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now')) "
         "ON CONFLICT(run_id) DO UPDATE SET "
         "status=excluded.status, payload_json=excluded.payload_json, run_dir=excluded.run_dir, "
         "output_path=excluded.output_path, edit_list_path=excluded.edit_list_path, "
         "error=excluded.error, performance_views=excluded.performance_views, "
         "performance_likes=excluded.performance_likes, performance_note=excluded.performance_note, "
-        "updated_at=strftime('%s','now')",
+        "performance_by=excluded.performance_by, updated_at=strftime('%s','now')",
         (
             run_id,
             data["status"],
@@ -142,6 +145,7 @@ def save(run_id: str, **fields) -> None:
             data["performance_views"],
             data["performance_likes"],
             data["performance_note"],
+            data["performance_by"],
         ),
     )
     _conn().commit()
@@ -165,6 +169,7 @@ def _load_meta(run_id: str) -> dict | None:
         "performance_views": row["performance_views"],
         "performance_likes": row["performance_likes"],
         "performance_note": row["performance_note"],
+        "performance_by": row["performance_by"],
     }
 
 
