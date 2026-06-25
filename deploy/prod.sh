@@ -131,9 +131,13 @@ echo "  → pulling $REMOTE_IMG"
 sudo docker pull $REMOTE_IMG
 echo "  → recreating hob_prod"
 sudo docker rm -f hob_prod || true
+# LLM_PROVIDER is intentionally NOT hardcoded here — it's set in /etc/hobailabs.env
+# (the single source of truth) so the brain provider can be switched without editing
+# this script. As of 2026-06-25 it is 'openai' (gpt-4.1): Anthropic-on-Bedrock is
+# blocked for this account by a failed/zero-duration AWS Marketplace agreement.
 sudo docker run -d --name hob_prod --restart unless-stopped \
   -p 7860:7860 \
-  -e AWS_REGION=$AWS_REGION -e BEDROCK_REGION=us-east-1 -e LLM_PROVIDER=bedrock \
+  -e AWS_REGION=$AWS_REGION -e BEDROCK_REGION=us-east-1 \
   --env-file /etc/hobailabs.env \
   -v /srv/hob:/data \
   $REMOTE_IMG
