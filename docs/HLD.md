@@ -98,7 +98,7 @@ CLIP-based scoring — these are on the roadmap (§9).
 | **Suggestions module** | `agents/suggestions.py` | Batch fast-tier LLM call at parse time → camera/edit/note chips per frame. |
 | **Governance modules** | `agents/governance.py`, `agents/run_store.py`, `agents/product_surface.py` | Thin SQLite bridges for consent/spend gates, restart-safe run metadata, asset records, approval records, and version records before the full DB lands. |
 | **Model router** | `agents/model_router.py` + `config/models.json` | Pure logic: maps each shot to a model id given shot type + cost tier + overrides. |
-| **LLM brain** | `agents/llm.py` + `config/llm.json` | Single entry point for every reasoning/vision/fast call; OpenAI / Bedrock / Gemini backends; JSON schema enforcement. |
+| **LLM brain** | `agents/llm.py` + `config/llm.json` | Single entry point for every reasoning/vision/fast call; OpenAI / Anthropic (direct API) / Bedrock / Gemini backends; JSON schema enforcement. Anthropic-direct is the working Claude path when Bedrock isn't entitled (Marketplace-gated). |
 | **Cost engine** | `agents/pricing.py` + `config/pricing.json` | Single source of cost figures; whole-pipeline estimate (multi-shot aware). |
 | **Caches** | `~/.hob_cache/*` (filesystem) | Clips, scene designs, image descriptions, lip-sync clips+audio, generated stills (in asset folder, prompt-hash keyed). |
 

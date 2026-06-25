@@ -17,6 +17,14 @@
     "_note": "Cross-region (us.*) inference profiles. Claude 4.x requires an inference profile for on-demand; the bare foundation-model id is rejected (ValidationException). IDs must be the FULL versioned profile (us.anthropic.<model>-<date>-v1:0) — the un-versioned alias us.anthropic.claude-haiku-4-5 is NOT a valid identifier and 400s. VERIFY a candidate id against the account/region by probing Converse before trusting it. Per-tier override: LLM_REASONING_MODEL / LLM_VISION_MODEL / LLM_FAST_MODEL. IMPORTANT — model ACCESS must be enabled per model in Bedrock > Model access for the region: as of 2026-06-25 Claude Sonnet 4.6 access is NOT enabled in us-east-1 (Converse returns AccessDeniedException / aws-marketplace:Subscribe), so SceneIntelligence silently runs its fallback. Verified-WORKING ids in this account/us-east-1: us.anthropic.claude-sonnet-4-5-20250929-v1:0 and us.anthropic.claude-haiku-4-5-20251001-v1:0. Stopgap until 4.6 access is enabled: set LLM_REASONING_MODEL / LLM_VISION_MODEL to the 4.5 profile via env. The profile routes across us-east-1/us-east-2/us-west-2, so the IAM policy must allow foundation-model ARNs in all three + the inference-profile ARN. Bedrock uses IAM (instance role) — no API key."
   },
 
+  "anthropic": {
+    "reasoning": "claude-sonnet-4-6",
+    "vision":    "claude-sonnet-4-6",
+    "fast":      "claude-haiku-4-5",
+    "_note": "Direct Anthropic API (api.anthropic.com) via ANTHROPIC_API_KEY — independent of Bedrock/Marketplace; the working Claude path when Bedrock isn't entitled. Bare first-party model ids (NO us.* prefix, NO version/date suffix). Sonnet 4.6 is the credit-safe brain default; bump reasoning to 'claude-opus-4-8' for client/final renders (best quality, ~1.7x brain cost — and Opus 4.8 IS available here, unlike Bedrock). temperature is auto-dropped for Opus 4.7/4.8/Fable (they 400 on sampling params). Set LLM_PROVIDER=anthropic.",
+    "_billing": "Direct Anthropic billing/credit — does NOT use AWS credits."
+  },
+
   "gemini": {
     "reasoning": "gemini-2.5-flash",
     "vision":    "gemini-2.5-flash",

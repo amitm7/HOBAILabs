@@ -17,7 +17,7 @@ agents/
   script_parser.py        text → frames[]  (Format A/B, annotations, auto-match)
   image_matcher.py        opt-in LLM content match (describe → assign); SQLite cache
   scene_intelligence.py   LLM director: treatment pass + per-frame scene design + vision-grounded motion
-  llm.py                  pluggable chat()/vision brain (OpenAI|Bedrock|Gemini), 3 tiers + JSON schema
+  llm.py                  pluggable chat()/vision brain (OpenAI|Anthropic|Bedrock|Gemini), 3 tiers + JSON schema
   shot_planner.py         Studio mode: brief (+scope/talent/product) → frames[] (cached, schema, fallback)
   model_router.py         shot → model id (pure logic over config/models.json)
   image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends); prompt-hash cache
@@ -181,18 +181,19 @@ into the system prompt. This eliminates partial-JSON parse failures.
 - **Message format is provider-neutral:** `content` is a string or a list of
   `{type:text}` / `{type:image, path|data_uri}` parts. Each backend translates:
   - **OpenAI** ([:121](../agents/llm.py#L121)) — `image_url` data-URIs.
-  - **Bedrock Converse** ([:151](../agents/llm.py#L151)) — system blocks separated; images as raw bytes; IAM auth.
-  - **Gemini** ([:195](../agents/llm.py#L195)) — `system_instruction` + PIL images.
-- **`json_loads_lenient`** strips ```` ```json ```` fences and slices outer braces.
-- Singletons: `_openai_client()` and `_bedrock_client()` are cached so the heavy SDK
-  init happens once per process.
+  - **Anthropic (direct API)** (`_anthropic_chat`) — top-level `system`, typed text/image (base64) blocks, `ANTHROPIC_API_KEY`. Independent of Bedrock/Marketplace; the working Claude path when Bedrock isn't entitled. Bare model ids (no `us.*`/version suffix). `temperature` auto-dropped for Opus 4.7/4.8/Fable (they 400 on sampling params).
+  - **Bedrock Converse** — system blocks separated; images as raw bytes; IAM auth. Versioned `us.*` inference-profile ids required; needs a Marketplace agreement (account-gated).
+  - **Gemini** — `system_instruction` + PIL images.
+- **`json_loads_lenient`** strips ```` ```json ```` fences and slices outer braces. JSON enforcement: OpenAI strict structured outputs; Anthropic/Bedrock/Gemini get a schema/JSON directive injected into the system prompt.
+- Singletons: `_openai_client()`, `_anthropic_client()`, and `_bedrock_client()` are cached so the heavy SDK init happens once per process.
 
 **config/llm.json tiers:**
 ```json
 {
-  "openai":   {"reasoning":"gpt-4.1", "vision":"gpt-4o", "fast":"gpt-4o-mini"},
-  "bedrock":  {"reasoning":"us.anthropic.claude-sonnet-4-6", "fast":"us.anthropic.claude-haiku-4-5"},
-  "gemini":   {"reasoning":"gemini-2.5-flash", "fast":"gemini-2.5-flash-lite"}
+  "openai":    {"reasoning":"gpt-4.1", "vision":"gpt-4o", "fast":"gpt-4o-mini"},
+  "anthropic": {"reasoning":"claude-sonnet-4-6", "vision":"claude-sonnet-4-6", "fast":"claude-haiku-4-5"},
+  "bedrock":   {"reasoning":"us.anthropic.claude-sonnet-4-6", "fast":"us.anthropic.claude-haiku-4-5-20251001-v1:0"},
+  "gemini":    {"reasoning":"gemini-2.5-flash", "fast":"gemini-2.5-flash-lite"}
 }
 ```
 

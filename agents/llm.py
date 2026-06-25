@@ -2,9 +2,9 @@
 Pluggable LLM "brain" — one entry point for every reasoning/vision call.
 
 Replaces hardcoded OpenAI usage in scene_intelligence, image_matcher and
-segmenter so the brain can run on OpenAI (default), Amazon Bedrock (Claude,
-credit-funded) or Gemini — selected by env LLM_PROVIDER or config/llm.json,
-WITHOUT changing the default. Image generation and audio are separate axes and
+segmenter so the brain can run on OpenAI (default), the direct Anthropic API (Claude),
+Amazon Bedrock (Claude, IAM-funded) or Gemini — selected by env LLM_PROVIDER or
+config/llm.json, WITHOUT changing the default. Image generation and audio are separate axes and
 are NOT routed here.
 
 Public API:
@@ -69,6 +69,15 @@ def _bedrock_client(region: str):
         import boto3
         _CLIENTS[key] = boto3.client("bedrock-runtime", region_name=region)
     return _CLIENTS[key]
+
+
+def _anthropic_client():
+    # Direct Anthropic API (api.anthropic.com) — reads ANTHROPIC_API_KEY from env.
+    # Independent of Bedrock/Marketplace; use when Claude isn't entitled on Bedrock.
+    if "anthropic" not in _CLIENTS:
+        import anthropic
+        _CLIENTS["anthropic"] = anthropic.Anthropic()
+    return _CLIENTS["anthropic"]
 
 
 def _model_for(provider: str, tier: str) -> str:
@@ -137,9 +146,11 @@ def chat(messages, *, json_mode: bool = False, max_tokens: int = 1024,
         return _openai_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
     if provider == "bedrock":
         return _bedrock_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
+    if provider == "anthropic":
+        return _anthropic_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
     if provider == "gemini":
         return _gemini_chat(messages, model, json_mode, max_tokens, temperature, json_schema)
-    raise RuntimeError(f"Unknown LLM_PROVIDER '{provider}' (use openai|bedrock|gemini)")
+    raise RuntimeError(f"Unknown LLM_PROVIDER '{provider}' (use openai|anthropic|bedrock|gemini)")
 
 
 # ── OpenAI backend (default; behaviour-identical to prior code) ───────────────
@@ -229,6 +240,59 @@ def _bedrock_chat(messages, model, json_mode, max_tokens, temperature,
         inferenceConfig=inference,
     )
     return resp["output"]["message"]["content"][0]["text"]
+
+
+# ── Anthropic backend (direct API; ANTHROPIC_API_KEY, no Bedrock/Marketplace) ──
+
+# Opus 4.7/4.8, Fable 5 and Mythos reject sampling params (temperature/top_p) with
+# a 400 — only forward temperature to models that accept it (e.g. Sonnet/Haiku).
+_ANTHROPIC_NO_TEMP = ("claude-opus-4-8", "claude-opus-4-7",
+                      "claude-fable", "claude-mythos")
+
+
+def _anthropic_chat(messages, model, json_mode, max_tokens, temperature,
+                    json_schema=None) -> str:
+    client = _anthropic_client()
+
+    # Anthropic Messages API: system is a top-level param; messages carry only
+    # user/assistant roles with typed content blocks.
+    system_texts, conv_msgs = [], []
+    for m in messages:
+        parts = _norm_content(m["content"])
+        if m["role"] == "system":
+            system_texts += [p["text"] for p in parts if p["type"] == "text"]
+            continue
+        blocks = []
+        for p in parts:
+            if p["type"] == "text":
+                blocks.append({"type": "text", "text": p["text"]})
+            elif p["type"] == "image":
+                raw, fmt = _image_bytes_and_format(p)
+                blocks.append({"type": "image", "source": {
+                    "type": "base64",
+                    "media_type": f"image/{fmt}",
+                    "data": base64.b64encode(raw).decode("ascii"),
+                }})
+        conv_msgs.append({"role": m["role"], "content": blocks})
+
+    # Claude has no response_format — instruct JSON via the system prompt, same as
+    # the Bedrock path. json_loads_lenient() on the caller side tolerates fences.
+    if json_schema:
+        system_texts.append("Respond with ONLY valid JSON matching exactly this "
+                            f"JSON Schema (no prose, no code fences):\n"
+                            f"{json.dumps(json_schema['schema'])}")
+    elif json_mode:
+        system_texts.append("Respond with ONLY valid JSON. No prose, no code fences.")
+
+    kwargs = {"model": model, "max_tokens": max_tokens, "messages": conv_msgs}
+    if system_texts:
+        kwargs["system"] = "\n".join(system_texts)
+    if temperature is not None and not any(model.startswith(p) for p in _ANTHROPIC_NO_TEMP):
+        kwargs["temperature"] = temperature
+
+    resp = client.messages.create(**kwargs)
+    # content is a list of blocks; concatenate the text blocks.
+    return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
 
 
 # ── Gemini backend ────────────────────────────────────────────────────────────
