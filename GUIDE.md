@@ -273,9 +273,17 @@ Studio mode** link in the header. See [docs/MODE3_PLAN.md](docs/MODE3_PLAN.md).
   editable Format B script and parses it into frame cards.
 - **Important:** AI drafts only. Always review/edit the generated frames before
   previewing or rendering.
-- **Assets folder**: Full path to your photos/videos folder, or use **Browse
-  folder…** / **Server folder…**
-  - Leave blank for AI-only generation
+- **Assets folder**: point the app at this story's photos/videos one of two ways —
+  - **📁 Browse folder…** — pick a folder on *your own computer*. The browser
+    uploads every image/video in it (subfolders flattened, non-media skipped) into
+    this session's assets dir, and the app returns that server-side path. This is
+    the right choice on the hosted app (creative.kevat.ai) — the server can't see
+    your local disk, so a typed path won't work. Large folders are sent in small
+    size-batched chunks, so there's no practical file-count or size limit.
+    Supported: JPG/PNG/HEIC/WEBP images and MP4/MOV/M4V/WEBM videos.
+  - **Server folder…** — only when the media already lives on the server, inside
+    the allowed assets root. Browse the on-box folders instead of uploading.
+  - Leave blank for AI-only generation.
 - If you used manual mode, click **Parse Frames →**. If you used story mode, the
   generated script is parsed automatically after drafting.
 - After parsing: check `✓ N photos matched` — this confirms auto-matching worked
@@ -424,6 +432,27 @@ By default, frames you don't pin with `[photo:]` are filled by **alphabetical or
 - **Respects your choices:** pinned `[photo:]` frames, AI frames, and the per-frame 🤖 Model picker are never overridden.
 - **Cost:** each image/video is described **once** via the LLM and cached forever (pennies). Off by default — when off, behaviour is unchanged.
 - Powered by the pluggable LLM brain (`config/llm.json`), so it works on OpenAI / Bedrock / Gemini.
+
+### 🎞 Multi-shot coverage (B-roll per beat)
+By default each story beat is **one shot** — its matched photo/clip held under the
+caption. Tick **🎞 Multi-shot coverage** (or pass `--coverage` on the CLI) and a
+long beat is instead covered by the **main shot plus 1–2 supporting B-roll stills**,
+played as quick sub-shots under the *same* caption — so the line feels **edited**,
+not like a held slide.
+
+- **How it splits:** the beat's duration is divided across its sub-shots (each at
+  least ~2.5s), and every sub-shot gets a gentle, distinct camera move. The caption
+  is untouched — it spans the whole beat, because the sub-shot durations sum back to
+  the beat's length.
+- **What it picks:** extra B-roll is chosen by the **same cached content match** as
+  Smart-match (no extra GPU/CLIP cost) — only stills that *also* fit that line are
+  pulled in, up to 2 (so up to 3 shots per beat).
+- **When it stays single-shot:** lip-sync beats (a talking face is one continuous
+  shot), silent beats, beats shorter than ~5s, or when there are no spare matching
+  stills. It's **opt-in and additive** — off by default, and default one-media-per-beat
+  behaviour is unchanged.
+- **Cost:** the covered beats animate ~1.5–2× more shots, so turn it on for the
+  important moments you want to feel polished, not every render.
 
 ### Style Exemplars — teach the AI your lab's hand-made taste
 You can feed the pipeline **gold examples** from past manually-edited projects so the AI imitates your editing judgment (pacing, shot grammar, which media goes on which beat, and *why*). This is in-context guidance — **not** model training — and it's **off unless you enable it**.
@@ -772,6 +801,10 @@ Modern Indian cinematic, emotional flashback, piano with sitar
 
 ### Voice-Over (ElevenLabs)
 - Each frame's caption text is read aloud in the selected voice
+- **Frame-exact sync:** each spoken line is padded with trailing silence (or trimmed)
+  to **exactly that frame's duration**, so the narration always lands with the
+  caption and visuals — no drift as the reel goes on. If a line is naturally longer
+  than its shot it's trimmed; shorter, it's padded.
 - Silent frames get silence (no audio gap)
 - Requires ElevenLabs credits
 - Choose the **narrator** voice from the dropdown (loads from your ElevenLabs account)
