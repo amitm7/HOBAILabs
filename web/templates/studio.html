@@ -1,77 +1,71 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HOBAILabs — Studio Mode</title>
-<link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "_base.html" %}
+{% set active_mode = 'studio' %}
+{% block title %}HOBAILabs — Studio Mode{% endblock %}
+{% block run_label %}Generate Reel{% endblock %}
+{% block preview_empty %}Plan shots from your brief to see the reel preview here.{% endblock %}
 
-<header>
-  <h1>HOBAILabs</h1>
-  <span>Studio Mode (prompt → reel) — <a href="/" style="color:var(--accent2,#6cf)">↩ Story mode</a> · <a href="/brand" style="color:var(--accent2,#6cf)">🛍 Brand mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
-</header>
-
-<main>
-
-  <!-- ── AI credits ──────────────────────────────────────── -->
-  <div class="card" id="balances-card">
-    <div class="card-header">
-      <h2>💳 AI Credits</h2>
-      <button class="btn-secondary btn-small" id="balances-refresh">↻ Refresh</button>
-    </div>
-    <div class="card-body"><div id="balances-body" class="muted">Checking vendor balances…</div></div>
+{% block drawer %}
+<div class="card" id="balances-card">
+  <div class="card-header">
+    <h2>AI Credits</h2>
+    <button class="btn-secondary btn-small" id="balances-refresh">Refresh</button>
   </div>
-
-  <!-- ── IP / property watermark ─────────────────────────── -->
-  <div class="card">
-    <div class="card-header"><h2>IP / Property</h2></div>
-    <div class="card-body">
-      <div class="field">
-        <label>Which HOB IP is this reel for? <span class="text-dim">(optional watermark)</span></label>
-        <select id="ip"><option value="">No IP watermark</option></select>
-      </div>
+  <div class="card-body"><div id="balances-body" class="muted">Checking vendor balances…</div></div>
+</div>
+<div class="card">
+  <div class="card-header"><h2>IP / Property</h2></div>
+  <div class="card-body">
+    <div class="field">
+      <label>HOB IP watermark</label>
+      <select id="ip"><option value="">No IP watermark</option></select>
     </div>
   </div>
+</div>
+{% endblock %}
 
-  <!-- ── Identity library (Talent + Product) ─────────────── -->
+{% block steps %}
+<button type="button" class="step-pill active" data-step-idx="0"><span class="step-num">1</span> Setup</button>
+<button type="button" class="step-pill" data-step-idx="1"><span class="step-num">2</span> Media</button>
+<button type="button" class="step-pill" data-step-idx="2"><span class="step-num">3</span> Frames</button>
+<button type="button" class="step-pill" data-step-idx="3"><span class="step-num">4</span> Render</button>
+{% endblock %}
+
+{% block editor %}
+
+<div class="step-panel active" data-step="setup">
+
   <div class="card">
-    <div class="card-header"><h2>👤 Identity library <span class="text-dim" style="font-size:13px">(reusable — locked across every shot)</span></h2></div>
+    <div class="card-header"><h2>Identity library</h2></div>
     <div class="card-body">
       <div class="box" style="margin-bottom:12px">
-        Save a <b>Talent</b> (a face) and a <b>Product</b> once; Studio locks them
-        across every shot. The product image is used <b>as the real frame</b> on
-        product beats — never re-invented — so logos and detail stay exact.
+        Save <b>Talent</b> and <b>Product</b> once; Studio locks them across every shot.
       </div>
       <div class="grid-2">
-        <!-- Talent -->
         <div class="field">
-          <label>Talent <span class="text-dim">(the on-screen person)</span></label>
+          <label>Talent</label>
           <select id="s-talent"><option value="">None — infer from brief</option></select>
           <div id="s-talent-preview" style="margin-top:8px"></div>
           <details style="margin-top:8px">
-            <summary style="cursor:pointer;font-size:13px">➕ Add a talent</summary>
+            <summary style="cursor:pointer;font-size:13px">Add a talent</summary>
             <div style="margin-top:8px">
-              <input id="s-talent-name" type="text" placeholder="Name (e.g. Asha)" style="margin-bottom:6px">
-              <input id="s-talent-desc" type="text" placeholder="Descriptor (e.g. 25yo Indian model, wavy hair)" style="margin-bottom:6px">
-              <label class="upload-label">📁 Reference face<input id="s-talent-file" type="file" accept="image/*"></label>
+              <input id="s-talent-name" type="text" placeholder="Name" style="margin-bottom:6px">
+              <input id="s-talent-desc" type="text" placeholder="Descriptor" style="margin-bottom:6px">
+              <label class="upload-label">Reference face<input id="s-talent-file" type="file" accept="image/*"></label>
               <button class="btn-secondary btn-small" id="s-talent-add" style="margin-top:6px">Save talent</button>
               <span id="s-talent-status" style="font-size:12px"></span>
             </div>
           </details>
         </div>
-        <!-- Product -->
         <div class="field">
-          <label>Product <span class="text-dim">(locked on product beats)</span></label>
+          <label>Product</label>
           <select id="s-product"><option value="">None</option></select>
           <div id="s-product-preview" style="margin-top:8px"></div>
           <details style="margin-top:8px">
-            <summary style="cursor:pointer;font-size:13px">➕ Add a product</summary>
+            <summary style="cursor:pointer;font-size:13px">Add a product</summary>
             <div style="margin-top:8px">
-              <input id="s-product-name" type="text" placeholder="Name (e.g. Diamond Necklace)" style="margin-bottom:6px">
-              <input id="s-product-specs" type="text" placeholder='Specs (e.g. 14K gold, 46 diamonds, 0.569ct)' style="margin-bottom:6px">
-              <label class="upload-label">📁 Reference product photo<input id="s-product-file" type="file" accept="image/*"></label>
+              <input id="s-product-name" type="text" placeholder="Name" style="margin-bottom:6px">
+              <input id="s-product-specs" type="text" placeholder="Specs" style="margin-bottom:6px">
+              <label class="upload-label">Reference photo<input id="s-product-file" type="file" accept="image/*"></label>
               <button class="btn-secondary btn-small" id="s-product-add" style="margin-top:6px">Save product</button>
               <span id="s-product-status" style="font-size:12px"></span>
             </div>
@@ -81,191 +75,168 @@
     </div>
   </div>
 
-  <!-- ── The brief ───────────────────────────────────────── -->
   <div class="card">
-    <div class="card-header"><h2>✍️ Brief → shots</h2></div>
+    <div class="card-header"><h2>Brief → shots</h2></div>
     <div class="card-body">
-      <div class="settings-row" style="margin-bottom:10px">
-        <div class="field" style="flex:1">
-          <label>What is this reel?</label>
-          <select id="s-scope">
-            <option value="commerce">Commerce — product / fashion / jewelry ad</option>
-            <option value="general">General — any idea → reel</option>
-          </select>
-        </div>
+      <div class="field">
+        <label>Scope</label>
+        <select id="s-scope">
+          <option value="commerce">Commerce — product / fashion ad</option>
+          <option value="general">General — any idea → reel</option>
+        </select>
       </div>
       <div class="field">
-        <textarea id="s-brief" rows="5" placeholder="Describe the reel in plain words. e.g. 'A luxury jewelry ad for a 14K gold diamond necklace, worn by an elegant model — open on her, move to a macro of the necklace sparkling, end on a hero shot of the product.'"></textarea>
+        <textarea id="s-brief" rows="5" placeholder="Describe the reel in plain words…"></textarea>
       </div>
-      <button class="btn-primary btn-small" id="s-plan-btn" style="margin-top:8px">✨ Plan shots →</button>
-      <span id="s-plan-status" style="font-size:12px;margin-left:8px"></span>
-      <div class="box" style="margin-top:10px">The AI drafts editable on-screen lines and shots. You review and edit every card before Preview/Render.</div>
+      <button class="btn-primary btn-small" id="s-plan-btn">Plan shots</button>
+      <span id="s-plan-status" class="text-dim" style="font-size:12px;margin-left:8px"></span>
+      <div class="box" style="margin-top:10px">AI drafts editable on-screen lines. Review every card before render.</div>
     </div>
   </div>
+</div>
 
-  <!-- ── Optional B-roll folder (shared engine) ──────────── -->
+<div class="step-panel" data-step="media">
   <div class="card">
     <div class="card-header"><h2>Optional media folder</h2></div>
     <div class="card-body">
       <div class="assets-folder-row">
-        <div class="assets-folder-icon">📁</div>
-        <div style="flex:1">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="assets-folder-icon"><i data-lucide="folder" class="icon"></i></div>
+        <div class="flex-1">
+          <div class="flex-row-wrap">
             <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
-            <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">📁 Browse folder…</button>
-            <button type="button" class="btn-secondary btn-small" id="browse-server-btn">🗂 Server folder…</button>
-            <input type="text" id="assets-dir" style="flex:1;min-width:220px" placeholder="Real photos/videos folder (optional)">
+            <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">Browse folder</button>
+            <button type="button" class="btn-secondary btn-small" id="browse-server-btn">Server folder</button>
+            <input type="text" id="assets-dir" class="flex-1" placeholder="Real photos/videos (optional)">
           </div>
-          <div id="server-browser" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-              <button type="button" class="btn-secondary btn-small" id="sb-up">⬆ Up</button>
+          <div id="server-browser" class="server-browser">
+            <div class="flex-row-wrap" style="margin-bottom:6px">
+              <button type="button" class="btn-secondary btn-small" id="sb-up">Up</button>
               <code id="sb-path" style="flex:1;overflow-wrap:anywhere"></code>
-              <span id="sb-media-count" style="color:var(--text-dim);white-space:nowrap"></span>
+              <span id="sb-media-count" class="text-dim"></span>
             </div>
-            <div id="sb-dirs" style="max-height:180px;overflow-y:auto;margin-bottom:8px"></div>
-            <div style="display:flex;gap:8px">
-              <button type="button" class="btn-primary btn-small" id="sb-use">✓ Use this folder</button>
+            <div id="sb-dirs" class="sb-dirs"></div>
+            <div class="flex-row-wrap">
+              <button type="button" class="btn-primary btn-small" id="sb-use">Use folder</button>
               <button type="button" class="btn-secondary btn-small" id="sb-close">Close</button>
             </div>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="smart-match"> 🤖 Smart-match images (AI)</label>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="multi-shot"> 🎞 Multi-shot coverage</label>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer;display:none">
-            <input type="checkbox" id="face-ref"> 👤 Consistent face</label>
+          <label class="checkbox-row"><input type="checkbox" id="smart-match"> Smart-match images</label>
+          <label class="checkbox-row"><input type="checkbox" id="multi-shot"> Multi-shot coverage</label>
+          <label class="checkbox-row" style="display:none"><input type="checkbox" id="face-ref"> Consistent face</label>
         </div>
         <span id="assets-status"></span>
       </div>
-      <!-- Studio uses the brief, not a pasted script; keep a hidden script box so
-           the shared main.js bindings stay happy. -->
       <textarea id="script-input" style="display:none"></textarea>
       <button id="parse-btn" style="display:none"></button>
     </div>
   </div>
 
-  <!-- ── Subject (optional) ──────────────────────────────── -->
   <div class="card">
-    <div class="card-header"><h2>People <span class="text-dim" style="font-size:13px">(optional)</span></h2></div>
+    <div class="card-header"><h2>People <span class="text-dim">(optional)</span></h2></div>
     <div class="card-body grid-2">
-      <div class="field"><label>Name <span class="text-dim">(optional)</span></label><input type="text" id="subject-name" placeholder="Leave blank to infer"></div>
-      <div class="field"><label>Description <span class="text-dim">(optional)</span></label><input type="text" id="subject-description" placeholder="e.g. elegant model, 20s"></div>
+      <div class="field"><label>Name</label><input type="text" id="subject-name" placeholder="Optional"></div>
+      <div class="field"><label>Description</label><input type="text" id="subject-description" placeholder="Optional"></div>
     </div>
   </div>
+</div>
 
-  <!-- ── Frame cards (shared) ────────────────────────────── -->
+<div class="step-panel" data-step="frames">
   <div class="card" id="frames-card" style="display:none">
     <div class="card-header">
       <h2>Shots</h2>
       <div class="dur-controls">
         <span class="text-dim" id="frames-count"></span>
         <div class="dur-target-row">
-          <label class="text-dim">Target length</label>
           <div class="dur-presets">
             <button class="dur-preset-btn" data-sec="15">15s</button>
             <button class="dur-preset-btn" data-sec="30">30s</button>
             <button class="dur-preset-btn" data-sec="0">Auto</button>
           </div>
           <input type="number" id="target-sec" placeholder="custom s" min="10" max="120" step="5">
-          <button class="btn-secondary btn-small" id="redistribute-btn">Apply →</button>
+          <button class="btn-secondary btn-small" id="redistribute-btn">Apply</button>
           <span id="total-dur-display"></span>
         </div>
       </div>
     </div>
     <div class="card-body">
       <div id="cast-panel" style="display:none;margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px"></div>
+      <div id="timeline-strip" class="timeline-strip" aria-label="Timeline"></div>
       <div id="frames-container"></div>
     </div>
   </div>
+</div>
 
-  <!-- ── Style & Quality (shared) ────────────────────────── -->
+<div class="step-panel" data-step="render">
   <div class="card">
     <div class="card-header"><h2>Style &amp; Quality</h2></div>
     <div class="card-body">
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="field"><label>Mood / Palette</label>
-          <select id="mood">
-            <option value="">Default</option>
-            <option value="warm nostalgic">Warm Nostalgic</option>
-            <option value="cold struggle">Cold Struggle</option>
-            <option value="triumphant">Triumphant</option>
-          </select></div>
-        <div class="field"><label>Orientation</label>
-          <select id="orientation">
-            <option value="portrait">Portrait 1080×1920</option>
-            <option value="landscape">Landscape 1920×1080</option>
-          </select></div>
-        <div class="field"><label>Quality</label>
-          <select id="quality">
-            <option value="dev">Dev — fast/cheap</option>
-            <option value="production">Production</option>
-          </select></div>
+      <div class="grid-2 mb-16">
+        <div class="field"><label>Mood</label><select id="mood"><option value="">Default</option><option value="warm nostalgic">Warm</option><option value="cold struggle">Cold</option><option value="triumphant">Triumphant</option></select></div>
+        <div class="field"><label>Orientation</label><select id="orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></div>
+        <div class="field"><label>Quality</label><select id="quality"><option value="dev">Dev</option><option value="production">Production</option></select></div>
         <div class="field"><label>Image Model</label><select id="image-model"><option value="auto">Auto</option></select></div>
-        <div class="field"><label>Video Model</label><select id="video-model"><option value="auto">Auto</option><option value="kenburns">Ken Burns (free)</option></select></div>
+        <div class="field"><label>Video Model</label><select id="video-model"><option value="auto">Auto</option><option value="kenburns">Ken Burns</option></select></div>
         <div class="field"><label>Kling Mode</label><select id="kling-mode"><option value="pro">Pro</option><option value="std">Standard</option></select></div>
         <div class="field"><label>Transition</label><select id="transition"><option value="crossfade">Crossfade</option><option value="none">Hard Cut</option></select></div>
-        <div class="field"><label>Caption Position <span class="text-dim">(default — override per frame)</span></label><select id="caption-position"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select></div>
-        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="caption-enabled" checked> Burn captions</label></div>
-        <div class="field"><label>Max lines per caption <span class="text-dim">(default)</span></label><select id="caption-max-lines"><option value="0">No limit</option><option value="1">1 line</option><option value="2">2 lines</option><option value="3">3 lines</option></select></div>
+        <div class="field"><label>Caption Position</label><select id="caption-position"><option value="bottom">Bottom</option><option value="middle">Middle</option><option value="top">Top</option></select></div>
+        <div class="field"><label class="checkbox-row" style="margin-top:0"><input type="checkbox" id="caption-enabled" checked> Burn captions</label></div>
+        <div class="field"><label>Max caption lines</label><select id="caption-max-lines"><option value="0">No limit</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
       </div>
       <div class="settings-row">
-        <div class="field" style="flex:2"><label>Caption Font</label>
-          <select id="caption-font">
-            <option value="Montserrat">Montserrat (modern)</option>
-            <option value="Satoshi">Satoshi (needs licensed file)</option>
-            <option value="Baskerville">Baskerville</option>
-            <option value="Arial">Arial</option>
-          </select></div>
-        <div class="field" style="flex:1"><label>Font Size</label><input type="number" id="caption-size" value="62" min="24" max="96" step="2"></div>
+        <div class="field" style="flex:2"><label>Font</label><select id="caption-font"><option value="Montserrat">Montserrat</option><option value="Satoshi">Satoshi</option><option value="Baskerville">Baskerville</option><option value="Arial">Arial</option></select></div>
+        <div class="field" style="flex:1"><label>Size</label><input type="number" id="caption-size" value="62" min="24" max="96" step="2"></div>
         <div class="field" style="flex:1"><label>Colour</label><select id="caption-color"><option value="white">White</option><option value="yellow">Yellow</option><option value="black">Black</option></select></div>
       </div>
     </div>
   </div>
 
-  <!-- Hidden music stub: keeps the shared main.js bindings happy (Studio V1 =
-       captions; add audio in a later phase). -->
-  <div style="display:none">
-    <input type="radio" name="music-type" value="none" checked>
-    <input type="file" id="music-file-input">
-    <button id="generate-music-btn"></button>
-    <span id="music-upload-name"></span><span id="music-gen-status"></span>
-    <input id="music-prompt"><audio id="music-preview"></audio>
-    <div id="upload-music-sub"></div><div id="generate-music-sub"></div>
-    <div id="voiceover-sub"></div><select id="voice-select"></select><span id="voice-load-status"></span>
-  </div>
-
-  <!-- ── Cost ────────────────────────────────────────────── -->
   <div class="card" id="cost-card" style="display:none">
-    <div class="card-header"><h2>💰 Estimated Cost</h2><span id="cost-updated" style="font-size:11px;color:var(--text-dim)"></span></div>
-    <div class="card-body"><div id="cost-breakdown" style="font-family:monospace;font-size:13px;line-height:1.8"></div></div>
+    <div class="card-header"><h2>Estimated Cost</h2><span id="cost-updated" class="text-dim" style="font-size:11px"></span></div>
+    <div class="card-body"><div id="cost-breakdown" class="cost-breakdown"></div></div>
   </div>
 
-  <!-- ── Preview + Run ───────────────────────────────────── -->
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <button class="btn-secondary" id="preview-btn">👁 Preview Stills</button>
-    <button class="btn-primary" id="run-btn">▶ Generate Reel</button>
-  </div>
-  <div id="preview-status" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
-
-  <!-- ── Progress + Output ───────────────────────────────── -->
   <div class="card" id="progress-panel">
-    <div class="card-header"><h2>Progress</h2><span id="progress-status" style="font-size:12px;color:var(--text-dim)"></span></div>
-    <div class="card-body"><div id="progress-log"></div></div>
-  </div>
-  <div class="card" id="output-panel">
-    <div class="card-header"><h2>Output</h2></div>
+    <div class="card-header"><h2>Progress</h2><span id="progress-status" class="text-dim" style="font-size:12px"></span></div>
     <div class="card-body">
-      <video id="output-video" controls playsinline></video>
-      <div class="output-actions">
-        <a id="download-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">⬇ Download .mp4</a>
+      <div class="progress-steps">
+        <div class="progress-step active">Parse</div>
+        <div class="progress-step">Stills</div>
+        <div class="progress-step">Clips</div>
+        <div class="progress-step">Assembly</div>
+        <div class="progress-step">Done</div>
       </div>
+      <button type="button" class="progress-log-toggle" id="progress-log-toggle" aria-expanded="false">
+        <i data-lucide="terminal" class="icon"></i> <span class="log-toggle-label">Show technical log</span>
+      </button>
+      <div id="progress-log"></div>
     </div>
   </div>
+</div>
 
-</main>
+{% endblock %}
 
+{% block output_actions %}
+<a id="download-btn" class="btn-secondary">Download .mp4</a>
+{% endblock %}
+
+{% block hidden %}
+<div style="display:none">
+  <input type="radio" name="music-type" value="none" checked>
+  <input type="file" id="music-file-input">
+  <button id="generate-music-btn"></button>
+  <span id="music-upload-name"></span><span id="music-gen-status"></span>
+  <input id="music-prompt"><audio id="music-preview"></audio>
+  <div id="upload-music-sub"></div><div id="generate-music-sub"></div>
+  <div id="voiceover-sub"></div><select id="voice-select"></select><span id="voice-load-status"></span>
+  <a id="export-btn"></a>
+</div>
+{% endblock %}
+
+{% block shell_init %}
 <script>window.HOB_MODE = 'studio';</script>
-<script src="/static/main.js"></script>
+<script>initShell({ steps: ['setup', 'media', 'frames', 'render'] });</script>
+{% endblock %}
+
+{% block mode_script %}
 <script src="/static/studio.js"></script>
-</body>
-</html>
+{% endblock %}

@@ -123,7 +123,8 @@ _CRITIQUE_PROMPT = (
     "image when the prompt requires a real subject or scene\n"
     "Minor stylistic deviations are fine — only flag real failures.\n\n"
     'GENERATION PROMPT:\n"{prompt}"\n\n'
-    'Reply with ONLY JSON: {{"ok": true|false, "reason": "short reason when not ok"}}'
+    'Reply with ONLY compact one-line JSON, reason ≤10 words and no inner quotes '
+    'or newlines: {{"ok": true|false, "reason": "short reason when not ok"}}'
 )
 
 
@@ -143,7 +144,7 @@ def critique_image(image_path: str, frame_id: str, prompt: str) -> bool:
                 {"type": "text", "text": _CRITIQUE_PROMPT.format(prompt=prompt[:600])},
                 {"type": "image", "path": image_path},
             ]}],
-            json_mode=True, max_tokens=120, model_tier="fast",
+            json_mode=True, max_tokens=256, model_tier="fast",
         )
         verdict = llm.json_loads_lenient(text)
         ok = bool(verdict.get("ok", True))
@@ -186,7 +187,7 @@ def critique_brand(image_path: str, frame_id: str, brand: dict) -> bool:
                 {"type": "text", "text": rules},
                 {"type": "image", "path": image_path},
             ]}],
-            json_mode=True, max_tokens=120, model_tier="fast",
+            json_mode=True, max_tokens=256, model_tier="fast",
         )
         verdict = llm.json_loads_lenient(text)
         ok = bool(verdict.get("ok", True))

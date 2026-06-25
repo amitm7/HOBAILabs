@@ -84,7 +84,7 @@ window.augmentBrandCard = (card, f) => {
   row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;cursor:pointer';
   row.innerHTML = `<input type="checkbox" data-pb="${f.frame_id}"> 🛍 Product beat `
     + `<span class="muted">(real product/logo shot — never AI-generated)</span>`;
-  card.querySelector('.frame-card-body')?.appendChild(row);
+  card.querySelector('.frame-card-details')?.appendChild(row);
   row.querySelector('input').addEventListener('change', (e) => {
     window.setFrameOverride(f.frame_id, 'product_beat', e.target.checked);
   });

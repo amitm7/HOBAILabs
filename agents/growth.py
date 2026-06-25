@@ -37,6 +37,10 @@ _STORY_FRAME_SCHEMA = {
                     "duration": {"type": "number"},
                     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
                     "operator_note": {"type": "string"},
+                    # STR-2: structured fields that make prevention + the contract
+                    # validator deterministic (no NLP). Empty string when N/A.
+                    "verbatim_quote": {"type": "string"},
+                    "blocking": {"type": "string"},
                 },
                 "required": [
                     "role",
@@ -48,6 +52,8 @@ _STORY_FRAME_SCHEMA = {
                     "duration",
                     "confidence",
                     "operator_note",
+                    "verbatim_quote",
+                    "blocking",
                 ],
             },
         },
@@ -58,10 +64,16 @@ _STORY_FRAME_SCHEMA = {
 }
 
 
-def _clean_line(text: Any, limit: int = 220) -> str:
+def _clean_line(text: Any, limit: int = 600) -> str:
     out = re.sub(r"\s+", " ", str(text or "")).strip()
     out = out.replace("[", "(").replace("]", ")")
-    return out[:limit].rstrip()
+    if len(out) <= limit:
+        return out
+    # Don't cut mid-word (that's what dropped "Waiting for Papa" → "…Child's").
+    # Trim to the last whole word inside the limit and signal the cut.
+    cut = out[:limit]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > 0 else cut).rstrip() + "…"
 
 
 def _fallback_story_draft(story: str, max_frames: int = 10) -> dict:
@@ -104,9 +116,17 @@ def _story_draft_via_llm(story: str, *, max_frames: int, target_seconds: int = 4
     system = (
         "You are the HOBAILabs story director. Turn raw human stories into short, editable "
         "Instagram Reel frame plans. Preserve dignity. Do not invent facts, numbers, claims, "
-        "brands, or outcomes. Prefer real media when the beat needs the real person/product; "
-        "use ai_symbolic for abstract/trauma/pain beats; use text_card only for punchy statements. "
-        "Keep captions short and visual. The human operator will edit before render."
+        "brands, or outcomes. Keep captions short and visual. The human operator edits before render.\n"
+        "HARD CONTRACTS (the render pipeline enforces these — honoring them keeps the script honest):\n"
+        "• A beat that SHOWS A PERSON uses visual_need=real_photo_preferred (operator pins a real "
+        "photo) — NEVER ai_symbolic. ai_symbolic renders objects/textures/settings ONLY: its "
+        "media_query must contain NO people, faces, hands, or figures.\n"
+        "• If the source story has a pivotal QUOTED line, set verbatim_quote to the exact words AND "
+        "make those words appear in this beat's caption or a text_card — never just tease it.\n"
+        "• For any beat with TWO OR MORE people in action, fill blocking: who moves, who stays, the "
+        "prop and the direction (e.g. 'daughter runs toward father at the door; he stands').\n"
+        "• Flag uncertain facts and any real-person consent need in operator_note. Leave verbatim_quote "
+        "and blocking as empty strings when they do not apply."
     )
     user = {
         "story": story,
@@ -119,6 +139,10 @@ def _story_draft_via_llm(story: str, *, max_frames: int, target_seconds: int = 4
             "Use 6-12 frames unless max_frames is lower.",
             "Each caption should fit on screen and avoid long paragraphs.",
             "Flag uncertain facts in operator_note instead of inventing.",
+            "People-beats: visual_need=real_photo_preferred, never ai_symbolic.",
+            "ai_symbolic media_query = objects/settings only, zero people.",
+            "Pivotal quotes: set verbatim_quote AND put the words on screen.",
+            "Two-person action beats: fill blocking (who moves toward whom + prop).",
         ],
     }
     raw = llm.chat(
@@ -126,7 +150,10 @@ def _story_draft_via_llm(story: str, *, max_frames: int, target_seconds: int = 4
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
         ],
-        max_tokens=2200,
+        # Headroom for a full structured draft (up to 20 frames × ~11 fields). At
+        # 2200 a 10-frame draft truncated → JSON parse failed → silent fallback to
+        # the dumb segmenter. Sonnet 4.6 caps at 64K output, so 6000 is safe.
+        max_tokens=6000,
         temperature=0.35,
         model_tier="reasoning",
         json_schema={"name": "story_frame_draft", "schema": _STORY_FRAME_SCHEMA},
@@ -193,8 +220,12 @@ def draft_to_format_b(frames: list[dict], posting_caption: str = "") -> str:
     for i, frame in enumerate(frames, 1):
         caption = _clean_line(frame.get("caption"), 140) or f"Story beat {i}"
         visual_need = _clean_line(frame.get("visual_need"), 80)
-        media_query = _clean_line(frame.get("media_query"), 180)
-        operator_note = _clean_line(frame.get("operator_note"), 180)
+        # Note-class fields carry verbatim quotes, blocking and consent instructions —
+        # generous caps (word-safe) so they no longer truncate mid-sentence (STR-2).
+        media_query = _clean_line(frame.get("media_query"), 600)
+        operator_note = _clean_line(frame.get("operator_note"), 600)
+        verbatim_quote = _clean_line(frame.get("verbatim_quote"), 400)
+        blocking = _clean_line(frame.get("blocking"), 400)
         confidence = _clean_line(frame.get("confidence"), 30)
         role = _clean_line(frame.get("role"), 40)
         motion = _clean_line(frame.get("motion_hint"), 120)
@@ -207,6 +238,8 @@ def draft_to_format_b(frames: list[dict], posting_caption: str = "") -> str:
             f"role={role}" if role else "",
             f"visual_need={visual_need}" if visual_need else "",
             f"media_query={media_query}" if media_query else "",
+            f'verbatim_quote="{verbatim_quote}"' if verbatim_quote else "",
+            f"blocking={blocking}" if blocking else "",
             f"confidence={confidence}" if confidence else "",
             operator_note,
         ]

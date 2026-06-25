@@ -64,6 +64,8 @@ pytest tests/                                         # tests
 ```
 
 ## 9. Current state (keep this current)
+- **UI shell redesign** landed: shared Jinja `_base.html`, step wizard + preview panel +
+  sticky action bar across Story / Brand / Studio (`web/static/shell.js`, `style.css`).
 - **Studio Mode** WIP landed on `main` in commit `cd0447d` (front door `/studio`,
   `agents/shot_planner.py`, talent/product identity library — see `docs/MODE3_PLAN.md`).
 - A **feedback-loop stub** (`run_store.performance_note` + `POST /performance/<run_id>` +

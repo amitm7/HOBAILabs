@@ -357,7 +357,11 @@ def main():
         # 6. Generate ASS captions from the frames' EFFECTIVE windows in the
         # rendered video (crossfade overlaps clips, so raw durations drift)
         srt_path = os.path.join(temp_dir, "captions.srt")
-        frame_times = frame_timecodes(frames, clips, "crossfade")
+        # Beat-aware cutting (P1): when a music bed is given, cuts snap to its beats
+        # (same overlaps thread into captions so they stay in sync). None otherwise.
+        from agents.assembler import beat_overlaps
+        overlaps = beat_overlaps(clips, args.music)
+        frame_times = frame_timecodes(frames, clips, "crossfade", overlaps)
         ass_path = generate_frame_srt(frames, srt_path, timecodes=frame_times)  # returns .ass path
 
         # 7. Assemble
@@ -365,6 +369,7 @@ def main():
             clips, temp_dir, args.output,
             music_path=args.music,
             srt_path=ass_path,  # pass .ass directly
+            overlaps=overlaps,
         )
 
         pipeline_success = True

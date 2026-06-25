@@ -12,6 +12,7 @@ let speakerVoices = {};         // speaker_id → ElevenLabs voice_id (Cast voic
 let frameApprovals = {};        // frame_id → bool (approval gate; default approved)
 let previewReady = false;       // true once Preview Stills has produced images
 let framePreviewPath = {};      // frame_id → still server-path (for vision suggest)
+let characterRefPath = '';      // optional uploaded character face → locks the narrator's AI portraits
 
 // Camera vocabulary for the per-frame dropdown (matches agents/suggestions.CAMERA_MOVES).
 const CAMERA_MOVES = [
@@ -193,6 +194,25 @@ el('music-file-input').addEventListener('change', async (e) => {
   }
 });
 
+// Optional character face: one upload that locks the narrator's AI portraits to a chosen face.
+el('character-face')?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  el('character-face-name').textContent = '⏳ Uploading…';
+  const fd = new FormData();
+  fd.append('photo', file);
+  fd.append('session_id', SESSION_ID);
+  fd.append('frame_id', 'character_face');
+  const res = await postForm('/upload-photo', fd);
+  if (res.tmp_path) {
+    characterRefPath = res.tmp_path;
+    el('character-face-name').textContent = "✓ " + file.name + " — locks the character's face";
+  } else {
+    characterRefPath = '';
+    el('character-face-name').textContent = '✗ upload failed';
+  }
+});
+
 el('generate-music-btn').addEventListener('click', async () => {
   // Empty prompt → the server composes a proper Suno brief from the story
   // beats (genre + tempo + instruments + emotion arc).
@@ -305,7 +325,7 @@ async function sbNavigate(path) {
 }
 
 el('browse-server-btn')?.addEventListener('click', () => {
-  el('server-browser').style.display = 'block';
+  el('server-browser')?.classList.add('open');
   sbNavigate(el('assets-dir').value.trim() || '');
 });
 el('sb-up')?.addEventListener('click', () => {
@@ -314,12 +334,17 @@ el('sb-up')?.addEventListener('click', () => {
 });
 el('sb-use')?.addEventListener('click', () => {
   el('assets-dir').value = _sbPath;
-  el('server-browser').style.display = 'none';
+  el('server-browser')?.classList.remove('open');
   el('assets-status').innerHTML = `<span class="text-green">✓ folder selected — Parse Frames to match</span>`;
 });
 el('sb-close')?.addEventListener('click', () => {
-  el('server-browser').style.display = 'none';
+  el('server-browser')?.classList.remove('open');
 });
+
+function afterFramesReady() {
+  if (typeof window.shellOnFramesReady === 'function') window.shellOnFramesReady();
+  else el('frames-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // ── Parse script / story intake ───────────────────────────────────────────
 
@@ -373,8 +398,7 @@ async function parseCurrentScript() {
     const presetSec = parseInt(el('target-sec').value);
     if (presetSec > 0) redistributeDurations(presetSec);
     else updateTotalDur();
-    el('frames-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Show cost estimate (server-computed)
+    afterFramesReady();
     await loadModels();
     populateModelSelects();
     populateFrameModelSelects();
@@ -383,7 +407,7 @@ async function parseCurrentScript() {
     alert('Error: ' + err.message);
   } finally {
     el('parse-btn').disabled = false;
-    el('parse-btn').textContent = 'Parse Frames →';
+    el('parse-btn').textContent = 'Parse Frames';
   }
 }
 
@@ -562,6 +586,9 @@ async function renderCostEstimate() {
 
   el('cost-breakdown').innerHTML = lines.join('<br>');
   el('cost-card').style.display = 'block';
+  if (typeof window.shellUpdateCost === 'function') {
+    window.shellUpdateCost(`~$${b.total.toFixed(2)} est.`);
+  }
 }
 
 // Debounced variant for high-frequency inputs (duration typing etc.)
@@ -681,87 +708,80 @@ function renderFrameCards(frames) {
       if (isVideo) {
         previewHtml = `
           <div class="frame-preview" id="preview-${f.frame_id}">
-            <video src="${mediaUrl}#t=0.5" muted playsinline preload="metadata"
-                   style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#000"></video>
-            <span class="preview-label">🎬 ${matchedName}</span>
+            <video class="thumb-media" src="${mediaUrl}#t=0.5" muted playsinline preload="metadata"></video>
+            <span class="preview-label">${matchedName}</span>
           </div>`;
       } else {
         previewHtml = `
           <div class="frame-preview" id="preview-${f.frame_id}">
-            <img src="${mediaUrl}" alt="${matchedName}"
-                 style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#222">
-            <span class="preview-label">🖼 ${matchedName}</span>
+            <img class="thumb-media" src="${mediaUrl}" alt="${matchedName}">
+            <span class="preview-label">${matchedName}</span>
           </div>`;
       }
     } else if (initType === 'portrait') {
-      previewHtml = `<div class="frame-preview placeholder">🎨 AI Portrait<br><span class="preview-label">generated at render</span></div>`;
+      previewHtml = `<div class="frame-preview placeholder" id="preview-${f.frame_id}">AI Portrait<span class="preview-label">generated at render</span></div>`;
     } else if (initType === 'symbolic') {
-      previewHtml = `<div class="frame-preview placeholder">🖼 AI Symbolic<br><span class="preview-label">objects, no people — generated at render</span></div>`;
+      previewHtml = `<div class="frame-preview placeholder" id="preview-${f.frame_id}">AI Symbolic<span class="preview-label">objects, no people</span></div>`;
     } else if (initType === 'text_card') {
-      previewHtml = `<div class="frame-preview placeholder">Text Card<br><span class="preview-label">bold statement on a colour field</span></div>`;
+      previewHtml = `<div class="frame-preview placeholder" id="preview-${f.frame_id}">Text Card<span class="preview-label">bold statement</span></div>`;
     } else {
-      previewHtml = `<div class="frame-preview placeholder">📂 Auto<br><span class="preview-label">next folder file, or AI if none</span></div>`;
+      previewHtml = `<div class="frame-preview placeholder" id="preview-${f.frame_id}">Auto<span class="preview-label">folder or AI</span></div>`;
     }
 
     card.innerHTML = `
-      <div class="frame-card-header">
-        <span class="frame-id">${f.frame_id}</span>
-        <span class="frame-caption">${f.caption || '(silent frame)'}</span>
-        <span class="frame-dur">${f.duration}s</span>
-      </div>
       <div class="frame-card-body">
-        ${isSilent ? '<div style="font-size:12px;color:var(--text-dim)">Silent frame — visual only</div>' : ''}
-
-        ${previewHtml}
-
-        <div class="frame-iter-row" id="iter-${f.frame_id}" style="display:flex">
-          <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}" title="Regenerate just this image fresh">🔄 Redo still</button>
-          <button type="button" class="btn-secondary btn-small redo-motion-btn" id="redo-motion-${f.frame_id}" data-frame="${f.frame_id}" title="Re-roll only the animation, keeping the image" style="display:none">Redo motion</button>
-          <button type="button" class="btn-secondary btn-small suggest-frame-btn" id="suggest-btn-${f.frame_id}" data-frame="${f.frame_id}" title="Run Preview Stills first — then this suggests best camera + note from the actual image" style="display:none">✨ Suggest from image</button>
-          <label class="approval-toggle" data-frame="${f.frame_id}" title="Untick to skip paid animation — frame stays in the video using free Ken Burns">
-            <input type="checkbox" class="approval-cb" data-frame="${f.frame_id}" checked>
-            <span class="approval-label">✓ Animate this frame</span>
-          </label>
+        <div class="frame-card-layout">
+          <div class="frame-card-thumb">${previewHtml}</div>
+          <div class="frame-card-main">
+            <div class="frame-card-top">
+              <span class="frame-id">${f.frame_id}</span>
+              <span class="frame-caption-main">${escHtml(f.caption || '(silent frame)')}</span>
+              <span class="frame-dur-badge">${f.duration}s</span>
+            </div>
+            ${isSilent ? '<div class="text-dim" style="font-size:12px">Silent — visual only</div>' : ''}
+            <div class="visual-selector" data-frame="${f.frame_id}">
+              <label class="vis-opt ${initType === 'auto' ? 'active' : ''}" data-type="auto">
+                <input type="radio" name="vis-${f.frame_id}" value="auto" ${initType === 'auto' ? 'checked' : ''}>Auto
+              </label>
+              <label class="vis-opt ${initType === 'matched' ? 'active' : ''}" data-type="matched">
+                <input type="radio" name="vis-${f.frame_id}" value="matched" ${initType === 'matched' ? 'checked' : ''}>Folder
+              </label>
+              <label class="vis-opt ${initType === 'uploaded' ? 'active' : ''}" data-type="uploaded">
+                <input type="radio" name="vis-${f.frame_id}" value="uploaded" ${initType === 'uploaded' ? 'checked' : ''}>Upload
+              </label>
+              <label class="vis-opt ${initType === 'portrait' ? 'active' : ''}" data-type="portrait">
+                <input type="radio" name="vis-${f.frame_id}" value="portrait" ${initType === 'portrait' ? 'checked' : ''}>Portrait
+              </label>
+              <label class="vis-opt ${initType === 'symbolic' ? 'active' : ''}" data-type="symbolic">
+                <input type="radio" name="vis-${f.frame_id}" value="symbolic" ${initType === 'symbolic' ? 'checked' : ''}>Symbolic
+              </label>
+              <label class="vis-opt ${initType === 'text_card' ? 'active' : ''}" data-type="text_card">
+                <input type="radio" name="vis-${f.frame_id}" value="text_card" ${initType === 'text_card' ? 'checked' : ''}>Text
+              </label>
+            </div>
+            <div class="frame-iter-row" id="iter-${f.frame_id}">
+              <button type="button" class="btn-secondary btn-small redo-still-btn" data-frame="${f.frame_id}">Redo still</button>
+              <button type="button" class="btn-secondary btn-small redo-motion-btn" id="redo-motion-${f.frame_id}" data-frame="${f.frame_id}" style="display:none">Redo motion</button>
+              <button type="button" class="btn-secondary btn-small suggest-frame-btn" id="suggest-btn-${f.frame_id}" data-frame="${f.frame_id}" style="display:none">Suggest</button>
+              <label class="approval-toggle" data-frame="${f.frame_id}">
+                <input type="checkbox" class="approval-cb" data-frame="${f.frame_id}" checked>
+                <span class="approval-label">Animate</span>
+              </label>
+            </div>
+          </div>
+          <div class="frame-card-actions">
+            <button type="button" class="frame-expand-btn">More</button>
+          </div>
         </div>
-
-        <div class="visual-selector" data-frame="${f.frame_id}">
-          <label class="vis-opt ${initType === 'auto' ? 'active' : ''}" data-type="auto">
-            <input type="radio" name="vis-${f.frame_id}" value="auto" ${initType === 'auto' ? 'checked' : ''}>
-            Auto
-          </label>
-          <label class="vis-opt ${initType === 'matched' ? 'active' : ''}" data-type="matched">
-            <input type="radio" name="vis-${f.frame_id}" value="matched" ${initType === 'matched' ? 'checked' : ''}>
-            📁 From Folder
-          </label>
-          <label class="vis-opt ${initType === 'uploaded' ? 'active' : ''}" data-type="uploaded">
-            <input type="radio" name="vis-${f.frame_id}" value="uploaded" ${initType === 'uploaded' ? 'checked' : ''}>
-            📷 Upload Photo
-          </label>
-          <label class="vis-opt ${initType === 'portrait' ? 'active' : ''}" data-type="portrait">
-            <input type="radio" name="vis-${f.frame_id}" value="portrait" ${initType === 'portrait' ? 'checked' : ''}>
-            🎨 AI Portrait
-          </label>
-          <label class="vis-opt ${initType === 'symbolic' ? 'active' : ''}" data-type="symbolic">
-            <input type="radio" name="vis-${f.frame_id}" value="symbolic" ${initType === 'symbolic' ? 'checked' : ''}>
-            🖼 AI Symbolic
-          </label>
-          <label class="vis-opt ${initType === 'text_card' ? 'active' : ''}" data-type="text_card">
-            <input type="radio" name="vis-${f.frame_id}" value="text_card" ${initType === 'text_card' ? 'checked' : ''}>
-            Text Card
-          </label>
-        </div>
-
+        <div class="frame-card-details">
         <div class="frame-upload ${initType === 'uploaded' ? 'visible' : ''}" id="upload-${f.frame_id}">
-          <label class="upload-label">
-            📁 Choose photo
-            <input type="file" accept="image/*,video/*" data-frame="${f.frame_id}">
-          </label>
+          <label class="upload-label">Choose photo<input type="file" accept="image/*,video/*" data-frame="${f.frame_id}"></label>
           <span class="upload-filename" id="fname-${f.frame_id}"></span>
         </div>
 
         ${castForSelect ? `
-        <div class="director-note-row" style="margin-top:6px">
-          <label style="font-size:12px;color:var(--text-dim);min-width:70px">🎭 Speaker</label>
+        <div class="director-note-row">
+          <span class="field-label-inline">Speaker</span>
           <select id="speaker-${f.frame_id}" style="font-size:12px;flex:1">
             ${castForSelect.map(m =>
               `<option value="${m.id}" ${m.id === (f.speaker_id || 'narrator') ? 'selected' : ''}>`
@@ -770,35 +790,34 @@ function renderFrameCards(frames) {
         </div>` : ''}
 
         <div class="director-note-row">
-          <input type="text" placeholder="Director note (optional): e.g. show anger not just sadness"
+          <input type="text" placeholder="Director note (optional)"
             id="note-${f.frame_id}" value="${escHtml(f.director_note || '')}">
         </div>
         ${suggestionChips(f.suggestions?.notes, 'note-' + f.frame_id)}
 
-        <div class="director-note-row" style="margin-top:6px">
-          <input type="text"
-            placeholder="✏️ Image edit (optional): e.g. add thunderstorm, more trees, warmer sunset light"
+        <div class="director-note-row">
+          <input type="text" placeholder="Image edit (optional): e.g. add rain, warmer light"
             id="edit-${f.frame_id}" value="${escHtml(f.edit_prompt || '')}"
-            style="border-color: ${f.edit_prompt ? 'var(--orange)' : ''}">
+            style="${f.edit_prompt ? 'border-color:var(--accent)' : ''}">
         </div>
         ${suggestionChips(f.suggestions?.edits, 'edit-' + f.frame_id)}
 
-        <div class="director-note-row" style="margin-top:6px">
-          <label style="font-size:12px;color:var(--text-dim);min-width:70px">🎥 Camera</label>
+        <div class="director-note-row">
+          <span class="field-label-inline">Camera</span>
           ${cameraSelectHtml(f)}
-          ${f.camera_auto ? `<span style="font-size:11px;color:#a78bfa;white-space:nowrap">✨ auto: ${f.camera_reason || 'best for this beat'}</span>` : ''}
+          ${f.camera_auto ? `<span class="text-dim" style="font-size:11px;white-space:nowrap">auto: ${f.camera_reason || 'best'}</span>` : ''}
         </div>
 
         ${isSilent ? '' : `
-        <div class="caption-style-row" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--text-dim);min-width:70px">💬 Caption</span>
-          <select id="cappos-${f.frame_id}" style="font-size:12px" title="Caption position for this frame">
+        <div class="director-note-row" style="flex-wrap:wrap">
+          <span class="field-label-inline">Caption</span>
+          <select id="cappos-${f.frame_id}" style="font-size:12px">
             <option value="">Position: default</option>
             <option value="bottom">Bottom</option>
             <option value="middle">Middle</option>
             <option value="top">Top</option>
           </select>
-          <select id="caplines-${f.frame_id}" style="font-size:12px" title="Max caption lines for this frame">
+          <select id="caplines-${f.frame_id}" style="font-size:12px">
             <option value="">Lines: default</option>
             <option value="1">1 line</option>
             <option value="2">2 lines</option>
@@ -806,32 +825,31 @@ function renderFrameCards(frames) {
           </select>
         </div>`}
 
-        <div class="director-note-row" style="margin-top:6px">
+        <div class="director-note-row">
           <select id="model-${f.frame_id}" style="font-size:12px">
-            <option value="">🤖 Model: Auto (best per shot)</option>
+            <option value="">Model: Auto</option>
           </select>
         </div>
 
-        <div class="lipsync-row" style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;white-space:nowrap">
+        <div class="lipsync-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label class="checkbox-row" style="margin-top:0">
             <input type="checkbox" id="lipsync-${f.frame_id}" ${f.lipsync ? 'checked' : ''}>
-            🎙 Lip Sync
+            Lip Sync
           </label>
           <div id="lipsync-extra-${f.frame_id}" style="display:${f.lipsync ? 'flex' : 'none'};align-items:center;gap:6px;flex:1;flex-wrap:wrap">
             <select id="lipsync-voice-${f.frame_id}" style="font-size:12px;flex:1;min-width:160px">
               <option value="">— use global voice —</option>
             </select>
-            <span style="font-size:11px;color:var(--text-dim)">duration driven by audio</span>
+            <span class="text-dim" style="font-size:11px">duration driven by audio</span>
           </div>
         </div>
 
         ${isVideo ? `
-        <div class="duration-row" style="margin-top:6px">
-          <label class="dur-label" style="color:var(--text-dim)">Video start</label>
+        <div class="duration-row">
+          <label class="dur-label">Video start</label>
           <input type="number" id="vstart-${f.frame_id}" class="dur-input"
             value="${f.video_start_sec || 0}" min="0" step="0.5" style="width:60px">
           <span class="dur-unit">s</span>
-          <span class="dur-hint">skip this many seconds into the clip</span>
         </div>` : ''}
 
         <div class="duration-row">
@@ -841,6 +859,7 @@ function renderFrameCards(frames) {
             ${f.lipsync ? 'readonly style="opacity:0.5;cursor:not-allowed"' : ''}>
           <span class="dur-unit">s</span>
           <span class="dur-hint" id="dur-hint-${f.frame_id}">${f.lipsync ? '(driven by audio)' : '(auto: ' + f.duration + 's)'}</span>
+        </div>
         </div>
       </div>
     `;
@@ -981,6 +1000,7 @@ function renderFrameCards(frames) {
     });
   });
   renderTimelineStrip();
+  if (typeof window.shellRefreshIcons === 'function') window.shellRefreshIcons();
 }
 
 function _frameDuration(f) {
@@ -1122,6 +1142,8 @@ function buildPayload() {
     speaker_voices:      speakerVoices,
     multi_shot:          el('multi-shot')?.checked || false,
     face_ref:            el('face-ref')?.checked || false,
+    character_refs:      characterRefPath ? { narrator: characterRefPath } : {},
+    character_ref_consent: el('character-face-consent')?.checked || false,
     ip:                  el('ip')?.value || '',
     approved_frame_ids:  approvedFrameIds(),
     mood:                el('mood').value,
@@ -1173,7 +1195,7 @@ window.applyStudioPlan = (frames, cast) => {
   el('frames-count').textContent = `${parsedFrames.length} frames`;
   const presetSec = parseInt(el('target-sec')?.value || '0');
   if (presetSec > 0) redistributeDurations(presetSec); else updateTotalDur();
-  el('frames-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  afterFramesReady();
   loadModels().then(() => { populateModelSelects(); populateFrameModelSelects(); renderCostEstimate(); });
 };
 
@@ -1183,8 +1205,9 @@ el('preview-btn').addEventListener('click', async () => {
   if (!parsedFrames.length) { alert('Parse your script first.'); return; }
   const btn = el('preview-btn');
   btn.disabled = true;
-  el('preview-status').textContent = '⏳ Generating still images… (scene design + AI images, no animation)';
-  el('progress-panel').style.display = 'block';
+  el('preview-status').textContent = 'Generating still images…';
+  if (typeof window.shellOnRenderStart === 'function') window.shellOnRenderStart();
+  else el('progress-panel').style.display = 'block';
   el('progress-log').innerHTML = '';
   el('progress-status').textContent = 'Generating stills…';
 
@@ -1350,12 +1373,15 @@ el('run-btn').addEventListener('click', async () => {
   const payload = buildPayload();
 
   // Show progress
-  el('progress-panel').style.display = 'block';
-  el('output-panel').style.display   = 'none';
+  if (typeof window.shellOnRenderStart === 'function') window.shellOnRenderStart();
+  else {
+    el('progress-panel').style.display = 'block';
+    el('progress-panel').scrollIntoView({ behavior: 'smooth' });
+  }
+  el('output-panel')?.classList.remove('visible');
   el('progress-log').innerHTML        = '';
   el('progress-status').textContent   = 'Running…';
   el('run-btn').disabled              = true;
-  el('progress-panel').scrollIntoView({ behavior: 'smooth' });
 
   try {
     let res = await post('/run', payload);
@@ -1449,13 +1475,14 @@ function onClipReady(frameId, url) {
   if (!prev) return;
   prev.classList.remove('placeholder');
   prev.innerHTML =
-    `<video class="clip-preview" src="${url}?t=${Date.now()}" muted playsinline loop autoplay preload="metadata"
-            style="width:90px;height:120px;object-fit:cover;border-radius:6px;background:#000"></video>`
-    + `<span class="preview-label clip-status ok">🎬 clip ready</span>`;
+    `<video class="clip-preview thumb-media" src="${url}?t=${Date.now()}" muted playsinline loop autoplay preload="metadata"></video>`
+    + `<span class="preview-label clip-status ok">clip ready</span>`;
 }
 
 function logLine(text, cls = 'log-line') {
+  if (typeof window.shellUpdateProgress === 'function') window.shellUpdateProgress(text);
   const log = el('progress-log');
+  if (!log) return;
   const div = document.createElement('div');
   div.className = 'log-line ' + cls;
   div.textContent = text;
@@ -1466,14 +1493,15 @@ function logLine(text, cls = 'log-line') {
 // ── Output ────────────────────────────────────────────────────────────────
 
 function showOutput(runId) {
-  el('output-panel').style.display = 'block';
+  if (typeof window.shellShowOutput === 'function') window.shellShowOutput();
+  else el('output-panel').style.display = 'block';
   el('output-video').src = `/output/${runId}?t=${Date.now()}`;
   el('download-btn').href = `/download/${runId}`;
   const exportBtn = el('export-btn');
   if (exportBtn) exportBtn.href = `/export/${runId}`;
   renderProvenance(runId);
   renderPerformanceFeedback(runId);
-  el('output-panel').scrollIntoView({ behavior: 'smooth' });
+  if (typeof window.shellRefreshIcons === 'function') window.shellRefreshIcons();
 }
 
 // ── Provenance / authenticity label (Gap #5) ───────────────────────────────────

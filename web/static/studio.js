@@ -118,8 +118,8 @@ sel('s-plan-btn')?.addEventListener('click', async () => {
 
 // ── Per-shot controls injected into each frame card ─────────────────────────
 window.augmentStudioCard = (card, f) => {
-  const body = card.querySelector('.frame-card-body');
-  if (!body) return;
+  const details = card.querySelector('.frame-card-details');
+  if (!details) return;
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-top:8px;border-top:1px dashed var(--border);padding-top:8px';
   const talentOpts = ['<option value="">— no talent —</option>']
@@ -140,7 +140,7 @@ window.augmentStudioCard = (card, f) => {
       value="${(f.negative_prompt || '').replace(/"/g, '&quot;')}" style="margin-top:6px;font-size:12px">
     <input type="text" data-studio-lock="${f.frame_id}" placeholder="Continuity lock (outfit/styling that must not change)"
       value="${(f.continuity_lock || '').replace(/"/g, '&quot;')}" style="margin-top:6px;font-size:12px">`;
-  body.appendChild(wrap);
+  details.appendChild(wrap);
 
   const set = (k, v) => window.setFrameOverride(f.frame_id, k, v);
   wrap.querySelector(`[data-studio-talent]`).addEventListener('change', e => set('talent_id', e.target.value));

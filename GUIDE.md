@@ -257,6 +257,22 @@ Studio mode** link in the header. See [docs/MODE3_PLAN.md](docs/MODE3_PLAN.md).
 
 ## 4. Web UI — Step by Step
 
+### App layout (all modes)
+
+The web UI uses a **four-step wizard** with a persistent preview panel:
+
+| Area | What it is |
+|------|------------|
+| **Header** | Story / Studio / Brand tabs, Guide link, settings (gear) |
+| **Step pills** | Start → Frames → Polish → Render (labels vary slightly by mode) |
+| **Editor (left)** | Cards for the active step only |
+| **Preview (right)** | Phone-frame mockup; timeline strip after parse; finished video after render |
+| **Sticky bar (bottom)** | Back / Next, cost chip, **Preview Stills**, **Generate** |
+| **Settings drawer** | AI Credits, IP watermark, Performance log (Story mode) |
+
+After you parse frames, the app jumps to the **Frames** step and moves the timeline into
+the preview panel. **More** on each frame card expands director note, camera, lip-sync, etc.
+
 ### Step 1: Subject (optional)
 - **Both fields are optional.** Leave them blank and the director **infers who is
   on screen — their age, gender, and look — from the story itself.** There is no
@@ -431,7 +447,13 @@ By default, frames you don't pin with `[photo:]` are filled by **alphabetical or
 - **Videos are matched too:** a clip is sampled into a few keyframes, "watched," and matched like a photo — then played as **real footage** (not animated). Real footage is preferred over an AI-animated still when both fit, because it looks better and costs nothing to animate.
 - **Respects your choices:** pinned `[photo:]` frames, AI frames, and the per-frame 🤖 Model picker are never overridden.
 - **Cost:** each image/video is described **once** via the LLM and cached forever (pennies). Off by default — when off, behaviour is unchanged.
-- Powered by the pluggable LLM brain (`config/llm.json`), so it works on OpenAI / Bedrock / Gemini.
+- Powered by the pluggable LLM brain (`config/llm.json`), so it works on OpenAI / Anthropic / Bedrock / Gemini.
+
+### 🧑 Character face (optional) — lock an AI character to one face
+When you have **no asset folder** and the story's people are AI-generated, upload **one face image** (Story start panel, under the assets row) to lock the **narrator/protagonist's** look across every AI scene — instead of letting the model invent (and drift) a face. It reference-edits every AI portrait of that character to your uploaded face.
+- **Stronger than the 👤 Consistent face toggle**, which anchors on the *first AI-invented* face — here *you* choose the face.
+- **Consent required:** tick the consent box to use it. If the face is a **real person**, use it only with their consent — the AI renders their likeness across scenes and the output is labeled AI-assisted (authenticity rule §5). Without the consent tick the uploaded face is ignored.
+- Applies to the **narrator** speaker; other speakers (e.g. a quoted child) still use the auto consistent-face. Per-speaker faces are a Studio-mode feature (Talent library).
 
 ### 🎞 Multi-shot coverage (B-roll per beat)
 By default each story beat is **one shot** — its matched photo/clip held under the
@@ -775,6 +797,13 @@ You don't pick one provider for the whole video any more. A **router** (`agents/
 ---
 
 ## 12. Music Options
+
+> **🥁 Cuts ride the beat (automatic).** When you add a music track (Upload or Suno),
+> shot cuts now **snap to the music's beat** — a cut landing on a beat plays as a punchy
+> hard cut, while off-beat junctions stay a soft dissolve. No setting to toggle; it just
+> makes the reel feel *edited* instead of a slideshow. Voice-over reels keep smooth
+> dissolves (you don't cut to narration). Falls back to the normal crossfade if the
+> track has no clear beat.
 
 ### No Music
 Silent video. Add your own music in editing.

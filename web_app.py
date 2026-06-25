@@ -73,25 +73,45 @@ MOOD_MAP = {
 
 # ── Log capture ──────────────────────────────────────────────────────────────
 
-class _LogCapture:
-    """Redirects print() calls into the run's log list and also to terminal."""
-    def __init__(self, run_id: str):
-        self._run_id = run_id
+# Per-thread run routing. The old approach wrapped each run in
+# contextlib.redirect_stdout(), which sets PROCESS-GLOBAL sys.stdout — so a
+# preview running alongside a render (or any overlapping threaded requests under
+# gunicorn `--threads 8`) clobbered each other's stdout and cross-wired logs.
+# Instead we install ONE stdout tee that routes each line to the run bound to the
+# CURRENT thread; non-run threads pass straight through.
+_thread_run = threading.local()
+
+
+class _TeeStdout:
+    """Process-global stdout proxy. Routes print() into the log of the run bound
+    to the current thread (`_thread_run.run_id`), and always echoes to the real
+    stdout. Thread-safe — no per-run sys.stdout swapping."""
+    def __init__(self, real):
+        self._real = real
 
     def write(self, text: str):
-        stripped = text.rstrip()
-        if stripped:
-            with _runs_lock:
-                _runs[self._run_id]["log"].append(stripped)
-            try:
-                from agents import run_store
-                run_store.append_log(self._run_id, stripped)
-            except Exception:
-                pass
-        sys.__stdout__.write(text)
+        run_id = getattr(_thread_run, "run_id", None)
+        if run_id:
+            stripped = text.rstrip()
+            if stripped:
+                with _runs_lock:
+                    run = _runs.get(run_id)
+                    if run is not None:
+                        run["log"].append(stripped)
+                try:
+                    from agents import run_store
+                    run_store.append_log(run_id, stripped)
+                except Exception:
+                    pass
+        return self._real.write(text)
 
     def flush(self):
-        sys.__stdout__.flush()
+        self._real.flush()
+
+
+# Install once, capturing the real stdout. A run thread sets _thread_run.run_id
+# (in _execute_pipeline/_execute_preview) so its prints land in that run's log.
+sys.stdout = _TeeStdout(sys.__stdout__)
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -1308,6 +1328,15 @@ def redo_motion():
 def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
     """Build the frames list from the UI payload (shared by preview + render)."""
     input_assets = data.get("assets_dir", "").strip()
+    # Optional user-supplied character face(s): {speaker_id: server_path}. Locks
+    # that speaker's AI portraits to one chosen face (reuses the talent-ref seam).
+    # Honored ONLY with explicit consent — the face may be a real person, so this
+    # is the §5 authenticity / AI-likeness gate (consent must precede the render).
+    character_refs = data.get("character_refs") if isinstance(data.get("character_refs"), dict) else {}
+    if character_refs and not data.get("character_ref_consent"):
+        print("[Identity] Character face supplied without consent — ignoring "
+              "(consent is required before rendering a person's AI likeness).")
+        character_refs = {}
     frames = []
     for fd in data.get("frames", []):
         _speaker_id = (fd.get("speaker_id") or "narrator")
@@ -1389,6 +1418,7 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             "talent_id":       talent_id,
             "product_id":      product_id,
             "talent_ref_path": talent_ref_path,
+            "character_ref_path": (character_refs.get(_speaker_id) or "").strip(),
             "negative_prompt": (fd.get("negative_prompt") or "").strip(),
             "continuity_lock": (fd.get("continuity_lock") or "").strip(),
         })
@@ -1523,8 +1553,11 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
         # Studio Mode: an explicit locked Talent reference wins over the auto
         # per-speaker face_ref, so every shot locks to the same chosen face.
         talent_ref = (f.get("talent_ref_path") or "").strip()
+        char_ref = (f.get("character_ref_path") or "").strip()  # Story/Brand: user-supplied face
         if talent_ref and os.path.exists(talent_ref):
             ref = talent_ref
+        elif char_ref and os.path.exists(char_ref):
+            ref = char_ref  # every portrait of this speaker reference-edits to the supplied face
         else:
             ref = first_portrait_by_speaker.get(sid, "") if face_ref else ""
         if ps == "ai_portrait":
@@ -1627,7 +1660,7 @@ def _write_edit_list(run_dir: Path, frames: list[dict], clips: list[dict],
 # ── Pipeline execution ────────────────────────────────────────────────────────
 
 def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
-    log = _LogCapture(run_id)
+    _thread_run.run_id = run_id   # route this thread's prints into this run's log
 
     def _finish(status: str):
         with _runs_lock:
@@ -1639,8 +1672,7 @@ def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
             pass
 
     try:
-        with contextlib.redirect_stdout(log):
-            _run_inner(run_id, data, run_dir)
+        _run_inner(run_id, data, run_dir)
         _finish("done")
     except Exception as e:
         import traceback
@@ -1658,18 +1690,19 @@ def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
         except Exception:
             pass
         _finish("error")
+    finally:
+        _thread_run.run_id = None   # pooled threads are reused — don't leak the binding
 
 
 def _execute_preview(run_id: str, data: dict, run_dir: Path):
-    log = _LogCapture(run_id)
+    _thread_run.run_id = run_id   # route this thread's prints into this run's log
 
     def _finish(status: str):
         with _runs_lock:
             _runs[run_id]["status"] = status
 
     try:
-        with contextlib.redirect_stdout(log):
-            _preview_inner(run_id, data, run_dir)
+        _preview_inner(run_id, data, run_dir)
         _finish("done")
     except Exception as e:
         import traceback
@@ -1677,6 +1710,8 @@ def _execute_preview(run_id: str, data: dict, run_dir: Path):
             _runs[run_id]["log"].append(f"✗ Error: {e}")
             _runs[run_id]["log"].append(traceback.format_exc())
         _finish("error")
+    finally:
+        _thread_run.run_id = None   # pooled threads are reused — don't leak the binding
 
 
 def _preview_inner(run_id: str, data: dict, run_dir: Path):
@@ -1856,9 +1891,18 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                             force_5s=(quality == "dev"), kling_mode=kling_mode,
                             provider=provider, on_clip_ready=_on_clip_ready)
 
-        # Effective per-frame windows in the rendered video — crossfade overlaps
-        # clips, so every timing consumer below uses these, not raw durations.
-        frame_times = frame_timecodes(frames, clips, transition)
+        # Beat-aware cutting (P1): for music-bed reels, derive per-junction
+        # overlaps from the music's beats so cuts land ON the beat (punchy) instead
+        # of a uniform dissolve. Voiceover/brand stay uniform — you don't beat-cut
+        # narration. None ⇒ today's exact uniform-crossfade behaviour.
+        from agents.assembler import beat_overlaps
+        _mt = data.get("music_type")
+        _music_bed = data.get("music_path") if _mt in ("upload", "generate") else None
+        overlaps = beat_overlaps(clips, _music_bed, transition)
+
+        # Effective per-frame windows in the rendered video — overlaps shift clip
+        # starts, so every timing consumer below uses these, not raw durations.
+        frame_times = frame_timecodes(frames, clips, transition, overlaps)
 
         # ── Captions ───────────────────────────────────────────────────────
         # Burning subtitles is optional. When disabled, skip caption generation
@@ -1917,7 +1961,7 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         assemble_caption_only(clips, clip_temp, assemble_target,
                               music_path=music_path, srt_path=ass_path,
                               transition=transition, is_voiceover=is_vo,
-                              bg_music_path=bg_music_path)
+                              bg_music_path=bg_music_path, overlaps=overlaps)
 
         # Single overlay post-pass: IP watermark (both modes) + brand disclosure/logo
         # (brand only) composited together so the final video is encoded once.

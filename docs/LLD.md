@@ -47,8 +47,10 @@ agents/
   clip_builder.py         still/video → animated clip (kenburns|kling|higgsfield|fal)
     higgsfield.py / fal_video.py / fal_client.py   vendor clients
   caption_writer.py       frames → ASS subtitle file (uses effective_timecodes)
+  beat_track.py           music → onset/beat times (ffmpeg + numpy, no librosa; graceful [])
   assembler.py            clips → normalize → concat/xfade → captions → music → voiceover
-                          → apply_brand_overlay (brand post-pass)
+                          → apply_brand_overlay (brand post-pass);
+                          P1 beat-aware per-junction overlaps (cut on beat / dissolve off-beat)
   pricing.py              whole-pipeline cost estimate (config/pricing.json); multi-shot aware
   style_exemplars.py      opt-in in-context house-style injection (USE_EXEMPLARS=1)
   _kv.py                  thread-safe SQLite KVStore (WAL mode, per-key writes)
@@ -350,6 +352,17 @@ the SAME `frames[]` schema the other doors produce, so `_build_frames_from_paylo
 image prompt in `_generate_stills`; `negative_prompt` is threaded into
 `clip_builder._kling_submit` (falls back to `DEFAULT_KLING_NEGATIVE`).
 
+### Character face (Story/Brand) — `character_ref_path`
+Optional user-supplied face that locks a speaker's AI portraits to one chosen face
+(no asset folder needed). Payload: `character_refs` `{speaker_id: server_path}` +
+`character_ref_consent` (bool). `_build_frames_from_payload` honors `character_refs`
+**only when `character_ref_consent` is true** (the face may be a real person — §5
+AI-likeness consent gate) and sets `frame["character_ref_path"]` per speaker. In
+`_generate_stills` the identity-anchor precedence is **`talent_ref_path` →
+`character_ref_path` → first-portrait `face_ref`**; the chosen ref is passed to
+`generate_contextual_image(reference_path=…)` so every portrait of that speaker
+reference-edits to the same face. Degradable: missing/invalid path falls through.
+
 ### Governance (MODE3_PLAN §2)
 AI may draft on-screen lines in Studio; all frame text still passes Gate A
 (`safety.moderate_frames` in `_generate_stills`). Regulated ad claims / CTA /
@@ -540,6 +553,22 @@ override it. Silent frames (no caption) emit no Dialogue line.
 - **Keyword highlight:** operator-authored `==word or phrase==` spans are converted
   to inline ASS colour tags. AI does not choose highlighted words.
 
+### `assembler.py` — beat-aware cutting (P1)
+`effective_timecodes(durations, transition, overlaps=None)` is the **single source of
+truth** for timeline positions (captions, lipsync `adelay`, ducking). `overlaps` =
+per-junction crossfade duration (len n-1); `None` → uniform `TRANSITION_DUR` (legacy,
+byte-identical). The rhythm seam:
+- `beat_track.beat_times(music)` → onset/beat timestamps (ffmpeg decode → numpy
+  energy-onset peaks; returns `[]` on any failure → graceful uniform fallback).
+- `transition_plan(durations, beats)` → a cut point within `near` (0.25s) of a beat
+  becomes a ~0.06s xfade (reads as a **hard cut ON the beat**), else the 0.4s dissolve.
+- `beat_overlaps(clips, music_path, transition)` is the entry point (`None` unless a
+  music bed + detected beats + ≥2 clips). **`web_app`/`run_caption` compute it ONCE and
+  pass the same list to BOTH `frame_timecodes` and `assemble_caption_only`** — so cuts
+  and captions can never desync. `_build_video_with_transitions(clips, out, overlaps)`
+  uses the same list for the xfade durations/offsets. Scope: music-bed reels
+  (upload/generate) only — voiceover/brand stay uniform (don't beat-cut narration).
+
 ### `layout.py` — LAY-0 pilot seam
 
 `frame["layout"] = {"preset": "text_card", ...}` renders a full-bleed text-card
@@ -586,6 +615,13 @@ The HOB Show, …) — **distinct** from the brand-collab advertiser logo.
 ## 15. `web_app.py` — Flask surface
 
 → [web_app.py](../web_app.py). Server-rendered UI + JSON/SSE endpoints.
+
+**UI shell (2026 redesign).** All three mode pages extend Jinja [`web/templates/_base.html`](../web/templates/_base.html):
+shared header (Story / Studio / Brand tabs), step wizard (`.step-panel` + `#step-nav`),
+sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (phone frame +
+`#output-panel`), and settings drawer (`#balances-card`, `#ip`). Step navigation lives in
+[`web/static/shell.js`](../web/static/shell.js); pipeline logic stays in
+[`web/static/main.js`](../web/static/main.js) with mode hooks in `brand.js` / `studio.js`.
 
 | Route | Method | Purpose |
 |---|---|---|
@@ -679,6 +715,17 @@ brand modes get them automatically.
 
 Run-state additions: `_runs[run_id]` gains `"clips": {frame_id: path}` and
 `"events": [typed dicts]` alongside `log`/`status`/`output_path`.
+
+**Thread-safe log capture (sharp edge):** `print()` from a run thread is captured
+by a single process-global `_TeeStdout` (installed once at import) that routes each
+line to the run bound to the **current thread** via `_thread_run` (a
+`threading.local`). `_execute_pipeline`/`_execute_preview` set `_thread_run.run_id`
+and clear it in a `finally` (pooled threads are reused — must not leak the binding).
+This replaced per-run `contextlib.redirect_stdout`, which set the global
+`sys.stdout` and cross-wired logs when a preview and a render (or any overlapping
+threaded requests under gunicorn `--threads 8`) ran concurrently. Per-run
+`status`/`stills`/`clips` were always correct (set by `run_id`, not via stdout) —
+only the streamed log was affected.
 
 **Security:** `/media` validates all paths against `RUNS_DIR` and `ASSETS_BROWSE_ROOT` via
 `_path_allowed()`. Only image/video MIME types allowed. `ASSETS_BROWSE_ROOT` env var scopes

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}HOBAILabs{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="app-shell">
+
+<header class="app-header">
+  <a href="/" class="app-logo">HOBAILabs</a>
+  <nav class="nav-tabs" aria-label="Mode">
+    <a href="/" class="nav-tab {% if active_mode == 'story' %}active{% endif %}">Story</a>
+    <a href="/studio" class="nav-tab {% if active_mode == 'studio' %}active{% endif %}">Studio</a>
+    <a href="/brand" class="nav-tab {% if active_mode == 'brand' %}active{% endif %}">Brand</a>
+  </nav>
+  <div class="header-actions">
+    <a href="/guide" class="header-link"><i data-lucide="book-open" class="icon"></i> Guide</a>
+    <div id="auth-bar"></div>
+    <button type="button" class="btn-icon" id="settings-open" title="Settings" aria-label="Settings">
+      <i data-lucide="settings" class="icon"></i>
+    </button>
+  </div>
+</header>
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="settings-drawer" id="settings-drawer" aria-label="Settings">
+  <div class="drawer-header">
+    <h2>Settings</h2>
+    <button type="button" class="btn-icon" id="settings-close" aria-label="Close settings">
+      <i data-lucide="x" class="icon"></i>
+    </button>
+  </div>
+  {% block drawer %}{% endblock %}
+</aside>
+
+<nav class="step-nav" id="step-nav" aria-label="Workflow steps">
+  {% block steps %}{% endblock %}
+</nav>
+
+<div class="app-body">
+  <div class="editor-panel" id="editor-panel">
+    {% block editor %}{% endblock %}
+  </div>
+
+  <aside class="preview-panel" id="preview-panel">
+    <div class="phone-frame">
+      <div class="phone-screen">
+        <div id="preview-empty" class="preview-empty">
+          <div class="preview-empty-icon"><i data-lucide="smartphone" class="icon-lg"></i></div>
+          <p>{% block preview_empty %}Paste a story or parse frames to see your reel preview here.{% endblock %}</p>
+        </div>
+        <div id="preview-timeline-host"></div>
+        <div id="output-panel">
+          <div class="video-safezone-wrap">
+            <video id="output-video" controls playsinline></video>
+            <div class="reels-safezone-overlay" aria-hidden="true">
+              <span>Reels UI safe zone</span>
+            </div>
+          </div>
+          <div id="provenance-label" style="margin:10px;padding:0 8px"></div>
+          <div class="output-actions" style="padding:0 8px 12px">
+            {% block output_actions %}
+            <a id="download-btn" class="btn-secondary">Download .mp4</a>
+            <a id="export-btn" class="btn-secondary">Export clips</a>
+            {% endblock %}
+          </div>
+          <div id="performance-feedback" style="padding:0 8px 12px"></div>
+        </div>
+      </div>
+    </div>
+    <div id="preview-status" class="preview-status"></div>
+  </aside>
+</div>
+
+<div class="action-bar" id="action-bar">
+  <div class="action-bar-left">
+    <button type="button" class="btn-secondary btn-small" id="step-back">Back</button>
+  </div>
+  <div class="action-bar-center">
+    <span id="cost-chip" title="Tap for full breakdown"></span>
+  </div>
+  <div class="action-bar-right">
+    <button type="button" class="btn-secondary" id="preview-btn">Preview Stills</button>
+    <button type="button" class="btn-primary" id="run-btn">{% block run_label %}Generate Video{% endblock %}</button>
+    <button type="button" class="btn-secondary btn-small" id="step-next">Next</button>
+  </div>
+</div>
+
+{% block hidden %}{% endblock %}
+
+<script src="/static/shell.js"></script>
+{% block shell_init %}{% endblock %}
+<script src="/static/main.js"></script>
+{% block mode_script %}{% endblock %}
+</body>
+</html>

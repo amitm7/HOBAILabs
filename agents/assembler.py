@@ -17,32 +17,83 @@ def _run(cmd: list[str]):
 
 
 def effective_timecodes(durations: list[float],
-                        transition: str = "crossfade") -> list[tuple[float, float]]:
+                        transition: str = "crossfade",
+                        overlaps: list[float] | None = None) -> list[tuple[float, float]]:
     """
     (start, end) of each clip in the RENDERED video.
 
-    Crossfade overlaps consecutive clips by TRANSITION_DUR at every junction
-    (see _build_video_with_transitions: offset += dur - TRANSITION_DUR), so each
-    clip after the first starts that much earlier than the raw cumulative sum.
-    Every consumer of timeline positions (lipsync adelay, ducking windows,
-    captions, voiceover) must use these, not raw cumulative durations.
+    Crossfade overlaps consecutive clips at every junction (see
+    _build_video_with_transitions: offset += dur - overlap), so each clip after
+    the first starts that much earlier than the raw cumulative sum. Every consumer
+    of timeline positions (lipsync adelay, ducking windows, captions, voiceover)
+    must use these, not raw cumulative durations.
+
+    `overlaps` (len = len(durations)-1) is the per-junction overlap in seconds —
+    this is how beat-aware cutting (P1) threads the SAME overlaps used to build
+    the video into the timecodes, so captions never desync from the cuts. When
+    None, overlaps are uniform from `transition` (byte-identical to prior behaviour).
     """
-    overlap = 0.0 if transition == "none" else TRANSITION_DUR
+    n = len(durations)
+    if overlaps is None:
+        ov = 0.0 if transition == "none" else TRANSITION_DUR
+        overlaps = [ov] * max(0, n - 1)
     times, t = [], 0.0
-    for d in durations:
+    for i, d in enumerate(durations):
         times.append((t, t + d))
-        t += d - overlap
+        if i < n - 1:
+            t += d - overlaps[i]
     return times
 
 
+def transition_plan(durations: list[float], beats: list[float], *,
+                    near: float = 0.25, cut_dur: float = 0.06,
+                    dissolve_dur: float = TRANSITION_DUR) -> list[float]:
+    """Per-junction overlap driven by the music beats (P1 rhythm-aware cutting).
+
+    A cut point that lands near a beat becomes a near-instant xfade — it reads as
+    a hard cut landing ON the beat (punchy, intentional); off-beat junctions keep
+    the soft dissolve, which hides the misalignment. Returns len(durations)-1
+    overlaps. No beats (or <2 clips) → all dissolves = today's behaviour.
+    """
+    n = len(durations)
+    if not beats or n < 2:
+        return [dissolve_dur] * max(0, n - 1)
+    overlaps, t = [], 0.0
+    for i in range(n - 1):
+        t += durations[i]                       # raw cut point after clip i
+        nearest = min(abs(b - t) for b in beats)
+        overlaps.append(cut_dur if nearest <= near else dissolve_dur)
+    return overlaps
+
+
+def beat_overlaps(clips: list[dict], music_path: str | None,
+                  transition: str = "crossfade") -> list[float] | None:
+    """Per-junction overlaps for beat-aware cutting (P1), or None for the uniform
+    path. Returns None — i.e. today's exact behaviour — when there is no music
+    bed, transition is 'none', there are <2 clips, or no beats are detected.
+    Beat detection is best-effort (no librosa); any failure → None."""
+    if not music_path or transition == "none" or len(clips) < 2:
+        return None
+    try:
+        from agents import beat_track
+        beats = beat_track.beat_times(music_path)
+    except Exception:
+        beats = []
+    if not beats:
+        return None
+    return transition_plan([c["actual_duration"] for c in clips], beats)
+
+
 def frame_timecodes(frames: list[dict], clips: list[dict],
-                    transition: str = "crossfade") -> list[tuple[float, float]]:
+                    transition: str = "crossfade",
+                    overlaps: list[float] | None = None) -> list[tuple[float, float]]:
     """
     Effective (start, end) per FRAME in the rendered video. Multi-shot coverage
     splits a frame into clips named '<frame_id>_<n>'; a frame's window spans all
-    of its sub-clips.
+    of its sub-clips. `overlaps` threads beat-aware per-junction overlaps so the
+    burned captions land exactly where the cuts do.
     """
-    times = effective_timecodes([c["actual_duration"] for c in clips], transition)
+    times = effective_timecodes([c["actual_duration"] for c in clips], transition, overlaps)
     out = []
     for f in frames:
         fid = f["frame_id"]
@@ -130,9 +181,14 @@ def _normalize_clip(src: str, dst: str, width: int, height: int):
     ])
 
 
-def _build_video_with_transitions(clips: list[dict], output_path: str):
-    """Concat clips with xfade crossfade transitions."""
+def _build_video_with_transitions(clips: list[dict], output_path: str,
+                                  overlaps: list[float] | None = None):
+    """Concat clips with xfade transitions. `overlaps` is the per-junction xfade
+    duration (len n-1); near-zero overlaps read as a hard cut on the beat. None →
+    uniform TRANSITION_DUR (today's behaviour)."""
     n = len(clips)
+    if overlaps is None:
+        overlaps = [TRANSITION_DUR] * max(0, n - 1)
     if n == 1:
         _run(["ffmpeg", "-y", "-i", clips[0]["clip_path"], "-c", "copy", output_path])
         return
@@ -164,11 +220,12 @@ def _build_video_with_transitions(clips: list[dict], output_path: str):
     offset = 0.0
     prev_label = "[0:v]"
     for i in range(1, n):
-        offset += clips[i - 1]["actual_duration"] - TRANSITION_DUR
+        ov = overlaps[i - 1] if i - 1 < len(overlaps) else TRANSITION_DUR
+        offset += clips[i - 1]["actual_duration"] - ov
         next_label = f"[x{i}]" if i < n - 1 else "[vout]"
         filter_parts.append(
             f"{prev_label}[{i}:v]xfade=transition=fade:"
-            f"duration={TRANSITION_DUR}:offset={offset:.3f}{next_label}"
+            f"duration={ov:.3f}:offset={offset:.3f}{next_label}"
         )
         prev_label = next_label
 
@@ -218,7 +275,7 @@ def _strip_audio(clip_path: str, out_path: str) -> str:
 
 def _assemble_with_lipsync(clips: list[dict], temp: Path, output_path: str,
                             music_path: str | None, sub_path: str | None,
-                            transition: str):
+                            transition: str, overlaps: list[float] | None = None):
     """
     Assembly when some clips carry embedded lipsync audio.
 
@@ -246,10 +303,10 @@ def _assemble_with_lipsync(clips: list[dict], temp: Path, output_path: str,
     if transition == "none":
         _concat_clips_hard(prepped, raw_video)
     else:
-        _build_video_with_transitions(prepped, raw_video)
+        _build_video_with_transitions(prepped, raw_video, overlaps)
 
     # ── Compute timecodes per clip (accounting for crossfade overlap) ─────────
-    timecodes = effective_timecodes([c["actual_duration"] for c in clips], transition)
+    timecodes = effective_timecodes([c["actual_duration"] for c in clips], transition, overlaps)
     total_dur = timecodes[-1][1] if timecodes else 0.0
 
     # ── Extract lipsync audio files with positional delay ─────────────────────
@@ -333,7 +390,8 @@ def _assemble_with_lipsync(clips: list[dict], temp: Path, output_path: str,
 def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
                           music_path: str = None, srt_path: str = None,
                           transition: str = "crossfade", is_voiceover: bool = False,
-                          bg_music_path: str = None):
+                          bg_music_path: str = None,
+                          overlaps: list[float] | None = None):
     """
     Caption-only assembly: visuals + captions + optional music or voiceover.
     Accepts either .srt or .ass path; .ass is used when present.
@@ -356,7 +414,8 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
 
     # Route to lipsync-aware assembly if any clip carries embedded audio
     if any(c.get("has_lipsync_audio") for c in clips):
-        _assemble_with_lipsync(clips, temp, output_path, music_path, sub_path, transition)
+        _assemble_with_lipsync(clips, temp, output_path, music_path, sub_path,
+                               transition, overlaps)
         return
 
     # ── Standard assembly (no lipsync) ────────────────────────────────────────
@@ -365,8 +424,9 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
         print("[Assembler] Building hard-cut concat...")
         _concat_clips_hard(clips, raw_video)
     else:
-        print("[Assembler] Building crossfade transitions...")
-        _build_video_with_transitions(clips, raw_video)
+        n_cuts = sum(1 for o in (overlaps or []) if o < TRANSITION_DUR)
+        print(f"[Assembler] Building transitions...{f' ({n_cuts} beat-synced cuts)' if n_cuts else ''}")
+        _build_video_with_transitions(clips, raw_video, overlaps)
 
     print("[Assembler] Final merge...")
     vf_str = _subtitle_filter(sub_path) if sub_path else "null"

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOBAILabs — Technical Overview for CTO</title>
+<style>
+  :root{
+    --navy:#0E1330; --navy2:#161C44; --ice:#9FB4FF; --mint:#37E0B0;
+    --gold:#F2C14E; --paper:#F4F6FF; --muted:#A6AED6; --line:#2A3160;
+    --card:#1A2150; --danger:#FF7A7A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#05060f;color:var(--paper);
+    font-family:"Calibri","Segoe UI",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .deck{max-width:1100px;margin:0 auto;padding:28px 18px}
+  .slide{position:relative;background:linear-gradient(155deg,var(--navy) 0%,#0A0E26 100%);
+    border:1px solid var(--line);border-radius:18px;padding:54px 58px;margin:0 0 26px;
+    min-height:560px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+  .slide.light{background:linear-gradient(155deg,#FBFCFF 0%,#E9EDFB 100%);color:#12183A;border-color:#D4DAF2}
+  .kicker{font-size:13px;letter-spacing:3px;text-transform:uppercase;color:var(--mint);font-weight:700;margin-bottom:14px}
+  .slide.light .kicker{color:#2C8C6E}
+  h1{font-family:"Cambria","Georgia",serif;font-size:52px;line-height:1.06;font-weight:700;letter-spacing:-.5px}
+  h2{font-family:"Cambria","Georgia",serif;font-size:38px;line-height:1.1;font-weight:700;margin-bottom:20px;letter-spacing:-.3px}
+  h3{font-size:19px;font-weight:700;margin-bottom:6px}
+  p{font-size:17px;line-height:1.55;color:var(--paper)}
+  .slide.light p{color:#293057}
+  .muted{color:var(--muted)} .slide.light .muted{color:#5b628a}
+  .lead{font-size:21px;line-height:1.5;color:#D9DEFF;max-width:760px}
+  .slide.light .lead{color:#333a63}
+  .pagenum{position:absolute;bottom:20px;right:26px;font-size:12px;color:var(--muted);letter-spacing:1px}
+  .brandtag{position:absolute;top:24px;right:30px;font-size:12px;letter-spacing:2px;color:var(--ice);text-transform:uppercase;font-weight:700}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:8px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .slide.light .card{background:#fff;border-color:#DfE4F7}
+  .card h3{color:var(--ice)} .slide.light .card h3{color:#27408B}
+  .card p{font-size:15px;color:var(--muted)} .slide.light .card p{color:#4a5179}
+  .chip{display:inline-block;background:rgba(55,224,176,.12);border:1px solid rgba(55,224,176,.4);
+    color:var(--mint);border-radius:999px;padding:5px 14px;font-size:13px;font-weight:600;margin:4px 6px 4px 0}
+  .stat{font-family:"Cambria",serif;font-size:60px;font-weight:700;color:var(--gold);line-height:1}
+  .statlbl{font-size:14px;color:var(--muted);margin-top:6px}
+  ul{list-style:none} li{font-size:16px;line-height:1.5;padding:7px 0 7px 26px;position:relative;color:#D9DEFF}
+  .slide.light li{color:#2c3358}
+  li:before{content:"";position:absolute;left:2px;top:15px;width:9px;height:9px;border-radius:3px;
+    background:var(--mint);transform:rotate(45deg)}
+  li.warn:before{background:var(--gold)} li.bad:before{background:var(--danger)}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:13.5px;font-weight:600;color:#CFD6FF}
+  .step .n{color:var(--mint);font-weight:800;margin-right:6px}
+  .arrow{color:var(--ice);font-size:18px;font-weight:700}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{text-align:left;padding:11px 12px;font-size:15px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--ice);font-size:13px;letter-spacing:1px;text-transform:uppercase}
+  td{color:#D2D8FB} td .why{color:var(--muted);font-size:14px}
+  .twocol{display:grid;grid-template-columns:1.15fr .85fr;gap:30px;align-items:start}
+  .accent{color:var(--gold)} .mintc{color:var(--mint)} .icec{color:var(--ice)}
+  .big-flow{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .door{border-radius:14px;padding:18px 20px;border:1px solid var(--line);background:var(--card)}
+  .door .tag{font-size:12px;letter-spacing:2px;text-transform:uppercase;font-weight:700;color:var(--mint)}
+  .door h3{font-size:20px;margin:6px 0 4px}
+  .door p{font-size:14px;color:var(--muted)}
+  .route{font-family:"Courier New",monospace;font-size:13px;color:var(--gold)}
+  @media print{
+    html,body{background:#fff}
+    .deck{max-width:none;margin:0;padding:0}
+    .slide{margin:0;border-radius:0;border:none;page-break-after:always;min-height:100vh;box-shadow:none}
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- 1 TITLE -->
+  <section class="slide">
+    <div class="brandtag">HOBAILabs</div>
+    <div style="margin-top:120px"></div>
+    <div class="kicker">Technical Overview · Engineering Deep-Dive</div>
+    <h1>HOBAILabs</h1>
+    <h1 style="font-size:34px;color:var(--ice);margin-top:10px">The story&nbsp;→&nbsp;reel pipeline for Humans of Bombay</h1>
+    <p class="lead" style="margin-top:24px">One shared engine that turns a raw story script + a folder of real photos and videos into a finished, captioned, scored 9:16 reel — across three front doors, on premium models, with governance and cost discipline built in.</p>
+    <p class="muted" style="margin-top:30px;font-size:14px">Prepared for CTO review · creative.kevat.ai · AWS ap-south-1 · current <span class="route">main</span></p>
+    <div class="pagenum">01</div>
+  </section>
+
+  <!-- 2 WHAT IT IS -->
+  <section class="slide">
+    <div class="kicker">The product in one line</div>
+    <h2>Plain-text story + a folder of media → a finished reel</h2>
+    <p class="lead">Three front doors, <span class="mintc">one engine</span>. Every door builds the same <span class="route">frames[]</span> data model and calls the same <span class="route">agents/*</span> stages. New modes are flags into the shared pipeline — never a fork.</p>
+    <div class="grid3" style="margin-top:26px">
+      <div class="door"><div class="tag">Story /</div><h3>Creator mode</h3><p>HOB team turning a personal story script into a reel.</p></div>
+      <div class="door"><div class="tag">Brand /brand</div><h3>Ad mode (B1)</h3><p>Paid brand collabs: brief, brand kit, mandatories, CTA, disclosure.</p></div>
+      <div class="door"><div class="tag">Studio /studio</div><h3>Prompt → reel</h3><p>Brief expands to shots; reusable Talent & Product identity library.</p></div>
+    </div>
+    <p style="margin-top:24px" class="muted">Output is always a 9:16 MP4 — captioned, scored, optionally lip-synced and watermarked with a HOB property.</p>
+    <div class="pagenum">02</div>
+  </section>
+
+  <!-- 3 CORE PRINCIPLE -->
+  <section class="slide light">
+    <div class="kicker">The defining principle</div>
+    <h2>Realism preservation + test-cheap / finish-expensive</h2>
+    <div class="twocol" style="margin-top:14px">
+      <div>
+        <ul>
+          <li><b>Real media is never AI-regenerated.</b> Real photos/videos of a real person or product pass through the pipeline untouched. This is HOB's one irreplaceable asset — authenticity.</li>
+          <li><b>Per-shot model routing.</b> Cheap models in Dev for iteration; premium models only for final / client renders. Cost discipline is automatic, not manual.</li>
+          <li><b>AI fills the gaps, not the subject.</b> Synthetic stills (portraits, symbolic shots) are generated only where no real asset exists — and are gated for sanity and provenance.</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#11183C;border-color:#2A3160">
+        <h3 style="color:var(--mint)">Why it matters</h3>
+        <p style="color:#C9D0F5;font-size:15px;line-height:1.6">An AI portrait of a <i>named real person</i> attacks the brand's credibility. The product rule is to prefer real-photo animation + symbolic AI, and treat AI-on-a-real-person as a consented, labelled exception under governance.</p>
+      </div>
+    </div>
+    <div class="pagenum">03</div>
+  </section>
+
+  <!-- 4 SYSTEM CONTEXT -->
+  <section class="slide">
+    <div class="kicker">System context</div>
+    <h2>A thin orchestrator over pluggable, degradable vendors</h2>
+    <div class="twocol">
+      <div>
+        <p class="muted" style="margin-bottom:10px">The engine owns the <i>direction</i>; every heavy capability is a vendor behind a seam that can fail without crashing the render.</p>
+        <ul>
+          <li><span class="icec">LLM brain</span> — OpenAI · Anthropic (direct) · Bedrock · Gemini, behind one <span class="route">chat()</span> entry point with 3 tiers.</li>
+          <li><span class="icec">Image</span> — fal.ai (Flux, Seedream, Nano Banana), OpenAI gpt-image.</li>
+          <li><span class="icec">Video</span> — Kling, Higgsfield, fal (Seedance / Veo / Hailuo).</li>
+          <li><span class="icec">Lip-sync</span> — Hedra (photo), SyncLabs (video).</li>
+          <li><span class="icec">Voice / Music / Safety</span> — ElevenLabs · Suno · OpenAI Moderation.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="card"><h3>Three independent vendor axes</h3>
+          <p>Reasoning/vision/fast LLM (<span class="route">llm.json</span>), image model, and video model (<span class="route">models.json</span>) all swap independently — JSON edits, no code change.</p></div>
+        <div class="card" style="margin-top:14px"><h3>Graceful degradation everywhere</h3>
+          <p>Premium model → fallback → Kling → free Ken Burns. A render rarely hard-fails; creators lose trust on a crash far more than on a cheaper fallback.</p></div>
+      </div>
+    </div>
+    <div class="pagenum">04</div>
+  </section>
+
+  <!-- 5 ARCHITECTURE -->
+  <section class="slide">
+    <div class="kicker">Architecture rule (hard)</div>
+    <h2>Mode-hooks, not parallel pipelines</h2>
+    <p class="lead">Brand and Studio are thin additive layers over the shared engine — a payload merge, a guard, a post-pass. The clip builder and assembler never know which door they were called from.</p>
+    <div class="grid3" style="margin-top:24px">
+      <div class="card"><h3>Shared core</h3><p><span class="route">script_parser → scene_intelligence → model_router → image_generator → clip_builder → assembler</span></p></div>
+      <div class="card"><h3>Brand hook</h3><p>Brief extraction (parse-only), mandatories hard-block, product-beat passthrough, disclosure + CTA post-pass.</p></div>
+      <div class="card"><h3>Studio hook</h3><p>Shot planner expands a brief to the same <span class="route">frames[]</span>; reusable Talent/Product identity locks faces & products across shots.</p></div>
+    </div>
+    <p style="margin-top:22px"><span class="chip">No database</span><span class="chip">No message broker</span><span class="chip">No auth layer in the hot path*</span><span class="chip">State keyed by run_id</span></p>
+    <p class="muted" style="font-size:13.5px;margin-top:6px">*Operator JWT auth gates money/rights routes; durable job DB is a roadmap item (SCALE_PLAN Phase 0).</p>
+    <div class="pagenum">05</div>
+  </section>
+
+  <!-- 6 PIPELINE FLOW -->
+  <section class="slide">
+    <div class="kicker">End-to-end flow</div>
+    <h2>The pipeline is a sequence of transforms over <span class="route" style="font-size:26px">frames[]</span></h2>
+    <div class="flow">
+      <div class="step"><span class="n">A</span>Gate A · moderate script</div><span class="arrow">→</span>
+      <div class="step"><span class="n">0</span>detect cast</div><span class="arrow">→</span>
+      <div class="step"><span class="n">1</span>parse → frames[]</div><span class="arrow">→</span>
+      <div class="step"><span class="n">2</span>treatment pass</div><span class="arrow">→</span>
+      <div class="step"><span class="n">2b</span>per-frame scene design</div>
+    </div>
+    <div class="flow" style="margin-top:10px">
+      <div class="step"><span class="n">3</span>visual assignment (real=passthrough)</div><span class="arrow">→</span>
+      <div class="step"><span class="n">3b</span>vision-grounded motion</div><span class="arrow">→</span>
+      <div class="step"><span class="n">B/B2</span>face + critique gates</div><span class="arrow">→</span>
+      <div class="step"><span class="n">3c</span>lip-sync pass</div>
+    </div>
+    <div class="flow" style="margin-top:10px">
+      <div class="step"><span class="n">5</span>build clips (cache→Kling/HF/fal/KenBurns)</div><span class="arrow">→</span>
+      <div class="step"><span class="n">6</span>captions (ASS)</div><span class="arrow">→</span>
+      <div class="step"><span class="n">7</span>voiceover</div><span class="arrow">→</span>
+      <div class="step"><span class="n">8</span>assemble + music duck</div><span class="arrow">→</span>
+      <div class="step"><span class="n">8b</span>brand / IP overlay</div>
+    </div>
+    <div class="grid2" style="margin-top:24px">
+      <div class="card"><h3 style="color:var(--gold)">Dry-run short-circuits after 2b</h3><p>Prints the per-frame plan + a cost estimate that mirrors the router's real choices — spends nothing.</p></div>
+      <div class="card"><h3 style="color:var(--gold)">Brand mandatories fire before spend</h3><p>Missing logo, CTA or product beat → 400 + checklist at the <i>start</i> of <span class="route">/run</span>.</p></div>
+    </div>
+    <div class="pagenum">06</div>
+  </section>
+
+  <!-- 7 FRAME MODEL -->
+  <section class="slide light">
+    <div class="kicker">The core data model</div>
+    <h2>Everything flows through one mutable <span class="route" style="font-size:30px">frame</span> dict</h2>
+    <div class="twocol">
+      <div>
+        <p>Each stage reads some keys and writes others. Stages are order-dependent (each needs what the last wrote) but internally parallel — per-frame work runs in thread pools.</p>
+        <ul style="margin-top:10px">
+          <li><b>Identity / text</b> — caption, duration, director note.</li>
+          <li><b>Source selection</b> — photo_spec (real | ai_portrait | ai_symbolic), resolved visual_path, model overrides.</li>
+          <li><b>Direction</b> — scene{emotion, image_prompt, motion_prompt, camera}.</li>
+          <li><b>Cast / speaker</b> — speaker_id + cast[] with gender/age/voice.</li>
+          <li><b>Mode extras</b> — product_beat (brand), talent_id / product_id / continuity_lock (studio).</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#0F1638;border-color:#2A3160">
+        <h3 style="color:var(--mint)">Why a single fat dict</h3>
+        <p style="color:#C9D0F5">A flat, mutable record lets every agent be a pure-ish transform with no shared service. Adding a feature is usually: parse a new annotation → set a key → consume it downstream. The whole-reel <span class="route">treatment</span> rides on <span class="route">frames[0]["_treatment"]</span>.</p>
+      </div>
+    </div>
+    <div class="pagenum">07</div>
+  </section>
+
+  <!-- 8 KEY DECISIONS -->
+  <section class="slide">
+    <div class="kicker">Key architectural decisions</div>
+    <h2>The choices that define the system</h2>
+    <table>
+      <tr><th style="width:38%">Decision</th><th>Why</th></tr>
+      <tr><td>Per-shot model router, not one global provider</td><td class="why">Different shots want different models; cheap-in-Dev cost discipline becomes automatic.</td></tr>
+      <tr><td>Real media is <span class="route">PASSTHROUGH</span> at the image step</td><td class="why">Preserving the real subject is the product's biggest realism advantage.</td></tr>
+      <tr><td>One <span class="route">chat()</span> brain, 3 tiers (reasoning/vision/fast)</td><td class="why">Decouples callers from provider; fast tier cuts cost on batch calls.</td></tr>
+      <tr><td>Treatment pass before per-frame design</td><td class="why">A director plans the whole arc before shooting scenes — keeps motif & rhythm consistent.</td></tr>
+      <tr><td>Vision-grounded motion</td><td class="why">Look at the actual generated still before writing the motion prompt → scene-specific, not generic.</td></tr>
+      <tr><td>Config-driven catalog + pricing</td><td class="why">Vendors change slugs & prices monthly; edits are JSON, not Python.</td></tr>
+      <tr><td>Content-hash caches at every expensive step</td><td class="why">Re-renders of the same story must not re-spend credits.</td></tr>
+    </table>
+    <div class="pagenum">08</div>
+  </section>
+
+  <!-- 9 MOAT -->
+  <section class="slide">
+    <div class="kicker">Quality north-star</div>
+    <h2>Rent the plumbing — build deeply only on the moat</h2>
+    <p class="lead">Models, CDNs, TTS are rented and swappable. Engineering depth goes where it compounds and can't be bought.</p>
+    <div class="grid2" style="margin-top:22px">
+      <div class="card"><h3 class="mintc">Director brain</h3><p>Treatment + per-frame scene design + vision-grounded motion + cast detection — the taste layer that turns assets into a <i>directed</i> reel.</p></div>
+      <div class="card"><h3 class="mintc">Reusable asset intelligence</h3><p>Talent & Product identity library: a face or product locked across shots and runs via reference-edit anchoring.</p></div>
+      <div class="card"><h3 class="mintc">Brand compliance</h3><p>Mandatories hard-block, parse-only brief extraction, disclosure & CTA — ad-legally-usable output by construction.</p></div>
+      <div class="card"><h3 class="mintc">Governance</h3><p>Consent gates, spend caps (reserve→release→settle), provenance tiers, operator identity — trust at scale.</p></div>
+    </div>
+    <div class="pagenum">09</div>
+  </section>
+
+  <!-- 10 SAFETY -->
+  <section class="slide light">
+    <div class="kicker">Safety &amp; governance invariants</div>
+    <h2>Four gates, each catching a different failure class</h2>
+    <div class="grid2">
+      <div class="card" style="background:#fff">
+        <h3 style="color:#27408B">The gates</h3>
+        <ul style="margin-top:4px">
+          <li><b>Gate A</b> — script moderation (non-blocking on API error).</li>
+          <li><b>Gate B</b> — face sanity after image gen (≤2 retries).</li>
+          <li><b>Gate B2</b> — vision critique: no blank/abstract still when a real subject was expected.</li>
+          <li><b>Brand gate</b> — mandatories hard-block before any spend.</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#fff">
+        <h3 style="color:#27408B">The invariants</h3>
+        <ul style="margin-top:4px">
+          <li>Real media & product beats are never AI-regenerated.</li>
+          <li>AI never writes brand ad claims — copy is operator-supplied verbatim.</li>
+          <li>AI likeness of a <i>named real person</i> requires recorded consent (face & voice).</li>
+          <li>Consent + spend-cap gates pass before any paid / external render.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="pagenum">10</div>
+  </section>
+
+  <!-- 11 COST -->
+  <section class="slide">
+    <div class="kicker">Cost discipline</div>
+    <h2>Test cheap, finish expensive</h2>
+    <div class="grid3" style="margin-top:6px">
+      <div style="text-align:center"><div class="stat">1</div><div class="statlbl">source of cost truth — <span class="route">pricing.estimate()</span> mirrors the router exactly</div></div>
+      <div style="text-align:center"><div class="stat">5s</div><div class="statlbl">Dev-tier clip cap for fast, cheap iteration</div></div>
+      <div style="text-align:center"><div class="stat">6</div><div class="statlbl">content-hash caches so re-renders don't re-spend</div></div>
+    </div>
+    <div class="grid2" style="margin-top:30px">
+      <div class="card"><h3>Upfront credit visibility</h3><p>Live per-vendor balance probes (ElevenLabs, Kling, Suno, fal) surface a low wallet <i>before</i> a run, not mid-render. Read-only, concurrent, degrades per-vendor.</p></div>
+      <div class="card"><h3>Spend governance</h3><p>reserve → release → settle, append-only cost ledger, stale-reservation sweep on startup. A crash can't permanently inflate a cap.</p></div>
+    </div>
+    <div class="pagenum">11</div>
+  </section>
+
+  <!-- 12 RESILIENCE -->
+  <section class="slide">
+    <div class="kicker">Cross-cutting: resilience</div>
+    <h2>Everything degrades, never crashes</h2>
+    <div class="twocol">
+      <div>
+        <ul>
+          <li><b>Failure isolation</b> — a per-frame failure falls back for that frame only; the render continues.</li>
+          <li><b>Capped parallelism</b> — pools throttled to the strictest vendor limit (Kling 4, Veo 2); retry-on-limit instead of dropping frames.</li>
+          <li><b>Editor iteration loop</b> — per-frame redo, progressive reveal, approval gate. Animate only approved frames; the rest fall back to free Ken Burns.</li>
+          <li><b>Restart-safe metadata</b> — run payload/status/log bridged to SQLite stand-ins ahead of the full DB.</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#0F1638;border-color:#2A3160">
+        <h3 style="color:var(--mint)">Concurrency &amp; failure matrix</h3>
+        <p style="color:#C9D0F5;font-size:14.5px">Scene design pool (10) → generic fallback · Image gen serial → fallback model + retries · Lip-sync 2-phase → clears & animates normally · Clip build → retry-on-limit then Ken Burns · Assembly single ffmpeg → temp dir preserved for debugging.</p>
+      </div>
+    </div>
+    <div class="pagenum">12</div>
+  </section>
+
+  <!-- 13 RISKS -->
+  <section class="slide light">
+    <div class="kicker">Risks &amp; constraints (today)</div>
+    <h2>What a CTO should watch</h2>
+    <table>
+      <tr><th style="width:46%">Risk / constraint</th><th>Mitigation today</th></tr>
+      <tr><td>fal.ai endpoint slugs &amp; prices marked <span class="route">VERIFY</span></td><td class="why">Dev tier safe; operator warned to verify before paid runs.</td></tr>
+      <tr><td>Lip-sync media uploaded to an external CDN</td><td class="why">Documented privacy boundary; opt-in; self-hosted signed URLs on roadmap.</td></tr>
+      <tr><td>In-memory web run state (no DB)</td><td class="why">Acceptable for single-operator; durable job store is SCALE_PLAN Phase 0.</td></tr>
+      <tr><td>No automated tests yet</td><td class="why">Router / pricing / cast are pure functions — prime unit-test candidates.</td></tr>
+      <tr><td>macOS-specific bits (HEIC <span class="route">sips</span>, fonts)</td><td class="why">Dockerfile exists; Montserrat bundled; Linux HEIC path needed.</td></tr>
+    </table>
+    <div class="pagenum">13</div>
+  </section>
+
+  <!-- 14 ROADMAP -->
+  <section class="slide">
+    <div class="kicker">Roadmap alignment</div>
+    <h2>Landed, and what's next</h2>
+    <div class="grid2">
+      <div>
+        <h3 style="color:var(--mint);margin-bottom:8px">Landed</h3>
+        <ul>
+          <li>Gates A/B/B2, face-consistency reference path, prompt-hash stills cache.</li>
+          <li>Multi-speaker cast, treatment pass, vision-grounded motion, suggestion chips.</li>
+          <li>Brand mode B1, server-side estimate, effective-timecodes audio sync.</li>
+          <li>Lip-sync, multi-shot B-roll, voiceover mode, Studio mode (WIP on main).</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:var(--gold);margin-bottom:8px">Next</h3>
+        <ul>
+          <li class="warn"><b>SCALE Phase 0</b> — durable RUNS_DIR + runs DB, resume, cost ledger, backups.</li>
+          <li class="warn"><b>SCALE Phase 1</b> — job queue, multi-worker, signed media URLs.</li>
+          <li class="warn"><b>B2</b> — kinetic motion-graphics: kinetic typography, badges, price callouts, product PIP.</li>
+          <li class="warn"><b>P3</b> — CLIP score-based image matching (GPU-side).</li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:22px;font-size:14px">Feedback loop stub (post-publish performance capture) in flight; strategy artifacts: MARKET_FIT_REVIEW + GAP_BACKLOG.</p>
+    <div class="pagenum">14</div>
+  </section>
+
+  <!-- 15 CLOSE -->
+  <section class="slide">
+    <div class="brandtag">HOBAILabs</div>
+    <div style="margin-top:130px"></div>
+    <div class="kicker">In one sentence</div>
+    <h1 style="font-size:40px;max-width:880px">A directed, governed, cost-disciplined reel factory — built deeply on the moat, renting the rest.</h1>
+    <p class="lead" style="margin-top:22px">Companion deep-technical reference: <span class="route">docs/HOBAILabs_Tech_Reference.md</span> · Canonical: <span class="route">HLD.md</span> · <span class="route">LLD.md</span> · <span class="route">GUIDE.md</span></p>
+    <div class="pagenum">15</div>
+  </section>
+
+</div>
+</body>
+</html>

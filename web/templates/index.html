@@ -1,44 +1,50 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HOBAILabs — Story to Reel</title>
-<link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% extends "_base.html" %}
+{% set active_mode = 'story' %}
+{% block title %}HOBAILabs — Story to Reel{% endblock %}
 
-<header>
-  <h1>HOBAILabs</h1>
-  <span>Story → Reel Pipeline — <a href="/studio" style="color:var(--accent2,#6cf)">🎬 Studio mode</a> · <a href="/brand" style="color:var(--accent2,#6cf)">🛍 Brand / Ad mode</a> · <a href="/guide" style="color:var(--accent2,#6cf)">📖 Guide</a></span>
-  <div id="auth-bar" style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px"></div>
-</header>
-
-<main>
-
-  <!-- ── AI credits (live vendor balances) ───────────────── -->
-  <div class="card" id="balances-card">
-    <div class="card-header">
-      <h2>💳 AI Credits</h2>
-      <button class="btn-secondary btn-small" id="balances-refresh">↻ Refresh</button>
-    </div>
-    <div class="card-body">
-      <div id="balances-body" class="muted">Checking vendor balances…</div>
+{% block drawer %}
+<div class="card" id="balances-card">
+  <div class="card-header">
+    <h2>AI Credits</h2>
+    <button class="btn-secondary btn-small" id="balances-refresh">Refresh</button>
+  </div>
+  <div class="card-body">
+    <div id="balances-body" class="muted">Checking vendor balances…</div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h2>IP / Property</h2></div>
+  <div class="card-body">
+    <div class="field">
+      <label>Which HOB IP is this reel for? <span class="text-dim">(watermark over the whole video)</span></label>
+      <select id="ip"><option value="">No IP watermark</option></select>
     </div>
   </div>
-
-  <!-- ── IP / property watermark ─────────────────────────── -->
-  <div class="card">
-    <div class="card-header"><h2>IP / Property</h2></div>
-    <div class="card-body">
-      <div class="field">
-        <label>Which HOB IP is this reel for? <span class="text-dim">(lays that IP's watermark over the whole video)</span></label>
-        <select id="ip"><option value="">No IP watermark</option></select>
-      </div>
-    </div>
+</div>
+<div class="card" id="performance-card">
+  <div class="card-header">
+    <h2>Performance</h2>
+    <button class="btn-secondary btn-small" id="performance-refresh" onclick="loadPerformance()">Refresh</button>
   </div>
+  <div class="card-body">
+    <div id="performance-summary" class="muted" style="margin-bottom:8px"></div>
+    <div id="performance-table" class="muted">Log a result on a finished reel, then refresh.</div>
+  </div>
+</div>
+{% endblock %}
 
-  <!-- ── Subject ─────────────────────────────────────────── -->
+{% block steps %}
+<button type="button" class="step-pill active" data-step-idx="0"><span class="step-num">1</span> Start</button>
+<button type="button" class="step-pill" data-step-idx="1"><span class="step-num">2</span> Frames</button>
+<button type="button" class="step-pill" data-step-idx="2"><span class="step-num">3</span> Polish</button>
+<button type="button" class="step-pill" data-step-idx="3"><span class="step-num">4</span> Render</button>
+{% endblock %}
+
+{% block editor %}
+
+<!-- Step 1: Start -->
+<div class="step-panel active" data-step="start">
+
   <div class="card">
     <div class="card-header"><h2>Subject</h2></div>
     <div class="card-body grid-2">
@@ -47,70 +53,73 @@
         <input type="text" id="subject-name" placeholder="Leave blank to infer from the story">
       </div>
       <div class="field">
-        <label>Description <span class="text-dim">(optional — helps face consistency; leave blank and the story decides)</span></label>
-        <input type="text" id="subject-description"
-          placeholder="e.g. woman, 28, humble background — or leave empty">
+        <label>Description <span class="text-dim">(optional)</span></label>
+        <input type="text" id="subject-description" placeholder="e.g. woman, 28, humble background">
       </div>
     </div>
   </div>
 
-  <!-- ── Start / Script ──────────────────────────────────── -->
   <div class="card">
     <div class="card-header">
       <h2>Start Your Reel</h2>
-      <button class="btn-secondary btn-small" id="parse-btn">Parse Frames →</button>
+      <button class="btn-secondary btn-small" id="parse-btn">Parse Frames</button>
     </div>
     <div class="card-body">
-
       <div class="assets-folder-row">
-        <div class="assets-folder-icon">📁</div>
-        <div style="flex:1">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="assets-folder-icon"><i data-lucide="folder" class="icon"></i></div>
+        <div class="flex-1">
+          <div class="flex-row-wrap">
             <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
-            <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">📁 Browse folder…</button>
-            <button type="button" class="btn-secondary btn-small" id="browse-server-btn">🗂 Server folder…</button>
-            <input type="text" id="assets-dir" style="flex:1;min-width:220px"
-              placeholder="Choose a folder of your photos/videos (or leave blank for AI-only)">
+            <button type="button" class="btn-secondary btn-small" id="browse-folder-btn">Browse folder</button>
+            <button type="button" class="btn-secondary btn-small" id="browse-server-btn">Server folder</button>
+            <input type="text" id="assets-dir" class="flex-1" placeholder="Photos/videos folder (optional)">
           </div>
-          <div id="server-browser" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-              <button type="button" class="btn-secondary btn-small" id="sb-up">⬆ Up</button>
+          <div id="server-browser" class="server-browser">
+            <div class="flex-row-wrap" style="margin-bottom:6px">
+              <button type="button" class="btn-secondary btn-small" id="sb-up">Up</button>
               <code id="sb-path" style="flex:1;overflow-wrap:anywhere"></code>
-              <span id="sb-media-count" style="color:var(--text-dim);white-space:nowrap"></span>
+              <span id="sb-media-count" class="text-dim" style="white-space:nowrap"></span>
             </div>
-            <div id="sb-dirs" style="max-height:180px;overflow-y:auto;margin-bottom:8px"></div>
-            <div style="display:flex;gap:8px">
-              <button type="button" class="btn-primary btn-small" id="sb-use">✓ Use this folder</button>
+            <div id="sb-dirs" class="sb-dirs"></div>
+            <div class="flex-row-wrap">
+              <button type="button" class="btn-primary btn-small" id="sb-use">Use this folder</button>
               <button type="button" class="btn-secondary btn-small" id="sb-close">Close</button>
             </div>
           </div>
-          <small>Pick the folder with your photos &amp; videos — they're uploaded and matched to frames. Or browse a folder already on the server. You can still override any frame individually.</small>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;cursor:pointer">
+          <small>Pick a folder of photos &amp; videos — matched to frames. Override any frame individually.</small>
+          <label class="checkbox-row">
             <input type="checkbox" id="smart-match">
-            🤖 Smart-match images (AI) — reads names/text in photos &amp; matches by meaning (uses GPT-4o; first parse on a new folder is slower)
+            Smart-match images (AI)
           </label>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
+          <label class="checkbox-row">
             <input type="checkbox" id="multi-shot">
-            🎞 Multi-shot coverage — cover longer beats with extra B-roll (the matched photo + 1–2 supporting stills). Opt-in; ~2× video cost on covered beats.
+            Multi-shot coverage
           </label>
-          <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;cursor:pointer">
+          <label class="checkbox-row">
             <input type="checkbox" id="face-ref">
-            👤 Consistent face — the first AI portrait becomes the identity reference; later portraits keep the same person across scenes/ages (one image-edit per portrait frame).
+            Consistent face across AI portraits
+          </label>
+          <label class="checkbox-row">
+            Character face (optional)
+            <input type="file" id="character-face" accept="image/*" style="font-size:12px;width:auto">
+            <span id="character-face-name" class="text-dim"></span>
+          </label>
+          <label class="checkbox-row checkbox-row-start">
+            <input type="checkbox" id="character-face-consent">
+            <span>I have consent to use this face. AI renders this likeness; outputs are labeled AI-assisted. <b>Required for uploaded face.</b></span>
           </label>
         </div>
         <span id="assets-status"></span>
       </div>
 
       <div class="start-help">
-        <b>How to start:</b> pick one of the two ways below.
-        <b>“I already have a frame script”</b> — paste a finished Format B script and click <b>Parse Frames →</b>.
-        <b>“I have a story”</b> — paste raw text and let AI draft editable frames first. Either way, you review and edit the frame cards before Preview/Render.
+        <b>How to start:</b> paste a finished frame script and click <b>Parse Frames</b>, or paste raw story text and let AI draft editable frames first.
       </div>
 
-      <div class="input-mode-tabs" style="margin-top:14px">
+      <div class="input-mode-tabs mt-8">
         <label class="input-mode-option active" id="mode-manual-label">
           <input type="radio" name="story-input-mode" value="manual" checked>
-          I already have a frame script
+          I have a frame script
         </label>
         <label class="input-mode-option" id="mode-story-label">
           <input type="radio" name="story-input-mode" value="story">
@@ -120,17 +129,14 @@
 
       <div id="story-intake-panel" class="story-intake-panel" style="display:none">
         <ol class="story-steps">
-          <li>Paste your raw story, notes, or interview transcript below.</li>
+          <li>Paste your raw story, notes, or interview transcript.</li>
           <li>Set max frames, target length, and tone.</li>
-          <li>Click <b>Draft frames with AI</b> — it writes an editable script.</li>
-          <li>Review &amp; edit the frame cards that appear (AI never renders directly).</li>
-          <li>Then run <b>Preview Stills</b> and <b>Generate</b> as usual.</li>
+          <li>Click <b>Draft frames with AI</b>.</li>
+          <li>Review &amp; edit frame cards before render.</li>
         </ol>
         <div class="field">
           <label>Raw story / notes / transcript</label>
-          <textarea id="raw-story-input" style="min-height:150px"
-            placeholder="Paste the full story here. The AI will draft editable frame-by-frame beats before you render."></textarea>
-          <small>AI drafts only. You will review and edit frames before preview/render.</small>
+          <textarea id="raw-story-input" style="min-height:150px" placeholder="Paste the full story here…"></textarea>
         </div>
         <div class="grid-3">
           <div class="field">
@@ -161,34 +167,24 @@
       </div>
 
       <div class="field" id="manual-script-panel" style="margin-top:14px">
-        <textarea id="script-input"
-          placeholder="Paste your Reels script here (Format B):
-
-Reels
-
-Frame 1
-Papa was an auto driver, and Maa worked as a househelp.
-That's where my story began…
-
-Frame 2
-I was just an Assamese girl, living in a 1RK...
-
-Caption:
-(Social media caption here — not shown in video)"></textarea>
-        <small>Supports [photo: filename|ai_portrait|ai_symbolic], [note: director instructions], [duration: 7s], [edit: add rain], [start: 3s] per frame</small>
+        <textarea id="script-input" placeholder="Paste your Reels script here (Format B)…"></textarea>
+        <small>Supports [photo: …], [note: …], [duration: 7s], [edit: …], [start: 3s] per frame</small>
         <div id="story-draft-note" class="draft-note" style="display:none"></div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- ── Frame cards ─────────────────────────────────────── -->
+<!-- Step 2: Frames -->
+<div class="step-panel" data-step="frames">
+
   <div class="card" id="frames-card" style="display:none">
     <div class="card-header">
       <h2>Frame Assignment</h2>
       <div class="dur-controls">
         <span class="text-dim" id="frames-count"></span>
         <div class="dur-target-row">
-          <label class="text-dim">Target length</label>
+          <label class="text-dim">Target</label>
           <div class="dur-presets">
             <button class="dur-preset-btn" data-sec="30">30s</button>
             <button class="dur-preset-btn" data-sec="45">45s</button>
@@ -197,26 +193,24 @@ Caption:
             <button class="dur-preset-btn" data-sec="0">Auto</button>
           </div>
           <input type="number" id="target-sec" placeholder="custom s" min="15" max="600" step="5">
-          <button class="btn-secondary btn-small" id="redistribute-btn">Apply →</button>
+          <button class="btn-secondary btn-small" id="redistribute-btn">Apply</button>
           <span id="total-dur-display"></span>
         </div>
       </div>
     </div>
     <div class="card-body">
       <div id="cast-panel" style="display:none;margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px"></div>
-      <div id="timeline-strip" class="timeline-strip" aria-label="Read-only timeline"></div>
+      <div id="timeline-strip" class="timeline-strip" aria-label="Timeline"></div>
       <div id="frames-container"></div>
     </div>
   </div>
 
-  <!-- ── Story-mode posting kit ───────────────────────────── -->
   <div class="card" id="posting-kit-card" style="display:none">
     <div class="card-header"><h2>Posting Kit</h2></div>
     <div class="card-body">
       <div class="field">
-        <label>Instagram caption seed <span class="text-dim">(story mode only)</span></label>
+        <label>Instagram caption seed</label>
         <textarea id="posting-caption-seed" style="min-height:90px"></textarea>
-        <small>Brand post copy stays operator-supplied; this tool is only for story-mode social captions.</small>
       </div>
       <div class="row" style="align-items:flex-end">
         <div class="field flex-1">
@@ -228,71 +222,69 @@ Caption:
       <div id="posting-kit-output" class="posting-kit-output"></div>
     </div>
   </div>
+</div>
 
-  <!-- ── Style & Quality ─────────────────────────────────── -->
+<!-- Step 3: Polish -->
+<div class="step-panel" data-step="polish">
+
   <div class="card">
     <div class="card-header"><h2>Style &amp; Quality</h2></div>
     <div class="card-body">
-
-      <div class="grid-2" style="margin-bottom:16px">
+      <div class="grid-2 mb-16">
         <div class="field">
           <label>Mood / Colour Palette</label>
           <select id="mood">
-            <option value="">Default (no mood overlay)</option>
-            <option value="warm nostalgic">Warm Nostalgic — amber, golden hour</option>
-            <option value="cold struggle">Cold Struggle — blue-grey, deep shadows</option>
-            <option value="triumphant">Triumphant — golds, saffron, high saturation</option>
+            <option value="">Default</option>
+            <option value="warm nostalgic">Warm Nostalgic</option>
+            <option value="cold struggle">Cold Struggle</option>
+            <option value="triumphant">Triumphant</option>
           </select>
         </div>
         <div class="field">
           <label>Orientation</label>
           <select id="orientation">
-            <option value="portrait">Portrait — 1080 × 1920 (Reels/TikTok)</option>
-            <option value="landscape">Landscape — 1920 × 1080 (YouTube)</option>
+            <option value="portrait">Portrait 1080×1920</option>
+            <option value="landscape">Landscape 1920×1080</option>
           </select>
         </div>
       </div>
-
-      <div class="grid-2" style="margin-bottom:16px">
+      <div class="grid-2 mb-16">
         <div class="field">
-          <label>Clip Quality (Kling)</label>
+          <label>Clip Quality</label>
           <select id="quality">
-            <option value="dev">Dev — 5s clips, fast (half Kling cost)</option>
-            <option value="production">Production — full duration (up to 9s)</option>
+            <option value="dev">Dev — 5s clips, fast</option>
+            <option value="production">Production — full duration</option>
           </select>
         </div>
         <div class="field">
           <label>Image Model</label>
-          <select id="image-model">
-            <option value="auto">Auto — best per shot</option>
-          </select>
+          <select id="image-model"><option value="auto">Auto</option></select>
         </div>
         <div class="field">
           <label>Video Model</label>
           <select id="video-model">
-            <option value="auto">Auto — best per shot</option>
-            <option value="kenburns">Ken Burns (free, offline)</option>
+            <option value="auto">Auto</option>
+            <option value="kenburns">Ken Burns (free)</option>
           </select>
         </div>
         <div class="field">
           <label>Kling Mode</label>
           <select id="kling-mode">
-            <option value="pro">Pro — highest quality</option>
-            <option value="std">Standard — lower cost</option>
+            <option value="pro">Pro</option>
+            <option value="std">Standard</option>
           </select>
         </div>
       </div>
-
-      <div class="grid-2" style="margin-bottom:16px">
+      <div class="grid-2 mb-16">
         <div class="field">
-          <label>Transition Between Clips</label>
+          <label>Transition</label>
           <select id="transition">
-            <option value="crossfade">Crossfade (0.4s dissolve)</option>
-            <option value="none">Hard Cut (instant)</option>
+            <option value="crossfade">Crossfade</option>
+            <option value="none">Hard Cut</option>
           </select>
         </div>
         <div class="field">
-          <label>Caption Position <span class="text-dim">(default — override per frame)</span></label>
+          <label>Caption Position</label>
           <select id="caption-position">
             <option value="bottom">Bottom</option>
             <option value="middle">Middle</option>
@@ -300,191 +292,144 @@ Caption:
           </select>
         </div>
       </div>
-
-      <div class="grid-2" style="margin-bottom:16px">
+      <div class="grid-2 mb-16">
         <div class="field">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <label class="checkbox-row" style="margin-top:0">
             <input type="checkbox" id="caption-enabled" checked>
             Burn captions on the video
           </label>
-          <small class="text-dim">Untick for a clean video with no on-screen subtitles. (Voice-over, if on, still plays.)</small>
         </div>
         <div class="field">
-          <label>Max lines per caption <span class="text-dim">(default — override per frame)</span></label>
+          <label>Max lines per caption</label>
           <select id="caption-max-lines">
-            <option value="0">No limit (wrap as needed)</option>
+            <option value="0">No limit</option>
             <option value="1">1 line</option>
             <option value="2">2 lines</option>
             <option value="3">3 lines</option>
           </select>
-          <small class="text-dim">Caps lines; long text auto-shrinks to fit.</small>
         </div>
       </div>
-
-      <div class="settings-row">
-        <div class="field" style="flex:2">
-          <label>Caption Font</label>
-          <select id="caption-font">
-            <option value="Baskerville">Baskerville (italic, storytelling)</option>
-            <option value="Montserrat">Montserrat (modern, geometric)</option>
-            <option value="Satoshi">Satoshi (clean — needs licensed font file)</option>
-            <option value="Arial">Arial (clean, modern)</option>
-            <option value="Georgia">Georgia (editorial, warm)</option>
-            <option value="Helvetica">Helvetica (minimal)</option>
-          </select>
+      <details class="accordion">
+        <summary>Advanced caption settings</summary>
+        <div class="accordion-body settings-row">
+          <div class="field" style="flex:2">
+            <label>Caption Font</label>
+            <select id="caption-font">
+              <option value="Baskerville">Baskerville</option>
+              <option value="Montserrat">Montserrat</option>
+              <option value="Satoshi">Satoshi</option>
+              <option value="Arial">Arial</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Helvetica">Helvetica</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1">
+            <label>Font Size (pt)</label>
+            <input type="number" id="caption-size" value="52" min="24" max="96" step="2">
+          </div>
+          <div class="field" style="flex:1">
+            <label>Caption Color</label>
+            <select id="caption-color">
+              <option value="white">White</option>
+              <option value="yellow">Yellow</option>
+              <option value="black">Black</option>
+            </select>
+          </div>
         </div>
-        <div class="field" style="flex:1">
-          <label>Font Size (pt)</label>
-          <input type="number" id="caption-size" value="52" min="24" max="96" step="2">
-        </div>
-        <div class="field" style="flex:1">
-          <label>Caption Color</label>
-          <select id="caption-color">
-            <option value="white">White</option>
-            <option value="yellow">Yellow</option>
-            <option value="black">Black</option>
-          </select>
-        </div>
-      </div>
-
+      </details>
     </div>
   </div>
 
-  <!-- ── Music ───────────────────────────────────────────── -->
   <div class="card">
     <div class="card-header"><h2>Music</h2></div>
     <div class="card-body">
       <div class="music-options">
-
         <div class="music-option">
           <input type="radio" name="music-type" id="music-none" value="none" checked>
-          <div>
-            <label for="music-none" class="music-option-label">No music</label>
-          </div>
+          <div><label for="music-none" class="music-option-label">No music</label></div>
         </div>
-
         <div class="music-option">
           <input type="radio" name="music-type" id="music-upload" value="upload">
           <div>
             <label for="music-upload" class="music-option-label">Upload music file</label>
             <div class="music-option-sub" id="upload-music-sub" style="display:none">
-              <label class="upload-label">
-                📁 Choose MP3
-                <input type="file" id="music-file-input" accept=".mp3,.m4a,.wav,.aac">
-              </label>
-              <span id="music-upload-name" style="font-size:12px;color:var(--green);margin-left:8px"></span>
+              <label class="upload-label">Choose MP3<input type="file" id="music-file-input" accept=".mp3,.m4a,.wav,.aac"></label>
+              <span id="music-upload-name" class="text-green" style="margin-left:8px;font-size:12px"></span>
             </div>
           </div>
         </div>
-
         <div class="music-option">
           <input type="radio" name="music-type" id="music-generate" value="generate">
           <div style="flex:1">
-            <label for="music-generate" class="music-option-label">Auto-generate with Suno V5.5</label>
+            <label for="music-generate" class="music-option-label">Auto-generate with Suno</label>
             <div class="music-option-sub" id="generate-music-sub" style="display:none">
               <div class="row">
-                <input type="text" class="flex-1" id="music-prompt"
-                  placeholder="Leave empty to auto-compose from your story (genre + instruments + emotion arc), or describe it yourself">
-                <button class="btn-secondary btn-small" id="generate-music-btn">Generate →</button>
+                <input type="text" class="flex-1" id="music-prompt" placeholder="Describe music or leave empty for auto-compose">
+                <button class="btn-secondary btn-small" id="generate-music-btn">Generate</button>
               </div>
-              <div id="music-gen-status" style="font-size:12px;margin-top:6px;color:var(--text-dim)"></div>
+              <div id="music-gen-status" class="text-dim" style="font-size:12px;margin-top:6px"></div>
               <audio id="music-preview" controls style="display:none;width:100%;margin-top:8px"></audio>
             </div>
           </div>
         </div>
-
         <div class="music-option">
           <input type="radio" name="music-type" id="music-voiceover" value="voiceover">
           <div style="flex:1">
-            <label for="music-voiceover" class="music-option-label">🎙 Read captions (ElevenLabs voice-over)</label>
+            <label for="music-voiceover" class="music-option-label">Read captions (ElevenLabs voice-over)</label>
             <div class="music-option-sub" id="voiceover-sub" style="display:none">
               <div class="row">
-                <select id="voice-select" class="flex-1">
-                  <option value="">Loading voices…</option>
-                </select>
-                <span id="voice-load-status" style="font-size:12px;color:var(--text-dim);margin-left:8px"></span>
-              </div>
-              <div style="font-size:11px;color:var(--text-dim);margin-top:6px">
-                Each frame's caption is read aloud, timed to the video. Silent frames get silence.
+                <select id="voice-select" class="flex-1"><option value="">Loading voices…</option></select>
+                <span id="voice-load-status" class="text-dim" style="font-size:12px"></span>
               </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   </div>
+</div>
 
-  <!-- ── Cost Estimate ─────────────────────────────────────── -->
+<!-- Step 4: Render -->
+<div class="step-panel" data-step="render">
+
   <div class="card" id="cost-card" style="display:none">
     <div class="card-header">
-      <h2>💰 Estimated Cost</h2>
-      <span id="cost-updated" style="font-size:11px;color:var(--text-dim)"></span>
+      <h2>Estimated Cost</h2>
+      <span id="cost-updated" class="text-dim" style="font-size:11px"></span>
     </div>
     <div class="card-body">
-      <div id="cost-breakdown" style="font-family:monospace;font-size:13px;line-height:1.8"></div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:8px">
-        Prices from <code>config/pricing.json</code> — edit that file when vendor rates change.
-        Kling cost = 0 if account balance empty (Ken Burns fallback used instead).
-      </div>
+      <div id="cost-breakdown" class="cost-breakdown"></div>
+      <div class="cost-footnote">Prices from config/pricing.json. Kling cost = 0 if balance empty (Ken Burns fallback).</div>
     </div>
   </div>
 
-  <!-- ── Preview + Run ───────────────────────────────────── -->
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <button class="btn-secondary" id="preview-btn">👁 Preview Stills (cheap — no animation)</button>
-    <button class="btn-primary" id="run-btn">▶ Generate Video</button>
-  </div>
-  <div id="preview-status" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
-
-  <!-- ── Progress ────────────────────────────────────────── -->
   <div class="card" id="progress-panel">
     <div class="card-header">
       <h2>Progress</h2>
-      <span id="progress-status" style="font-size:12px;color:var(--text-dim)"></span>
+      <span id="progress-status" class="text-dim" style="font-size:12px"></span>
     </div>
     <div class="card-body">
-      <div id="progress-log"></div>
-    </div>
-  </div>
-
-  <!-- ── Output ──────────────────────────────────────────── -->
-  <div class="card" id="output-panel">
-    <div class="card-header"><h2>Output</h2></div>
-    <div class="card-body">
-      <div class="video-safezone-wrap">
-        <video id="output-video" controls playsinline></video>
-        <div class="reels-safezone-overlay" aria-hidden="true">
-          <span>Reels UI safe zone</span>
-        </div>
+      <div class="progress-steps" id="progress-steps">
+        <div class="progress-step active">Parse</div>
+        <div class="progress-step">Stills</div>
+        <div class="progress-step">Clips</div>
+        <div class="progress-step">Assembly</div>
+        <div class="progress-step">Done</div>
       </div>
-      <div id="provenance-label" style="margin:10px 0"></div>
-      <div class="output-actions">
-        <a id="download-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">
-          ⬇ Download .mp4
-        </a>
-        <a id="export-btn" class="btn-secondary" style="text-decoration:none;display:inline-block;padding:9px 18px;border-radius:6px;border:1px solid var(--border)">
-          Export clips + edit list
-        </a>
+      <button type="button" class="progress-log-toggle" id="progress-log-toggle" aria-expanded="false">
+        <i data-lucide="terminal" class="icon"></i> <span class="log-toggle-label">Show technical log</span>
+      </button>
+      <div class="progress-log-wrap">
+        <div id="progress-log"></div>
       </div>
-      <div id="performance-feedback" style="margin-top:14px"></div>
     </div>
   </div>
+</div>
 
-  <!-- ── Performance loop (Gap #3) ───────────────────────── -->
-  <div class="card" id="performance-card">
-    <div class="card-header">
-      <h2>📊 Performance</h2>
-      <button class="btn-secondary btn-small" id="performance-refresh" onclick="loadPerformance()">↻ Refresh</button>
-    </div>
-    <div class="card-body">
-      <div id="performance-summary" class="muted" style="margin-bottom:8px"></div>
-      <div id="performance-table" class="muted">Log a result on a finished reel, then refresh to see what performed.</div>
-    </div>
-  </div>
+{% endblock %}
 
-</main>
-
-<script src="/static/main.js"></script>
-</body>
-</html>
+{% block shell_init %}
+<script>
+  initShell({ steps: ['start', 'frames', 'polish', 'render'] });
+</script>
+{% endblock %}
