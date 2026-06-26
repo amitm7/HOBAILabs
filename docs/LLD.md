@@ -644,7 +644,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/extract-brief` | POST | `brand.extract_brief()` — parse-only, verbatim field extraction |
 | `/browse-dirs` | GET | List folders + media count under `ASSETS_BROWSE_ROOT` |
 | `/run` | POST | Kick off `_execute_pipeline` in a thread; mandatories hard-block for brand |
-| `/progress/<run_id>` | GET (SSE) | Stream the run log |
+| `/progress/<run_id>` | GET (SSE) | Stream the run log. **Logging is thread-routed:** a single process-global `_TeeStdout` (installed once) routes `print()` to the log of the run bound to the current thread via `_thread_run` (threading.local), set/cleared in `_execute_pipeline`/`_execute_preview`. Replaced per-run `contextlib.redirect_stdout`, which set process-global `sys.stdout` and cross-wired logs when a preview + render (or threaded requests under `--threads 8`) overlapped. |
 | `/output/<run_id>` , `/download/<run_id>` | GET | Stream / download the MP4 |
 | `/clip/<run_id>/<frame_id>` | GET | Serve ONE finished clip for progressive reveal during a render |
 | `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
