@@ -16,8 +16,70 @@ EC2_USER="ec2-user"
 # either via env: EC2_HOST=1.2.3.4 SSH_KEY=~/.ssh/key.pem ./deploy/prod.sh
 EC2_HOST="${EC2_HOST:-13.202.0.21}"            # public IP / DNS of the instance
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/hobailabs-key.pem}" # path to the .pem used to SSH in
+EC2_SG_ID="${EC2_SG_ID:-sg-0d79616b599aaebbd}" # SG that gates SSH to the instance
 IMAGE_TAG="prod-$(date +%Y%m%d-%H%M%S)"
 LATEST_TAG="prod-latest"
+
+# Before SSH: allow this machine's public IP on port 22 and drop other /32 rules so
+# roaming networks don't break deploys or accumulate stale entries. Set SKIP_SG_SYNC=1
+# to skip (e.g. CI with a fixed egress IP managed elsewhere).
+_sync_ssh_security_group() {
+    if [ "${SKIP_SG_SYNC:-}" = "1" ]; then
+        echo "  ℹ️  SKIP_SG_SYNC=1 — not updating security group"
+        return 0
+    fi
+
+    local my_ip my_cidr cidr have_current=0 revoked=0
+    my_ip=$(curl -s --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')
+    if [ -z "$my_ip" ]; then
+        echo "❌ Could not determine public IP (checkip.amazonaws.com)"
+        exit 1
+    fi
+    my_cidr="${my_ip}/32"
+    echo "  → SSH SG sync on $EC2_SG_ID (current IP $my_cidr)"
+
+    local existing
+    existing=$(aws ec2 describe-security-groups \
+        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION" \
+        --group-ids "$EC2_SG_ID" \
+        --query 'SecurityGroups[0].IpPermissions[?FromPort==`22`].IpRanges[*].CidrIp' \
+        --output text 2>/dev/null | tr '\t' '\n' | grep -v '^$' || true)
+
+    while IFS= read -r cidr; do
+        [ -z "$cidr" ] && continue
+        if [ "$cidr" = "$my_cidr" ]; then
+            have_current=1
+        else
+            echo "  → revoking stale SSH rule $cidr"
+            aws ec2 revoke-security-group-ingress \
+                --profile "$AWS_PROFILE" \
+                --region "$AWS_REGION" \
+                --group-id "$EC2_SG_ID" \
+                --protocol tcp \
+                --port 22 \
+                --cidr "$cidr" >/dev/null || true
+            revoked=$((revoked + 1))
+        fi
+    done <<< "$existing"
+
+    if [ "$have_current" -eq 0 ]; then
+        echo "  → authorizing $my_cidr for SSH"
+        aws ec2 authorize-security-group-ingress \
+            --profile "$AWS_PROFILE" \
+            --region "$AWS_REGION" \
+            --group-id "$EC2_SG_ID" \
+            --protocol tcp \
+            --port 22 \
+            --cidr "$my_cidr" >/dev/null
+    fi
+
+    if [ "$revoked" -gt 0 ]; then
+        echo "  ✓ Pruned $revoked stale SSH rule(s); port 22 allows $my_cidr only"
+    else
+        echo "  ✓ Port 22 allows $my_cidr"
+    fi
+}
 
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo "HOBAILabs Production Deployment"
@@ -115,6 +177,8 @@ if [ ! -f "$SSH_KEY" ]; then
     echo "   Set the right path:  SSH_KEY=~/.ssh/your-key.pem ./deploy/prod.sh"
     exit 1
 fi
+
+_sync_ssh_security_group
 
 REMOTE_IMG="$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
 

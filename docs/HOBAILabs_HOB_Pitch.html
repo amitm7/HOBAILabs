@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOBAILabs — Real Stories, Real Fast</title>
+<style>
+  :root{
+    --ink:#1B1020; --plum:#2A1530; --wine:#6D2E46; --coral:#F26A4B; --coral2:#FF8B5E;
+    --gold:#F2B441; --cream:#FBF4EA; --paper:#FFF9F2; --sand:#EFE2D2;
+    --muted:#B79FB0; --line:#3A2440; --teal:#2FB6A6; --ok:#39B97A;
+    --inkmuted:#6b5566;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#0c0710;color:var(--paper);
+    font-family:"Calibri","Segoe UI",Arial,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+  /* stage */
+  #stage{height:100vh;width:100vw;display:flex;align-items:center;justify-content:center;padding:34px}
+  .slide{display:none;width:min(1080px,100%);max-height:calc(100vh - 92px);overflow:auto;
+    background:linear-gradient(160deg,var(--plum) 0%,#160B1C 100%);
+    border:1px solid var(--line);border-radius:20px;padding:46px 54px;position:relative;
+    box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .slide.active{display:block;animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .slide.light{background:linear-gradient(160deg,var(--paper) 0%,#F2E7D8 100%);color:#2A1530;border-color:#E3D2BE}
+  .kicker{font-size:13px;letter-spacing:3px;text-transform:uppercase;color:var(--coral);font-weight:800;margin-bottom:14px}
+  .slide.light .kicker{color:var(--wine)}
+  h1{font-family:"Cambria","Georgia",serif;font-size:54px;line-height:1.04;font-weight:700;letter-spacing:-.5px}
+  h2{font-family:"Cambria","Georgia",serif;font-size:40px;line-height:1.08;font-weight:700;margin-bottom:18px;letter-spacing:-.3px}
+  h3{font-size:19px;font-weight:700;margin-bottom:6px}
+  p{font-size:17.5px;line-height:1.55}
+  .lead{font-size:22px;line-height:1.5;color:#F3E4DA;max-width:780px}
+  .slide.light .lead{color:#43304a}
+  .muted{color:var(--muted)} .slide.light .muted{color:var(--inkmuted)}
+  .coralc{color:var(--coral)} .goldc{color:var(--gold)} .tealc{color:var(--teal)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:10px}
+  .card{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .slide.light .card{background:#fff;border-color:#E8D9C7}
+  .card h3{color:var(--gold)} .slide.light .card h3{color:var(--wine)}
+  .card p{font-size:15px;color:#E7D7CE} .slide.light .card p{color:#5a4658}
+  ul{list-style:none} li{font-size:17px;line-height:1.5;padding:8px 0 8px 28px;position:relative;color:#F1E2D8}
+  .slide.light li{color:#3a2a40}
+  li:before{content:"";position:absolute;left:2px;top:16px;width:10px;height:10px;border-radius:3px;background:var(--coral);transform:rotate(45deg)}
+  li.ok:before{background:var(--ok)} li.warn:before{background:var(--gold)} li.no:before{background:var(--wine)}
+  .stat{font-family:"Cambria",serif;font-size:64px;font-weight:700;color:var(--gold);line-height:1}
+  .statlbl{font-size:14.5px;color:var(--muted);margin-top:6px}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{text-align:left;padding:11px 12px;font-size:15.5px;border-bottom:1px solid var(--line);vertical-align:top}
+  .slide.light th,.slide.light td{border-color:#E8D9C7}
+  th{color:var(--coral);font-size:12.5px;letter-spacing:1px;text-transform:uppercase}
+  .slide.light th{color:var(--wine)}
+  td{color:#E7D7CE} .slide.light td{color:#43304a} td .why{color:var(--muted);font-size:14px}
+  .twocol{display:grid;grid-template-columns:1.1fr .9fr;gap:28px;align-items:start}
+  .chip{display:inline-block;background:rgba(242,180,65,.14);border:1px solid rgba(242,180,65,.45);
+    color:var(--gold);border-radius:999px;padding:5px 14px;font-size:13.5px;font-weight:700;margin:5px 6px 0 0}
+  .pill{display:inline-block;background:rgba(242,106,75,.15);border:1px solid rgba(242,106,75,.5);color:var(--coral2);
+    border-radius:8px;padding:4px 10px;font-size:13px;font-weight:700;margin:3px 4px 3px 0}
+  /* interactive */
+  .ask{background:rgba(47,182,166,.08);border:1px solid rgba(47,182,166,.4);border-radius:16px;padding:26px 28px;margin-top:14px}
+  .ask .qlbl{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--teal);font-weight:800;margin-bottom:8px}
+  .ask h2{margin-bottom:6px}
+  .poll{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .opt{background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:10px;padding:11px 16px;font-size:15.5px;
+    font-weight:600;color:#F1E2D8;cursor:pointer;transition:.18s;user-select:none}
+  .opt:hover{border-color:var(--coral);transform:translateY(-1px)}
+  .opt.sel{background:var(--coral);color:#1B1020;border-color:var(--coral)}
+  .reveal{margin-top:18px;display:none;background:rgba(242,180,65,.1);border-left:3px solid var(--gold);
+    border-radius:0 10px 10px 0;padding:16px 20px;animation:fade .3s ease}
+  .reveal.show{display:block}
+  .reveal .lbl{font-size:12.5px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:6px}
+  .revbtn{margin-top:18px;background:var(--gold);color:#231018;border:none;border-radius:10px;padding:11px 22px;
+    font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
+  .revbtn:hover{filter:brightness(1.06)}
+  .role{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;background:rgba(255,255,255,.05);
+    border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .role .ic{font-size:22px}
+  .role b{color:var(--gold);font-size:15.5px} .role p{font-size:14px;color:#E2D2C9;margin-top:2px}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+  .step{background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;font-weight:600;color:#EEDFD6}
+  .step .n{color:var(--coral);font-weight:900;margin-right:6px}
+  .arrow{color:var(--gold);font-size:17px;font-weight:800}
+  .note{background:rgba(242,106,75,.1);border:1px dashed rgba(242,106,75,.5);border-radius:12px;padding:14px 18px;margin-top:16px;font-size:15px;color:#F4D8CC}
+  .brandtag{position:absolute;top:22px;right:28px;font-size:12px;letter-spacing:2px;color:var(--coral);text-transform:uppercase;font-weight:800}
+  /* nav bar */
+  #bar{position:fixed;bottom:0;left:0;right:0;height:56px;background:rgba(12,7,16,.92);border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:14px;padding:0 18px;backdrop-filter:blur(6px);z-index:50}
+  #bar button{background:rgba(255,255,255,.08);color:#F1E2D8;border:1px solid var(--line);border-radius:8px;
+    padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  #bar button:hover{border-color:var(--coral)}
+  #counter{font-size:14px;color:var(--muted);font-weight:700;min-width:62px;text-align:center}
+  #title{font-size:13.5px;color:var(--muted);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #notes{position:fixed;left:18px;right:18px;bottom:64px;max-width:1080px;margin:0 auto;background:#160B1C;border:1px solid var(--gold);
+    border-radius:12px;padding:14px 18px;font-size:14.5px;color:#F0E3D8;display:none;z-index:60;box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  #notes.show{display:block} #notes b{color:var(--gold)}
+  .dotrow{display:flex;gap:5px;align-items:center}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--line)} .dot.on{background:var(--coral)}
+  @media (max-width:680px){ h1{font-size:38px} h2{font-size:30px} .twocol,.grid2,.grid3{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- 1 -->
+  <section class="slide active light" data-title="Title" data-notes="Open warm. This is a story about telling more true stories, faster — not a tech lecture. Set the tone: we love our craft AND we want leverage.">
+    <div class="brandtag">Humans of Bombay · AILabs</div>
+    <div style="margin-top:70px"></div>
+    <div class="kicker">An internal show-and-tell</div>
+    <h1>Real stories, <span style="color:var(--coral)">real fast.</span></h1>
+    <h1 style="font-size:30px;color:var(--wine);margin-top:12px;font-family:Calibri,Arial,sans-serif;font-weight:600">Why we built HOBAILabs — and what it means for every desk in this room.</h1>
+    <p class="lead" style="margin-top:22px">A pipeline that turns a written story + a folder of real photos into a finished, captioned reel — without ever faking the real people whose stories we tell.</p>
+    <p class="muted" style="margin-top:26px;font-size:14px">For: Creative Head · Editors · Content Writers · IP Leads · Sales · Social Media · ~30 min + discussion</p>
+  </section>
+
+  <!-- 2 -->
+  <section class="slide" data-title="Warm-up poll" data-notes="Let hands go up / shout numbers. The point: there's always more story than throughput. Don't reveal a 'right' answer — the gap between desire and capacity IS the talk.">
+    <div class="ask">
+      <div class="qlbl">Question for the room</div>
+      <h2>If nothing slowed us down — no render queue, no back-and-forth — how many reels could we ship this week?</h2>
+      <div class="poll">
+        <div class="opt" onclick="pick(this)">About what we do now</div>
+        <div class="opt" onclick="pick(this)">2× more</div>
+        <div class="opt" onclick="pick(this)">5× more</div>
+        <div class="opt" onclick="pick(this)">We'd never run out of stories</div>
+      </div>
+      <button class="revbtn" onclick="rev(this)">Show the point ▸</button>
+      <div class="reveal"><div class="lbl">The point</div>
+        <p style="color:#F3E4DA">There is always more <i>story</i> than there is <i>throughput</i>. The bottleneck has never been ideas — it's the hours between a great story and a finished reel. That gap is exactly what we set out to close.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section class="slide light" data-title="Two problems" data-notes="Name the two pains we chose to centre. Everything else hangs off these. Volume/speed = the daily grind. Authenticity = the existential risk.">
+    <div class="kicker">The two problems we feel every week</div>
+    <h2>One slows us down. The other could quietly hurt the brand.</h2>
+    <div class="grid2" style="margin-top:18px">
+      <div class="card" style="background:#fff"><h3 style="color:var(--coral)">① Volume &amp; speed</h3>
+        <p>Great stories pile up faster than we can cut them. One editor, one timeline, one reel at a time. The backlog grows; our posting rhythm suffers.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--coral)">② Authenticity &amp; brand risk</h3>
+        <p>Our whole brand is <b>real people, real stories.</b> The moment an AI tool fakes a face or invents a person, we put the one thing we can't replace — trust — at risk.</p></div>
+    </div>
+    <p class="muted" style="margin-top:20px">Most AI video tools are brilliant at speed. Almost none of them are built to protect authenticity. We needed both.</p>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide" data-title="Problem 1 — volume" data-notes="Make the bottleneck concrete and relatable for editors. Walk the chain: writer hands off → editor opens Premiere → finds photos → cuts → captions → music → review → revisions. Each story competes for the same pair of hands.">
+    <div class="kicker">Problem ① · up close</div>
+    <h2>Where the hours actually go</h2>
+    <div class="twocol">
+      <div>
+        <ul>
+          <li>A finished story waits in a queue for a free editor.</li>
+          <li>Photos and clips get hunted down and matched to lines by hand.</li>
+          <li>Cutting, captioning, music, voice — one timeline, one reel at a time.</li>
+          <li>Review → revisions → re-export. Repeat per story.</li>
+        </ul>
+        <p class="pill">Result: throughput is capped by editor-hours, not by how many stories we have.</p>
+      </div>
+      <div class="card">
+        <h3>The honest math</h3>
+        <p>If a polished reel takes a few focused hours, a small team can only ship so many a week — no matter how many beautiful stories are waiting. Scaling output today means hiring hours. That's slow and expensive.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide" data-title="Discussion — bottleneck" data-notes="Open discussion. Let editors/writers answer first — they know the real stuck points. Then reveal the common ones. Validates that we listened before building.">
+    <div class="ask">
+      <div class="qlbl">Open the floor</div>
+      <h2>On a story's journey from written-up to posted — where does it actually get <span class="coralc">stuck</span>?</h2>
+      <button class="revbtn" onclick="rev(this)">Reveal the usual suspects ▸</button>
+      <div class="reveal"><div class="lbl">What we hear most</div>
+        <ul style="margin-top:4px">
+          <li>Waiting for an editor to be free.</li>
+          <li>Finding &amp; matching the right photos to the right lines.</li>
+          <li>Captions, safe-zones and re-timing after every change.</li>
+          <li>Rounds of "can we tweak frame 3?" that mean a full re-export.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide light" data-title="Problem 2 — authenticity" data-notes="This is the emotional core. HOB's moat is realness. Explain why generic AI generation is dangerous for a brand built on true stories — a fabricated face of a real person is brand poison. We treat AI-on-a-real-person as a consented, labelled exception only.">
+    <div class="kicker">Problem ② · up close</div>
+    <h2>Our moat is the realness. Don't fake it.</h2>
+    <div class="twocol">
+      <div>
+        <p class="lead" style="font-size:20px">People trust Humans of Bombay because the person on screen is <i>real</i>, and the story is <i>true</i>. That trust is the whole brand.</p>
+        <ul style="margin-top:12px">
+          <li><b>Generic AI video tools generate people.</b> For us, an invented or altered real face isn't a feature — it's a risk to the one thing we can't rebuild.</li>
+          <li>So our rule: <b>real photos and videos pass through untouched.</b> AI fills only the gaps a real asset can't.</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#fff">
+        <h3 style="color:var(--wine)">Our line in the sand</h3>
+        <p>AI likeness of a <b>named real person</b> is only ever a consented, clearly-labelled exception — never a default. We'd rather animate a real photo than fabricate a human.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section class="slide" data-title="Tool landscape" data-notes="Be generous and accurate about these tools — credibility comes from fairness. We are NOT here to trash them; we use some. Each is excellent at its job. Set up the 'complementary' framing.">
+    <div class="kicker">The AI video landscape · a fair tour</div>
+    <h2>The tools out there are genuinely good — at their job</h2>
+    <div class="grid2">
+      <div class="card"><h3>Descript</h3><p>Edit video by editing the transcript; fix audio by typing; Overdub voice cloning; auto-captions &amp; translation. <span class="tealc">Brilliant for talking-head &amp; podcast edits.</span></p></div>
+      <div class="card"><h3>Opus Clip</h3><p>Turns one long video into many short clips; virality score; auto speaker-framing to 9:16; trendy captions; auto B-roll. <span class="tealc">Brilliant for repurposing long-form.</span></p></div>
+      <div class="card"><h3>Runway (Gen-4)</h3><p>Text- and image-to-video; consistent characters; native audio; vertical ad templates. <span class="tealc">Brilliant for generating net-new footage &amp; VFX.</span></p></div>
+      <div class="card"><h3>Adobe Premiere</h3><p>Full manual control, frame-perfect craft, the finishing room. <span class="tealc">Brilliant for the hero edit and final polish.</span></p></div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section class="slide" data-title="Poll — tools used" data-notes="Quick hands. Gauges familiarity so you can pitch at the right level. No reveal needed — just read the room.">
+    <div class="ask">
+      <div class="qlbl">Quick show of hands</div>
+      <h2>Which of these have you actually used on an HOB project?</h2>
+      <div class="poll">
+        <div class="opt" onclick="pick(this)">Descript</div>
+        <div class="opt" onclick="pick(this)">Opus Clip</div>
+        <div class="opt" onclick="pick(this)">Runway</div>
+        <div class="opt" onclick="pick(this)">Premiere</div>
+        <div class="opt" onclick="pick(this)">None yet</div>
+      </div>
+      <p class="muted" style="margin-top:16px">No wrong answer — this just tells us where to go deeper.</p>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section class="slide light" data-title="Scorecard" data-notes="The honest scorecard. Frame: these solve a piece of OUR puzzle, but none solve the whole HOB-specific job — a written story + a real person's photos → a directed reel that keeps the person real. That's the gap.">
+    <div class="kicker">Where they fit — and where they leave a gap for us</div>
+    <h2>Each solves a piece. None solves <span class="coralc">our</span> piece.</h2>
+    <table>
+      <tr><th style="width:24%">Tool</th><th>Great at</th><th>The HOB gap</th></tr>
+      <tr><td><b>Descript</b></td><td class="why">Editing footage you already filmed</td><td class="why">Needs recorded footage; doesn't direct a written story from photos</td></tr>
+      <tr><td><b>Opus Clip</b></td><td class="why">Slicing one long video into shorts</td><td class="why">Needs an existing long video; we start from a story + stills</td></tr>
+      <tr><td><b>Runway</b></td><td class="why">Generating new AI footage</td><td class="why">Generates/fakes people — the opposite of our authenticity rule</td></tr>
+      <tr><td><b>Premiere</b></td><td class="why">Frame-perfect manual craft</td><td class="why">It's hands-on hours per reel — doesn't solve volume</td></tr>
+    </table>
+    <p class="note" style="color:#5a4658;background:rgba(109,46,70,.08);border-color:rgba(109,46,70,.4)">The unmet job: <b>a written HOB story + a folder of the real person's photos → a directed, captioned, on-brand reel — at volume, with the real person kept real.</b></p>
+  </section>
+
+  <!-- 10 -->
+  <section class="slide" data-title="Problem statement" data-notes="State the problem statement crisply. This is the slide to pause on. Everything we built answers this one sentence.">
+    <div class="kicker">So here's the problem we set out to solve</div>
+    <h2 style="font-size:34px;line-height:1.25;max-width:900px">How do we turn <span class="goldc">more</span> of our true stories into <span class="goldc">finished reels</span>, <span class="coralc">faster</span> — in HOB's voice, and <span class="coralc">without ever faking</span> the real people in them?</h2>
+    <p class="lead" style="margin-top:20px">No single tool on the market does this. So we built one for ourselves.</p>
+  </section>
+
+  <!-- 11 -->
+  <section class="slide light" data-title="What HOBAILabs is" data-notes="Explain in human terms — NOT architecture. Paste a story + photos, choose how hands-on you want to be, get a finished reel. Three front doors for three jobs. Keep it concrete.">
+    <div class="kicker">Meet HOBAILabs</div>
+    <h2>A story goes in. A finished reel comes out.</h2>
+    <p class="lead">You give it a written story and a folder of real photos/clips. It reads the story like a director would, plans the reel, animates only the gaps, and hands back a captioned, scored 9:16 reel — ready to review.</p>
+    <div class="grid3" style="margin-top:20px">
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Story door</h3><p>For our classic personal-story reels.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Brand door</h3><p>For paid brand collabs — with disclosures &amp; CTAs handled.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Studio door</h3><p>Type a brief → a reel, with reusable faces &amp; products.</p></div>
+    </div>
+    <p class="muted" style="margin-top:16px">Same engine behind all three. You stay in control — approve, redo a single frame, tweak a caption — it's a collaborator, not a black box.</p>
+  </section>
+
+  <!-- 12 -->
+  <section class="slide" data-title="Value by role" data-notes="The most important slide for buy-in. Speak to each person in the room by name/role. Make it about THEIR day getting better, not the tech.">
+    <div class="kicker">What it means for your desk</div>
+    <h2>Different help for each of you</h2>
+    <div class="grid2" style="margin-top:6px">
+      <div class="role"><div class="ic">✂️</div><div><b>Editors</b><p>First cut in minutes, not hours. Spend your time on the hero polish in Premiere — not on hunting photos and re-timing captions.</p></div></div>
+      <div class="role"><div class="ic">✍️</div><div><b>Content Writers</b><p>See your story as a reel almost as you write it. Tighten the hook and arc with a draft in front of you.</p></div></div>
+      <div class="role"><div class="ic">🎬</div><div><b>Creative Head</b><p>House style and the emotional arc baked into every draft. More output without quality drifting reel to reel.</p></div></div>
+      <div class="role"><div class="ic">©️</div><div><b>IP Leads</b><p>Real people stay real; every reel can carry an HOB property watermark; consent &amp; provenance tracked.</p></div></div>
+      <div class="role"><div class="ic">💼</div><div><b>Sales</b><p>Faster brand turnarounds, with disclosures &amp; CTAs handled — say yes to more collabs with confidence.</p></div></div>
+      <div class="role"><div class="ic">📲</div><div><b>Social Media</b><p>A fuller pipeline and a steadier posting rhythm — captions, safe-zones &amp; 9:16 done by default.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 13 -->
+  <section class="slide light" data-title="Non-negotiables" data-notes="Build trust. These guardrails are WHY an internal tool beats a generic one. Emphasise: the tool refuses to do the dangerous thing by design.">
+    <div class="kicker">The promises we built into it</div>
+    <h2>Guardrails, by design — not by hope</h2>
+    <div class="grid2">
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Real stays real</h3><p>Real photos &amp; product shots pass through untouched. The tool won't AI-regenerate a real person.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">AI never writes ad claims</h3><p>For brand work, the on-screen and spoken copy is yours, word-for-word. AI doesn't invent promises.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Consent for likeness</h3><p>Any AI likeness of a named real person needs recorded consent — and is labelled.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Cost guardrails</h3><p>Test cheap, finish expensive. You see the cost before you spend, and nothing runs away with the budget.</p></div>
+    </div>
+  </section>
+
+  <!-- 13b -->
+  <section class="slide" data-title="How our thinking evolved" data-notes="This is the 'thought process' slide. We didn't just build features — we pressure-tested ourselves with an honest internal review and landed on one governing principle. Say it plainly: the more the AI shows up ON a real person, the more it costs us. So we build deeply only where HOB has a real edge, and rent the rest.">
+    <div class="kicker">How our thinking evolved</div>
+    <h2>We landed on one principle that now guides every call</h2>
+    <div class="ask" style="background:rgba(242,180,65,.08);border-color:rgba(242,180,65,.4)">
+      <p class="lead" style="font-size:24px;color:#FBEFD8">The value of AI goes <span class="tealc">up</span> on symbols, sets, motion and assembly — and <span class="coralc">down</span> the moment it becomes visible on a real human.</p>
+    </div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="card"><h3 class="tealc">Build deeply — the moat</h3><p>Director brain (arc, hooks, rhythm) · reusable HOB asset intelligence · brand compliance · consent &amp; cost governance · keeping real media real. These no outside tool will do for us.</p></div>
+      <div class="card"><h3 class="goldc">Rent everything else</h3><p>The image/video/voice models, the kinetic effects, the finishing room. They're bought primitives — we integrate them, we don't reinvent them.</p></div>
+    </div>
+    <p class="muted" style="margin-top:16px">An honest internal review told us: harden the floor and protect authenticity <i>before</i> chasing more shiny features. That discipline is why this is safe to put in front of real stories.</p>
+  </section>
+
+  <!-- 14 -->
+  <section class="slide" data-title="Demo spine" data-notes="THE DEMO. Either run it live, or walk these 6 beats. Keep language human. Pause on 'animates only the gaps' and 'real photos untouched' — that's the magic + the moat. Have a real story+photos ready if presenting live.">
+    <div class="kicker">Let's watch one get made</div>
+    <h2>A story → a reel, in six beats</h2>
+    <div class="flow">
+      <div class="step"><span class="n">1</span>Drop in the story + photos</div><span class="arrow">→</span>
+      <div class="step"><span class="n">2</span>It plans the whole arc, like a director</div><span class="arrow">→</span>
+      <div class="step"><span class="n">3</span>Picks the right shot for each line</div>
+    </div>
+    <div class="flow" style="margin-top:10px">
+      <div class="step"><span class="n">4</span>Real photos kept real · gaps filled with AI</div><span class="arrow">→</span>
+      <div class="step"><span class="n">5</span>Captions + voice + music, auto-timed</div><span class="arrow">→</span>
+      <div class="step"><span class="n">6</span>You review, redo any frame, export</div>
+    </div>
+    <div class="note">▶ <b>Live demo here.</b> Show a real backlog story going in and a draft coming out. If presenting from this deck, keep a 60–90s screen recording ready as backup.</div>
+    <div class="grid3" style="margin-top:16px">
+      <div style="text-align:center"><div class="stat">9:16</div><div class="statlbl">captioned &amp; scored, by default</div></div>
+      <div style="text-align:center"><div class="stat">1 frame</div><div class="statlbl">redo just one shot — not the whole reel</div></div>
+      <div style="text-align:center"><div class="stat">0</div><div class="statlbl">real faces fabricated</div></div>
+    </div>
+  </section>
+
+  <!-- 15 -->
+  <section class="slide" data-title="Discussion — hook" data-notes="Interactive creative exercise. Pick a real backlog story live. Let the writers/creative head pitch opening 3 seconds. Ties the tool to THEIR craft — it serves their taste, doesn't replace it.">
+    <div class="ask">
+      <div class="qlbl">Let's try it together</div>
+      <h2>Pick a story from our backlog — what should the <span class="coralc">first 3 seconds</span> be?</h2>
+      <p class="muted" style="margin-top:6px">Shout the hook, the opening image, the first line. We'll see how close the tool's instinct is to yours.</p>
+      <button class="revbtn" onclick="rev(this)">Reveal why this matters ▸</button>
+      <div class="reveal"><div class="lbl">Why we ask</div>
+        <p style="color:#F3E4DA">The opening hook is everything on Reels. HOBAILabs proposes one — but <b>your taste always wins.</b> It's a fast first draft for you to react to, not a replacement for your judgement.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 -->
+  <section class="slide light" data-title="Complement not replace" data-notes="Critical for adoption anxiety. Nobody's job is being replaced; the toolbox is getting deeper. Show the happy workflow where everything coexists.">
+    <div class="kicker">This sits beside your tools, not on top of them</div>
+    <h2>A deeper toolbox — not a replacement</h2>
+    <div class="flow" style="margin-top:6px">
+      <div class="step" style="background:#fff;color:#3a2a40;border-color:#E8D9C7"><span class="n" style="color:var(--coral)">A</span>HOBAILabs makes the on-brand first draft</div><span class="arrow" style="color:var(--wine)">→</span>
+      <div class="step" style="background:#fff;color:#3a2a40;border-color:#E8D9C7"><span class="n" style="color:var(--coral)">B</span>Premiere for the hero polish</div><span class="arrow" style="color:var(--wine)">→</span>
+      <div class="step" style="background:#fff;color:#3a2a40;border-color:#E8D9C7"><span class="n" style="color:var(--coral)">C</span>Opus/Descript to repurpose &amp; caption long-form</div>
+    </div>
+    <p class="lead" style="margin-top:20px">HOBAILabs owns the one job no outside tool will ever do for us: turning <b>our</b> true stories into reels, in <b>our</b> voice, at volume — with the real people kept real.</p>
+  </section>
+
+  <!-- 17 -->
+  <section class="slide" data-title="Speed + cost" data-notes="The ROI feel — keep it directional, not fake-precise. Caching = re-renders are free. Test cheap/finish expensive = no budget surprises. One tool for the HOB-specific job vs stitching several.">
+    <div class="kicker">Why it's fast and affordable</div>
+    <h2>Built to be cheap to try, premium to finish</h2>
+    <div class="grid3">
+      <div style="text-align:center"><div class="stat">Draft</div><div class="statlbl">iterate on cheap models; only final/client renders use premium</div></div>
+      <div style="text-align:center"><div class="stat">Reuse</div><div class="statlbl">re-render the same story and it doesn't re-spend — results are cached</div></div>
+      <div style="text-align:center"><div class="stat">See-first</div><div class="statlbl">the cost estimate shows before you press go — no runaway spend</div></div>
+    </div>
+    <p class="muted" style="margin-top:22px">The point isn't to replace a license. It's to stop paying in <i>hours</i> for the repetitive 80%, so our people spend their time on the 20% that needs taste.</p>
+  </section>
+
+  <!-- 18 -->
+  <section class="slide light" data-title="What it unlocks" data-notes="Lift back up to vision after the practical middle. The prize: tell MORE true stories without losing the soul. More voices heard.">
+    <div class="kicker">If this works, here's the prize</div>
+    <h2>More true stories told — without losing the soul</h2>
+    <ul style="margin-top:8px">
+      <li class="ok">A steadier, fuller posting rhythm across every channel.</li>
+      <li class="ok">Stories that would've sat in the backlog finally get made.</li>
+      <li class="ok">Brand collabs turned around faster, safely, with disclosures handled.</li>
+      <li class="ok">Every reel can carry an HOB property watermark — our IP, our identity.</li>
+      <li class="ok">Our editors and writers freed to do the work only humans can.</li>
+    </ul>
+  </section>
+
+  <!-- 18b -->
+  <section class="slide light" data-title="What's next" data-notes="Make the future tangible and audience-relevant. Story intake = for writers, a story or voice memo becomes a first reel script — widens the funnel ~10x. Multi-language = for reach & sales, one story in Hindi/Marathi/Tamil ~5x reach for Indian audiences from work already done. Asset library = the quiet moat that makes every future reel cheaper & more on-brand. All behind our consent + cost guardrails.">
+    <div class="kicker">Where we take it next</div>
+    <h2>Three bets that compound — for writers, reach &amp; the library</h2>
+    <div class="grid3" style="margin-top:14px">
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Story → script intake</h3><p><b>For writers.</b> Paste a 2,000-word story — or a voice memo — and get a first reel script to shape. Widens the funnel ~10×.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Multi-language</h3><p><b>For reach &amp; sales.</b> One story → Hindi · Marathi · Tamil with regional voices. ~5× reach for an Indian audience, from work already done.</p></div>
+      <div class="card" style="background:#fff"><h3 style="color:var(--wine)">Asset library</h3><p><b>The quiet moat.</b> Every real photo, clip, voice &amp; brand kit remembered and reused — each future reel gets cheaper and more on-brand.</p></div>
+    </div>
+    <p class="note" style="color:#5a4658;background:rgba(47,182,166,.1);border-color:rgba(47,182,166,.4)">Each of these ships <b>behind the same consent + cost guardrails</b> — growth never gets ahead of trust.</p>
+  </section>
+
+  <!-- 19 -->
+  <section class="slide" data-title="Discussion — trust" data-notes="The trust question — let IP Leads and Creative Head speak. Then reveal our governance answer. This is where skeptics get won over: we already built the safeguards they're about to ask for.">
+    <div class="ask">
+      <div class="qlbl">The question that matters most</div>
+      <h2>What's the one thing that would make you <span class="tealc">trust</span> an AI tool with a real person's story?</h2>
+      <button class="revbtn" onclick="rev(this)">Reveal what we already built ▸</button>
+      <div class="reveal"><div class="lbl">Our answer, already in the tool</div>
+        <ul style="margin-top:4px">
+          <li>Real media is never altered or regenerated.</li>
+          <li>AI likeness of a real person requires recorded consent and a label.</li>
+          <li>AI never writes the claims or words we put in someone's mouth.</li>
+          <li>Every reel's authenticity is tracked and reviewable.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 20 -->
+  <section class="slide light" data-title="Where we are + the ask" data-notes="Land the plane. Be honest about maturity (working pipeline, more to harden) and make a clear ask: a pilot on N real backlog stories with this team, and feedback. Adapt the ask to the decision you actually want.">
+    <div class="kicker">Where we are · and what we're asking</div>
+    <h2>It works today. We want to pilot it with you.</h2>
+    <div class="twocol">
+      <div>
+        <h3 style="color:var(--wine);margin-bottom:6px">Today</h3>
+        <ul>
+          <li class="ok">Working story → reel pipeline, across all three doors.</li>
+          <li class="ok">Real-media protection, captions, voice, music, brand &amp; IP overlays.</li>
+          <li class="warn">Still hardening for scale &amp; multi-user — that's the next phase.</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#fff">
+        <h3 style="color:var(--wine)">The ask</h3>
+        <p>Let us run a <b>2-week pilot</b> on a handful of real backlog stories with this team. You bring the stories and the taste; we bring the speed. Then we decide together what to scale.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 21 -->
+  <section class="slide" data-title="Close" data-notes="End on the line. Then open Q&A. Leave this slide up.">
+    <div class="brandtag">Humans of Bombay · AILabs</div>
+    <div style="margin-top:120px"></div>
+    <div class="kicker">In one line</div>
+    <h1 style="font-size:44px;max-width:900px">Technology should help us tell <span class="coralc">more true stories</span> — never fake ones.</h1>
+    <p class="lead" style="margin-top:22px">Thank you. Let's talk — what would you point it at first?</p>
+  </section>
+
+</div>
+
+<!-- speaker notes -->
+<div id="notes"></div>
+
+<!-- nav bar -->
+<div id="bar">
+  <button onclick="go(-1)">◂ Prev</button>
+  <span id="counter">1 / 21</span>
+  <button onclick="go(1)">Next ▸</button>
+  <div class="dotrow" id="dots"></div>
+  <span id="title"></span>
+  <button onclick="toggleNotes()" id="ntoggle">Speaker notes</button>
+  <button onclick="fs()">⛶ Full screen</button>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0, notesOn=false;
+  const counter=document.getElementById('counter');
+  const titleEl=document.getElementById('title');
+  const notesEl=document.getElementById('notes');
+  const dots=document.getElementById('dots');
+  slides.forEach((_,k)=>{const d=document.createElement('div');d.className='dot';d.onclick=()=>show(k);dots.appendChild(d);});
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    counter.textContent=(i+1)+' / '+slides.length;
+    titleEl.textContent=slides[i].dataset.title||'';
+    [...dots.children].forEach((d,k)=>d.classList.toggle('on',k===i));
+    if(notesOn) renderNotes();
+    slides[i].scrollTop=0;
+  }
+  function go(d){show(i+d);}
+  function renderNotes(){notesEl.innerHTML='<b>Speaker notes · </b>'+(slides[i].dataset.notes||'—');}
+  function toggleNotes(){notesOn=!notesOn;notesEl.classList.toggle('show',notesOn);document.getElementById('ntoggle').style.borderColor=notesOn?'var(--gold)':'';if(notesOn)renderNotes();}
+  function fs(){if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}else{document.exitFullscreen&&document.exitFullscreen();}}
+  function pick(el){[...el.parentNode.children].forEach(o=>o.classList.remove('sel'));el.classList.add('sel');}
+  function rev(btn){const r=btn.parentNode.querySelector('.reveal');if(r){r.classList.add('show');btn.style.display='none';}}
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();go(1);}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(-1);}
+    else if(e.key==='n'||e.key==='N'){toggleNotes();}
+    else if(e.key==='f'||e.key==='F'){fs();}
+    else if(e.key==='Home'){show(0);} else if(e.key==='End'){show(slides.length-1);}
+  });
+  show(0);
+</script>
+</body>
+</html>

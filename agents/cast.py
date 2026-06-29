@@ -190,6 +190,19 @@ def _load_voice_map() -> dict:
         return {}
 
 
+def _load_language_voices(lang: str) -> dict:
+    """Native regional voice ids for `lang` (config/voices.json → language_voices).
+    Empty dict when the language is unset/unknown or has no ids — caller falls back."""
+    if not lang:
+        return {}
+    try:
+        with open(os.path.abspath(_VOICES_PATH)) as f:
+            data = json.load(f) or {}
+        return (data.get("language_voices") or {}).get(lang) or {}
+    except Exception:
+        return {}
+
+
 def _voice_role_key(gender: str, age_bracket: str) -> str:
     if age_bracket == "child":
         return "child"
@@ -199,14 +212,17 @@ def _voice_role_key(gender: str, age_bracket: str) -> str:
 
 
 def voice_for_frame(frame: dict, default_voice_id: str = "",
-                    voice_map: dict | None = None) -> str:
+                    voice_map: dict | None = None, lang: str | None = None) -> str:
     """
     Resolve the ElevenLabs voice for a frame, in priority order:
       1. explicit [voice:] / per-frame override
       2. voice_map[speaker_id]      — the UI 'Cast voices' panel assigns per speaker
       3. role map (gender/age)      — config/voices.json + any role-keyed voice_map
       4. global default
-    Empty values fall through, so partial mapping is always safe.
+    When `lang` is set (a multi-language re-render), that language's native regional
+    voices (config/voices.json → language_voices[lang]) override the base role map so
+    a Hindi reel is read by a Hindi-native voice. lang=None keeps the original
+    behaviour exactly. Empty values fall through, so partial mapping is always safe.
     """
     override = (frame.get("voice_override") or "").strip()
     if override:
@@ -218,7 +234,8 @@ def voice_for_frame(frame: dict, default_voice_id: str = "",
         return voice_map[sid]
 
     roles = dict(_load_voice_map())              # role-keyed config defaults
-    roles.update({k: v for k, v in voice_map.items() if v})  # role-keyed overrides
+    roles.update({k: v for k, v in _load_language_voices(lang).items() if v})  # native lang voices
+    roles.update({k: v for k, v in voice_map.items() if v})  # role-keyed UI overrides win
 
     if sid == NARRATOR_ID:
         return roles.get("narrator") or default_voice_id

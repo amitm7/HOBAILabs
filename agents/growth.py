@@ -274,20 +274,127 @@ def hook_candidates(frames: list[dict]) -> list[dict]:
     ]
 
 
+_TRANSLATION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "frames": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "frame_id": {"type": "string"},
+                    "caption": {"type": "string"},
+                    "voiceover": {"type": "string"},
+                },
+                "required": ["frame_id", "caption", "voiceover"],
+            },
+        },
+    },
+    "required": ["frames"],
+}
+
+
+def _fid(frame: dict, index: int) -> str:
+    """Stable per-frame key shared by the translation request and its result merge."""
+    return str(frame.get("frame_id") or index)
+
+
+def _translate_via_llm(frames: list[dict], lang_name: str) -> dict:
+    from agents import llm
+
+    system = (
+        f"You are a professional subtitle and voiceover translator. Translate the "
+        f"caption and voiceover of each Instagram Reel frame into {lang_name}, written "
+        f"in that language's native script.\n"
+        "RULES:\n"
+        "• Natural, spoken phrasing — it is read aloud AND shown on screen, not a literal gloss.\n"
+        "• Preserve meaning, tone, every name and every number exactly. Never add or drop a fact.\n"
+        "• Keep captions short enough to fit a 9:16 phone screen.\n"
+        "• Return every frame in the same order, keyed by its frame_id. Empty source → empty translation."
+    )
+    payload = {
+        "target_language": lang_name,
+        "frames": [
+            {
+                "frame_id": _fid(f, i),
+                "caption": _clean_line(f.get("caption", ""), 600),
+                "voiceover": _clean_line(f.get("voiceover") or f.get("caption", ""), 600),
+            }
+            for i, f in enumerate(frames)
+        ],
+    }
+    raw = llm.chat(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        max_tokens=4000,
+        temperature=0.2,
+        model_tier="reasoning",
+        json_schema={"name": "frame_translation", "schema": _TRANSLATION_SCHEMA},
+    )
+    return llm.json_loads_lenient(raw)
+
+
 def caption_language_variants(frames: list[dict], languages: list[str]) -> dict:
-    """Caption-localization scaffold; not a translation until wired to an LLM."""
-    out = {}
+    """Translate each frame's caption + voiceover into every operator-chosen language.
+
+    `languages` is expected pre-validated against agents.languages.SUPPORTED_LANGUAGES
+    by the caller; unknown codes are skipped here as a safety net. Each language is an
+    independent LLM call so one failure never blocks the others.
+    """
+    from agents.languages import SUPPORTED_LANGUAGES, language_name
+
+    out: dict[str, list[dict]] = {}
     for lang in languages:
+        if lang not in SUPPORTED_LANGUAGES:
+            continue
+        name = language_name(lang)
+        try:
+            result = _translate_via_llm(frames, name)
+            by_id = {str(t.get("frame_id")): t for t in (result.get("frames") or [])}
+            status = "translated"
+            note = f"Machine translation into {name}; operator should review before render."
+        except Exception as e:
+            by_id = {}
+            status = "error"
+            note = f"Translation into {name} failed — operator can supply captions manually: {e}"
         out[lang] = [
             {
                 "frame_id": f.get("frame_id"),
                 "source_caption": f.get("caption", ""),
-                "draft_caption": "",
-                "status": "draft_scaffold",
-                "note": f"Translation for {lang} must be supplied by operator or LLM.",
+                "draft_caption": (by_id.get(_fid(f, i)) or {}).get("caption", ""),
+                "draft_voiceover": (by_id.get(_fid(f, i)) or {}).get("voiceover", ""),
+                "status": status,
+                "note": note,
             }
-            for f in frames
+            for i, f in enumerate(frames)
         ]
+    return out
+
+
+def translate_frames(frames: list[dict], lang: str) -> list[dict]:
+    """Return a copy of `frames` with caption + voiceover translated into `lang`,
+    ready to hand to the voiceover / caption / assembly stages for a re-render that
+    reuses the original visuals. Unknown language returns an untouched copy."""
+    from agents.languages import SUPPORTED_LANGUAGES, language_name
+
+    if lang not in SUPPORTED_LANGUAGES:
+        return [dict(f) for f in frames]
+    result = _translate_via_llm(frames, language_name(lang))
+    by_id = {str(t.get("frame_id")): t for t in (result.get("frames") or [])}
+    out = []
+    for i, f in enumerate(frames):
+        clone = dict(f)
+        t = by_id.get(_fid(f, i)) or {}
+        if t.get("caption"):
+            clone["caption"] = t["caption"]
+        if t.get("voiceover"):
+            clone["voiceover"] = t["voiceover"]
+        clone["lang"] = lang
+        out.append(clone)
     return out
 
 

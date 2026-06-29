@@ -11,8 +11,10 @@ This script will:
 1. Verify Docker, AWS CLI, and AWS credentials
 2. Build `hobailabs:prod-YYYYMMDD-HHMMSS` locally (arm64)
 3. Push to ECR (`ap-south-1`)
-4. Update EC2 instance via SSM (pulls new image, restarts container)
+4. Sync the EC2 security group so port 22 allows your current public IP (prunes stale `/32`s), then update the instance over SSH (pulls new image, restarts container)
 5. Commit and push to git branch
+
+Override `EC2_SG_ID` or set `SKIP_SG_SYNC=1` if SSH ingress is managed elsewhere.
 
 ## Manual Deployment (if script fails)
 

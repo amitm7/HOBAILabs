@@ -192,7 +192,18 @@ Full social caption.
         from agents import llm
         original_chat = llm.chat
 
-        def fake_chat(*_args, **_kwargs):
+        def fake_chat(messages=None, *_args, **_kwargs):
+            # Translation requests echo each frame_id back with a marked translation
+            # so the route's real-translation path is exercised without a live LLM.
+            blob = json.dumps(messages or [])
+            if "translator" in blob:
+                req = json.loads(messages[-1]["content"])
+                return json.dumps({"frames": [
+                    {"frame_id": fr["frame_id"],
+                     "caption": "[hi] " + fr["caption"],
+                     "voiceover": "[hi] " + fr["voiceover"]}
+                    for fr in req["frames"]
+                ]})
             return json.dumps({
                 "frames": [
                     {
@@ -243,13 +254,21 @@ Full social caption.
             hooks_json = hooks.get_json()
             self.assertEqual(len(hooks_json["candidates"]), 3)
             self.assertNotIn("score", hooks_json["candidates"][0])
-            variants = client.post("/caption-variants", json={**ok_payload, "frames": [{"frame_id": "f01", "caption": "Hello"}], "languages": ["Hindi"]})
+            # Multi-language: operator picks "Hindi" → real translation keyed by code "hi".
+            variants = client.post("/caption-variants", json={**ok_payload, "frames": [{"frame_id": "f01", "caption": "Hello", "voiceover": "Hello"}], "languages": ["Hindi"]})
             self.assertEqual(variants.status_code, 200)
             variants_json = variants.get_json()
-            self.assertEqual(variants_json["status"], "draft_scaffold")
-            self.assertIn("Hindi", variants_json["variants"])
-            self.assertEqual(variants_json["variants"]["Hindi"][0]["draft_caption"], "")
-            self.assertIn("source_caption", variants_json["variants"]["Hindi"][0])
+            self.assertEqual(variants_json["status"], "translated")
+            self.assertEqual(variants_json["languages"], ["hi"])
+            self.assertIn("hi", variants_json["variants"])
+            row = variants_json["variants"]["hi"][0]
+            self.assertEqual(row["source_caption"], "Hello")
+            self.assertEqual(row["draft_caption"], "[hi] Hello")
+            self.assertEqual(row["status"], "translated")
+            # No language chosen → 400 with the supported catalogue (never auto-fan-out).
+            none_picked = client.post("/caption-variants", json={**ok_payload, "frames": [{"frame_id": "f01", "caption": "Hello"}], "languages": []})
+            self.assertEqual(none_picked.status_code, 400)
+            self.assertTrue(any(l["code"] == "hi" for l in none_picked.get_json()["supported"]))
 
     def test_story_intake_fallback_remains_parseable(self):
         from agents import llm
@@ -268,6 +287,27 @@ Full social caption.
                 fp.write(draft["script"])
             frames = parse_frame_script(script, "")
         self.assertGreaterEqual(len(frames), 1)
+
+    def test_language_registry_and_per_language_voice(self):
+        from agents import languages
+        # Launch set is exactly the 5 chosen languages.
+        self.assertEqual(set(languages.SUPPORTED_LANGUAGES), {"hi", "en", "mr", "pa", "bn"})
+        # Aliases + codes normalise, junk is dropped, order + de-dupe preserved.
+        self.assertEqual(
+            languages.normalize_languages(["Hindi", "bn", "klingon", "hi", "Bangla"]),
+            ["hi", "bn"],
+        )
+        self.assertEqual(languages.normalize_languages([]), [])
+
+        # Per-language voice override: a language voice id beats the base role map,
+        # and lang=None preserves the original (no-language) resolution.
+        from agents import cast
+        frame = {"speaker_id": cast.NARRATOR_ID}
+        original_loader = cast._load_language_voices
+        cast._load_language_voices = lambda lang: {"narrator": "hi_voice_xyz"} if lang == "hi" else {}
+        self.addCleanup(lambda: setattr(cast, "_load_language_voices", original_loader))
+        self.assertEqual(cast.voice_for_frame(frame, "default_voice", lang="hi"), "hi_voice_xyz")
+        self.assertEqual(cast.voice_for_frame(frame, "default_voice", lang=None), "default_voice")
 
     def test_run_store_persists_payload_and_logs(self):
         run_id = f"unit-run-{os.getpid()}"

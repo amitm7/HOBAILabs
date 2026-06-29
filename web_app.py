@@ -475,19 +475,36 @@ def hook_workshop():
     })
 
 
+@app.route("/languages")
+def languages_route():
+    """Supported output languages for the operator's multi-language picker."""
+    from agents.languages import catalogue, DEFAULT_LANGUAGE
+    return jsonify({"languages": catalogue(), "default": DEFAULT_LANGUAGE})
+
+
 @app.route("/caption-variants", methods=["POST"])
 def caption_variants():
-    """STR-4 pilot: caption translation scaffold before voice/dubbing spend."""
+    """STR-4: translate captions + voiceover into the operator's CHOSEN languages.
+
+    No render spend — this is an LLM text translation only. The operator picks
+    languages explicitly (never auto-fanned across all); unknown codes are dropped.
+    """
     data = request.json or {}
     consent_missing, spend_missing = _commercial_gate(data, 0.0)
     if consent_missing or spend_missing:
         return jsonify({"error": "Commercial gate blocked", "missing": consent_missing + spend_missing}), 400
     from agents.growth import caption_language_variants
+    from agents.languages import normalize_languages, catalogue
+    requested = normalize_languages(data.get("languages") or [])
+    if not requested:
+        return jsonify({
+            "error": "Choose at least one supported language",
+            "supported": catalogue(),
+        }), 400
     return jsonify({
-        "status": "draft_scaffold",
-        "confidence": "placeholder",
-        "note": "These are translation placeholders, not completed language variants.",
-        "variants": caption_language_variants(data.get("frames") or [], data.get("languages") or []),
+        "status": "translated",
+        "languages": requested,
+        "variants": caption_language_variants(data.get("frames") or [], requested),
     })
 
 

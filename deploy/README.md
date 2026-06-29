@@ -43,7 +43,9 @@ Also enable the Claude models in **Bedrock → Model access** in your region.
 
 ## 4. Provision EC2
 - `t3.large` (CPU render + FFmpeg), Amazon Linux 2023, the IAM role above.
-- Security group: 80 + 443 inbound (and 22 from your IP).
+- Security group: 80 + 443 inbound (and 22 from your IP). `deploy/prod.sh` syncs
+  port 22 to your current public IP before SSH (prunes other `/32` rules) so deploys
+  survive network changes; set `SKIP_SG_SYNC=1` to disable.
 - Attach a **gp3 EBS volume**, mount at `/data` (persists caches across restarts):
 ```bash
 sudo mkfs -t xfs /dev/nvme1n1            # first time only

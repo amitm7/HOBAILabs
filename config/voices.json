@@ -7,5 +7,13 @@
     "child":           "",
     "elderly_male":    "",
     "elderly_female":  ""
+  },
+  "_language_note": "Native regional voices for multi-language reels (agents/languages.py). Same role keys as 'roles'. When a frame is rendered in a chosen language, its voice is looked up HERE first, then falls back to 'roles', then the global default. LEAVE EMPTY to fall back. Fill with ElevenLabs voice ids from your account that natively speak each language.",
+  "language_voices": {
+    "hi": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
+    "en": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
+    "mr": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
+    "pa": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
+    "bn": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""}
   }
 }
