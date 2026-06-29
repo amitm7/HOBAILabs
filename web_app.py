@@ -267,6 +267,241 @@ def api_studio_plan():
         return jsonify({"error": str(e), "frames": []}), 500
 
 
+# ── Director Canvas (AGENTIC_CANVAS_PLAN) ───────────────────────────────────────
+# A staged "canvas" surface over the SAME engine: it sequences + gates and reuses
+# agents/canvas_run.py, which calls the shared services (pricing/governance/router)
+# — it never re-implements cost, routing or rendering (the bright line). Canvas
+# state lives inside the run payload (run_store), so there is no parallel store.
+
+def _canvas_load(run_id: str) -> dict | None:
+    from agents import run_store
+    stored = run_store.load(run_id)
+    if not stored:
+        return None
+    return (stored.get("payload") or {}).get("canvas")
+
+
+def _canvas_save(run_id: str, state: dict) -> None:
+    from agents import run_store
+    run_store.save(run_id, status="canvas", run_dir=str(RUNS_DIR / run_id),
+                   payload={"mode": "canvas", "session_id": run_id, "canvas": state})
+
+
+@app.route("/canvas")
+def canvas_page():
+    """Director Canvas: a stage-gated board over the shared engine."""
+    return render_template("canvas.html")
+
+
+@app.route("/api/canvas/plan", methods=["POST"])
+def api_canvas_plan():
+    """Create a canvas and run the free Script stage (reuses shot_planner)."""
+    data = request.json or {}
+    brief = (data.get("brief") or "").strip()
+    if not brief:
+        return jsonify({"error": "Enter a brief first."}), 400
+    from agents import canvas_run
+    run_id = str(uuid.uuid4())
+    state = canvas_run.new_canvas(brief, scope=data.get("scope", "general"),
+                                  mood=data.get("mood", ""),
+                                  quality=data.get("quality", "dev"))
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/list")
+def api_canvas_list():
+    """Recent saved canvases so the operator can resume one (save/resume)."""
+    from agents import run_store
+    return jsonify({"canvases": run_store.list_canvases()})
+
+
+@app.route("/api/canvas/<run_id>/state")
+def api_canvas_state(run_id: str):
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/advance", methods=["POST"])
+@auth.require_operator()
+def api_canvas_advance(run_id: str, operator: str):
+    """Run the next stage. Free stages execute in-process; paid stages return a
+    per-stage cost gate (the anti-wallet-drain) and dispatch to the render pipeline."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    stage = (request.json or {}).get("stage", "")
+    if stage not in canvas_run.STAGES:
+        return jsonify({"error": "Unknown stage"}), 400
+    if not state["stages"][stage].get("ready"):
+        return jsonify({"error": f"Stage '{stage}' is locked — approve the previous stage first."}), 409
+
+    # Paid stages: show the per-stage cost and check the spend cap BEFORE any spend
+    # (read-only). This is the explicit fix for the competitor's one-click wallet
+    # drain. Actual render reuses _execute_pipeline (wired in the next phase).
+    if canvas_run.STAGE_META[stage]["paid"]:
+        cost = state.get("costs", {}).get(stage, 0.0)
+        blocked = []
+        try:
+            from agents import governance
+            blocked = governance.check_spend_cap({"session_id": run_id}, cost)
+        except Exception as e:
+            print(f"[Canvas] spend-cap check skipped ({e})")
+        return jsonify({"run_id": run_id, "dispatch_required": stage,
+                        "estimate_usd": round(cost, 4), "spend_ok": not blocked,
+                        "blocked": blocked,
+                        "note": "Paid render reuses the existing pipeline (next phase)."})
+
+    # Free stage — run in-process via agents.
+    try:
+        state = canvas_run.run_stage(state, stage)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/approve", methods=["POST"])
+@auth.require_operator()
+def api_canvas_approve(run_id: str, operator: str):
+    """Approve a finished stage; unlocks the next stage's Generate button."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    stage = (request.json or {}).get("stage", "")
+    if stage not in canvas_run.STAGES:
+        return jsonify({"error": "Unknown stage"}), 400
+    state = canvas_run.approve(state, stage)
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/frame", methods=["POST"])
+@auth.require_operator()
+def api_canvas_edit_frame(run_id: str, operator: str):
+    """Edit one shot's text/prompt from the board (the editable prompt box).
+    Cascade-invalidates downstream stages so an edit can't ship stale renders."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    frame_id = body.get("frame_id", "")
+    try:
+        state = canvas_run.edit_frame(state, frame_id, body.get("fields") or {})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/asset", methods=["POST"])
+@auth.require_operator()
+def api_canvas_asset(run_id: str, operator: str):
+    """Attach an operator-uploaded image to shot(s) — Real (passthrough, the moat),
+    Reference (AI likeness conditioned on a real face), or Scene. The image is first
+    uploaded via /upload-photo; here we validate the path and set the frame keys."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    path = (body.get("path") or "").strip()
+    if not path or not _path_allowed(path):
+        return jsonify({"error": "Image path not allowed"}), 400
+    try:
+        state = canvas_run.attach_asset(
+            state, path=path, mode=body.get("mode", "reference"),
+            frame_id=body.get("frame_id"), all_talent=bool(body.get("all_talent")))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/render", methods=["POST"])
+@auth.require_operator()
+def api_canvas_render(run_id: str, operator: str):
+    """Render the planned board into a finished reel by dispatching the EXISTING
+    pipeline (`_execute_pipeline` → `_run_inner`) — the canvas plans + gates; the
+    proven engine renders. Same governance gates as /run. Progress streams on
+    /progress/<render_id>; each shot's clip arrives via clip_ready events."""
+    from agents import canvas_run, governance, run_store
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    quality = body.get("quality") or state.get("quality") or "prod"
+    render_id = str(uuid.uuid4())
+    data = {
+        "mode": "story",
+        "quality": quality,
+        "frames": state["frames"],
+        "mood": state.get("mood", ""),
+        "subject_name": "", "subject_description": "",
+        "video_model": "auto", "image_model": "auto",
+        "music_type": body.get("music_type", "none"),
+        "caption_style": {"enabled": True, "font": "Montserrat", "size": 24,
+                          "position": "bottom", "max_lines": 3},
+        "orientation": "portrait",
+        "session_id": render_id,
+        "operator_id": operator,
+        "likeness_consent": {"face": True, "voice": True},
+        "canvas_run_id": run_id,
+    }
+    # Same gates as /run — money/rights are not bypassed by the canvas surface.
+    missing = governance.validate_consent(data)
+    if missing:
+        return jsonify({"error": "Consent / rights requirements missing", "missing": missing}), 400
+    governance.record_consent(data, confirmed_by=operator)
+    lk = governance.validate_likeness_consent(data)
+    if lk:
+        return jsonify({"error": "Likeness consent required", "missing": lk}), 400
+    governance.record_likeness_consent(data, confirmed_by=operator)
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
+    if spend_missing:
+        return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
+
+    run_dir = RUNS_DIR / render_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with _runs_lock:
+        _runs[render_id] = {"status": "running", "log": [], "output_path": None,
+                            "clips": {}, "events": []}
+    try:
+        run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
+    except Exception as e:
+        print(f"[RunStore] canvas render save skipped ({e})")
+    threading.Thread(target=_execute_pipeline, args=(render_id, data, run_dir), daemon=True).start()
+
+    for s in ("keyframes", "audio", "video", "finalcut"):
+        state["stages"][s].update(status="generating")
+    state["render_id"] = render_id
+    _canvas_save(run_id, state)
+    return jsonify({"render_id": render_id, "quality": quality,
+                    "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/chat", methods=["POST"])
+@auth.require_operator()
+def api_canvas_chat(run_id: str, operator: str):
+    """Natural-language command box (Studio-Chat equivalent): refine + re-plan the
+    shots via shot_planner. Reuses the brain; never a vendor SDK."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    message = (request.json or {}).get("message", "")
+    state = canvas_run.chat(state, message)
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state),
+                    "reply": f"Re-planned {len(state.get('frames', []))} shots."})
+
+
 @app.route("/guide")
 def guide_page():
     from flask import send_from_directory

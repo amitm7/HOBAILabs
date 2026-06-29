@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOBAILabs — Director Canvas</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  /* Canvas-specific board styles (the wizard shell is the wrong shape for a board). */
+  .cv-wrap { max-width: 1180px; margin: 0 auto; padding: 18px 20px 80px; }
+  .cv-top { display:flex; align-items:center; gap:16px; margin-bottom:14px; }
+  .cv-top h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
+  .cv-nav a { margin-right:12px; color:var(--muted,#6b7280); text-decoration:none; font-size:14px; }
+  .cv-nav a.active, .cv-nav a:hover { color:var(--accent,#e0a32e); }
+  .saved { font-size:12px; color:#16a34a; margin-right:6px; }
+  #resume { font:inherit; font-size:13px; padding:5px 8px; border:1px solid #e5e7eb; border-radius:8px; margin-right:8px; max-width:220px; }
+  .cv-brief { display:grid; grid-template-columns:1fr auto auto auto; gap:10px; margin-bottom:18px; }
+  .cv-brief textarea { width:100%; min-height:58px; resize:vertical; padding:10px 12px; border-radius:10px;
+    border:1px solid #e5e7eb; font:inherit; }
+  /* Stage rail */
+  .cv-rail { display:flex; gap:10px; overflow-x:auto; padding-bottom:8px; margin-bottom:18px; }
+  .cv-stage { min-width:168px; border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+  .cv-stage h3 { margin:0 0 2px; font-size:14px; }
+  .cv-stage .blurb { font-size:11px; color:#6b7280; min-height:28px; }
+  .cv-stage .cost { font-size:12px; font-weight:600; margin:6px 0; }
+  .cv-stage .free { color:#16a34a; }
+  .cv-badge { font-size:10px; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:999px; }
+  .st-pending   { background:#f3f4f6; color:#6b7280; }
+  .st-generating{ background:#fef3c7; color:#b45309; }
+  .st-done      { background:#dbeafe; color:#1d4ed8; }
+  .st-approved  { background:#dcfce7; color:#15803d; }
+  .cv-stage button { width:100%; margin-top:8px; padding:7px; border-radius:8px; border:0; cursor:pointer;
+    font-weight:600; font-size:13px; }
+  .cv-stage button.gen { background:#e0a32e; color:#1a1a1a; }
+  .cv-stage button.appr { background:#111827; color:#fff; }
+  .cv-stage button[disabled] { background:#f3f4f6; color:#9ca3af; cursor:not-allowed; }
+  /* Board */
+  .cv-legend { display:flex; gap:16px; font-size:12px; margin-bottom:10px; align-items:center; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .dot.real{background:#16a34a;} .dot.ai{background:#d97706;} .dot.ai_person{background:#dc2626;}
+  .cv-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+  .cv-card { border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; background:#fff; }
+  /* Short placeholder until a real keyframe lands, so the editable fields stay visible
+     without scrolling. (Grows to a real 9:16 frame once Key Frames render.) */
+  .cv-card .frame { position:relative; height:132px; background:linear-gradient(160deg,#f8fafc,#eef2f7);
+    display:flex; align-items:center; justify-content:center; }
+  .cv-card .frame.has-img { height:auto; aspect-ratio:9/16; }
+  .cv-card .frame .grammar { position:absolute; top:8px; left:8px; font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.05em; color:#374151; background:#fff9; padding:2px 6px; border-radius:6px; }
+  .cv-card .frame .kindbadge { position:absolute; top:8px; right:8px; font-size:9px; font-weight:700;
+    text-transform:uppercase; padding:2px 6px; border-radius:6px; color:#fff; z-index:2; }
+  .cv-card .frame img.thumb { width:100%; height:100%; object-fit:cover; display:block; }
+  .cv-card .frame .reftag { position:absolute; bottom:8px; left:8px; font-size:9px; font-weight:700;
+    background:#111827cc; color:#fff; padding:2px 6px; border-radius:6px; z-index:2; }
+  /* Reference source chip — small corner thumbnail, NOT a full-frame image, so shots
+     don't all look identical. Each shot renders its own keyframe from this source. */
+  .cv-card .frame .refchip { position:absolute; bottom:8px; left:8px; display:flex; align-items:center;
+    gap:4px; background:#111827cc; padding:3px 6px 3px 3px; border-radius:8px; z-index:2; }
+  .cv-card .frame .refchip img { width:26px; height:26px; object-fit:cover; border-radius:5px; display:block; }
+  .cv-card .frame .refchip b { color:#fff; font-size:9px; font-weight:700; letter-spacing:.04em; }
+  /* Attach controls */
+  .cv-assets { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;
+    padding:10px 12px; border:1px dashed #d1d5db; border-radius:10px; font-size:13px; background:#fff; }
+  .cv-assets select, .cv-card .attach select { font:inherit; font-size:12px; padding:5px 7px;
+    border:1px solid #e5e7eb; border-radius:7px; }
+  .attach-btn { display:inline-block; cursor:pointer; font-size:12px; font-weight:600;
+    background:#111827; color:#fff; padding:6px 10px; border-radius:8px; }
+  .attach-btn:hover { background:#374151; }
+  .cv-card .attach { display:flex; gap:6px; align-items:center; margin-top:7px; }
+  .cv-card .attach select { flex:1; }
+  .cv-card .attach .attach-btn { padding:5px 8px; font-size:11px; }
+  .kb-real{background:#16a34a;} .kb-ai{background:#d97706;} .kb-ai_person{background:#dc2626;}
+  .cv-card .meta { padding:9px 11px; }
+  .cv-card .cap { font-size:13px; line-height:1.35; }
+  .cv-card .sub { font-size:11px; color:#6b7280; margin-top:5px; }
+  .arrow { stroke:#2563eb; stroke-width:7; fill:none; marker-end:url(#ah); }
+  .muted { color:#6b7280; }
+  .err { color:#b91c1c; font-size:13px; margin:8px 0; }
+  /* Editable per-shot fields (the prompt box) */
+  .cv-card .edit { width:100%; border:1px solid #eef0f3; border-radius:6px; font:inherit;
+    padding:5px 7px; margin-top:6px; background:#fcfcfd; }
+  .cv-card .edit:focus { outline:2px solid #e0a32e44; border-color:#e0a32e; background:#fff; }
+  .cv-card textarea.edit { min-height:46px; resize:vertical; font-size:11px; color:#374151; }
+  .cv-card .lbl { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; margin-top:7px; }
+  /* Chat command bar — a floating bar pinned to the viewport bottom (not sticky-in-flow,
+     which overlapped the tall board). */
+  .cv-chat { position:fixed; left:50%; transform:translateX(-50%); bottom:16px;
+    width:min(1140px, calc(100% - 40px)); display:flex; gap:8px; padding:10px;
+    background:#fff; border:1px solid #e5e7eb; border-radius:14px;
+    box-shadow:0 10px 34px rgba(0,0,0,.16); z-index:50; }
+  .cv-chat input { flex:1 1 auto; min-width:0; padding:11px 14px; border:1px solid #e5e7eb;
+    border-radius:10px; font:inherit; }
+  .cv-chat button { flex:0 0 auto; width:auto; white-space:nowrap; }
+  /* Render panel */
+  .cv-render { margin:18px 0; padding:14px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+  .render-head { margin-bottom:8px; }
+  .render-video { width:280px; max-width:60vw; border-radius:10px; display:block; margin:8px 0; background:#000; }
+  .render-log { max-height:160px; overflow:auto; background:#0b0f17; color:#9fe7b8; font-size:11px;
+    line-height:1.5; padding:10px; border-radius:8px; white-space:pre-wrap; margin-top:8px; }
+  .cv-card .frame video.clip { width:100%; height:100%; object-fit:cover; display:block; }
+</style>
+</head>
+<body>
+<svg width="0" height="0"><defs>
+  <marker id="ah" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <path d="M0,0 L7,3.5 L0,7 Z" fill="#2563eb"/></marker>
+</defs></svg>
+
+<div class="cv-wrap">
+  <div class="cv-top">
+    <h1>🎬 Director Canvas</h1>
+    <nav class="cv-nav">
+      <a href="/">Story</a><a href="/studio">Studio</a><a href="/brand">Brand</a>
+      <a href="/canvas" class="active">Canvas</a>
+    </nav>
+    <span class="cv-spacer" style="flex:1"></span>
+    <span id="saved" class="saved" hidden>● Saved · resumable</span>
+    <select id="resume" title="Resume a saved canvas"><option value="">Resume…</option></select>
+    <button id="render-btn" class="btn-primary btn-small" hidden>🎬 Render reel</button>
+    <button id="new-btn" class="btn-secondary btn-small">＋ New</button>
+  </div>
+
+  <div class="cv-brief">
+    <textarea id="brief" placeholder="A 30-second Humans of Bombay story: a Mumbai chai seller who funded his daughter's medical degree…"></textarea>
+    <select id="scope"><option value="general">Story</option><option value="commerce">Commerce</option></select>
+    <select id="quality"><option value="dev">Dev (cheap)</option><option value="prod">Prod</option></select>
+    <button id="plan-btn" class="btn-primary">Plan ✨</button>
+  </div>
+  <div id="err" class="err" hidden></div>
+
+  <div class="cv-assets" id="assets" hidden>
+    <strong>Your media:</strong>
+    <label class="attach-btn">📎 Add a real photo of the person
+      <input id="char-photo" type="file" accept="image/*" hidden></label>
+    <select id="char-mode">
+      <option value="reference">Reference — AI keeps the likeness</option>
+      <option value="real">Real — use the photo untouched (our edge)</option>
+    </select>
+    <span class="muted" id="char-hint">Applies to every shot of the person.</span>
+  </div>
+
+  <div id="rail" class="cv-rail"></div>
+
+  <div class="cv-legend" id="legend" hidden>
+    <strong>Assets:</strong>
+    <span><span class="dot real"></span>Real — untouched (our edge)</span>
+    <span><span class="dot ai"></span>AI — labeled</span>
+    <span><span class="dot ai_person"></span>AI likeness — consent-gated</span>
+  </div>
+  <div id="board" class="cv-board"></div>
+
+  <div id="render-panel" class="cv-render" hidden>
+    <div class="render-head"><strong>Rendering reel…</strong> <span id="render-status" class="muted"></span></div>
+    <video id="render-video" class="render-video" controls playsinline hidden></video>
+    <a id="render-dl" class="btn-primary" download hidden>⬇ Download reel</a>
+    <pre id="render-log" class="render-log"></pre>
+  </div>
+
+  <div class="cv-chat" id="chat" hidden>
+    <input id="chat-input" type="text" placeholder="Refine in plain English — e.g. 'make it darker and add a rain shot'…">
+    <button id="chat-send" class="btn-primary">Send</button>
+  </div>
+</div>
+
+<script src="/static/canvas.js"></script>
+</body>
+</html>

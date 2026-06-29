@@ -1,0 +1,357 @@
+/* Director Canvas board controller (AGENTIC_CANVAS_PLAN).
+ * Talks to /api/canvas/* — all cost + gating is server-truth; this only renders.
+ * Cost is shown per stage BEFORE spend (the fix for the competitor's wallet drain). */
+(function () {
+  "use strict";
+  let runId = null;
+
+  const $ = (id) => document.getElementById(id);
+  const err = (msg) => { const e = $("err"); e.hidden = !msg; e.textContent = msg || ""; };
+  const usd = (n) => "$" + (Number(n) || 0).toFixed(2);
+
+  async function api(path, body) {
+    const opt = { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json" } };
+    if (body) opt.body = JSON.stringify(body);
+    const r = await fetch(path, opt);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    return data;
+  }
+
+  // Arrow geometry per motion token — structured, not a decorative scribble.
+  const ARROWS = {
+    in:    "M60,150 L60,95",  out:  "M60,95 L60,150",
+    left:  "M150,95 L70,95",  right:"M30,95 L110,95",
+    up:    "M90,150 L90,80",  down: "M90,80 L90,150",
+    orbit: "M40,95 a50,28 0 1 1 100,0",
+  };
+
+  function arrowSvg(token) {
+    const d = ARROWS[token] || ARROWS.in;
+    return `<svg viewBox="0 0 180 200" width="64" height="72" style="opacity:.85">
+      <path class="arrow" d="${d}"/></svg>`;
+  }
+
+  function renderRail(stages) {
+    $("rail").innerHTML = stages.map((s) => {
+      const free = !s.paid;
+      const costLine = free
+        ? `<div class="cost free">Free</div>`
+        : `<div class="cost">${usd(s.cost_usd)}</div>`;
+      let btn = "";
+      if (s.status === "done") {
+        btn = `<button class="appr" data-approve="${s.id}">Approve ✓</button>`;
+      } else if (s.status === "approved") {
+        btn = `<button disabled>Approved ✓</button>`;
+      } else if (s.ready) {
+        const label = free ? "Generate" : `Generate · ${usd(s.cost_usd)}`;
+        btn = `<button class="gen" data-stage="${s.id}">${label}</button>`;
+      } else {
+        btn = `<button disabled>Locked</button>`;
+      }
+      return `<div class="cv-stage">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3>${s.label}</h3>
+          <span class="cv-badge st-${s.status}">${s.status}</span>
+        </div>
+        <div class="blurb">${s.blurb}</div>
+        ${costLine}${btn}
+      </div>`;
+    }).join("");
+  }
+
+  function mediaUrl(p) { return "/media?path=" + encodeURIComponent(p); }
+
+  function renderBoard(board) {
+    const empty = board.length === 0;
+    $("legend").hidden = empty;
+    $("chat").hidden = empty;
+    $("assets").hidden = empty;
+    $("board").innerHTML = board.map((c) => {
+      const fid = c.frame_id;
+      // A REAL photo IS the final visual → fill the frame. A REFERENCE is only the
+      // conditioning source (each shot will render a DIFFERENT keyframe from it) →
+      // show it as a small corner chip over the shot's placeholder, never full-frame.
+      let frameInner, img = false;
+      if (c.real_path) {
+        frameInner = `<img class="thumb" src="${mediaUrl(c.real_path)}" alt="">`;
+        img = true;
+      } else {
+        const chip = c.ref_path
+          ? `<span class="refchip"><img src="${mediaUrl(c.ref_path)}" alt="ref"><b>REF</b></span>`
+          : "";
+        frameInner = arrowSvg(c.arrow) + chip;   // distinct per-shot placeholder + ref source
+      }
+      // The prompt box only shows once the Storyboard stage has filled image_prompt.
+      const promptBox = c.image_prompt
+        ? `<div class="lbl">Image prompt (editable)</div>
+           <textarea class="edit" data-frame="${fid}" data-field="image_prompt"
+             rows="3">${escapeHtml(c.image_prompt)}</textarea>`
+        : "";
+      return `<div class="cv-card" data-frame="${fid}">
+        <div class="frame${img ? " has-img" : ""}">
+          <span class="grammar">${escapeHtml(c.shot_size || "shot")}${c.camera ? " · " + escapeHtml(c.camera) : ""}</span>
+          <span class="kindbadge kb-${c.asset_kind}">${
+            c.asset_kind === "real" ? "REAL" : c.asset_kind === "ai_person" ? "AI FACE" : "AI"
+          }</span>
+          ${frameInner}
+        </div>
+        <div class="meta">
+          <input class="edit cap" data-frame="${fid}" data-field="caption"
+            value="${escapeHtml(c.caption || "")}" placeholder="caption / line">
+          <input class="edit" data-frame="${fid}" data-field="motion_override"
+            value="${escapeHtml(c.motion || "")}" placeholder="camera move">
+          ${promptBox}
+          <div class="sub">${escapeHtml(c.emotion || "")}${c.duration ? " · " + c.duration + "s" : ""}</div>
+          <div class="attach">
+            <select class="amode" data-frame="${fid}">
+              <option value="reference">Reference (likeness)</option>
+              <option value="real">Real (untouched)</option>
+              <option value="scene">Scene ref</option>
+            </select>
+            <label class="attach-btn">📎 Image
+              <input type="file" accept="image/*" data-frame="${fid}" hidden></label>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // Upload an image then attach it to shot(s) with the chosen mode. Reuses the
+  // existing /upload-photo route, then /api/canvas/<id>/asset sets the frame keys.
+  async function uploadAndAttach(file, { frame_id = null, mode = "reference", all_talent = false }) {
+    if (!runId || !file) return;
+    err("");
+    try {
+      const fd = new FormData();
+      fd.append("photo", file);
+      fd.append("session_id", runId);
+      fd.append("frame_id", frame_id || "character");
+      const up = await fetch("/upload-photo", { method: "POST", body: fd }).then((r) => r.json());
+      if (up.error) { err(up.error); return; }
+      const d = await api(`/api/canvas/${runId}/asset`,
+        { path: up.tmp_path, mode, frame_id, all_talent });
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+  }
+
+  // Save an edited shot field on change (blur/Enter). Server cascade-invalidates
+  // downstream stages so an edit can't ship a stale render.
+  async function saveField(el) {
+    if (!runId) return;
+    const frame_id = el.getAttribute("data-frame");
+    const field = el.getAttribute("data-field");
+    try {
+      const d = await api(`/api/canvas/${runId}/frame`,
+        { frame_id, fields: { [field]: el.value } });
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  }
+
+  function render(canvas) {
+    renderRail(canvas.stages);
+    renderBoard(canvas.board);
+    $("render-btn").hidden = !canvas.board || canvas.board.length === 0;
+    // Reconnect to an in-flight / finished render on resume.
+    if (canvas.render_id && !renderStream) openRenderStream(canvas.render_id);
+  }
+
+  // ── Full render (dispatches the proven pipeline; streams per-shot clips) ──────
+  let renderStream = null;
+  function openRenderStream(rid) {
+    $("render-panel").hidden = false;
+    const log = $("render-log");
+    $("render-status").textContent = "running…";
+    renderStream = new EventSource(`/progress/${rid}`);
+    renderStream.onmessage = (ev) => {
+      let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
+      if (d.line) { log.textContent += d.line + "\n"; log.scrollTop = log.scrollHeight; }
+      if (d.type === "clip_ready" && d.frame_id && d.url) {
+        const frame = document.querySelector(`.cv-card[data-frame="${d.frame_id}"] .frame`);
+        if (frame) {
+          frame.classList.add("has-img");
+          frame.innerHTML = `<video class="clip" src="${d.url}" muted autoplay loop playsinline></video>`;
+        }
+      }
+      if (d.done) {
+        renderStream.close(); renderStream = null;
+        $("render-status").textContent = d.status === "done" ? "done ✓" : "error";
+        if (d.status === "done") {
+          const v = $("render-video"), dl = $("render-dl");
+          v.src = `/output/${rid}`; v.hidden = false;
+          dl.href = `/download/${rid}`; dl.hidden = false;
+        }
+      }
+    };
+    renderStream.onerror = () => { /* SSE auto-retries; ignore transient */ };
+  }
+
+  // ── Save / resume ─────────────────────────────────────────────────────────
+  // Every action already autosaves server-side (run_store). These just let the
+  // user get back in: the run id rides in the URL (?run=) + localStorage, and a
+  // "Resume…" picker lists saved canvases.
+  function setRun(id) {
+    runId = id;
+    try { localStorage.setItem("hob_canvas_run", id); } catch (e) { /* ignore */ }
+    history.replaceState({}, "", "/canvas?run=" + id);
+    $("saved").hidden = false;
+  }
+  function clearRun() {
+    runId = null;
+    try { localStorage.removeItem("hob_canvas_run"); } catch (e) { /* ignore */ }
+    history.replaceState({}, "", "/canvas");
+    $("saved").hidden = true;
+  }
+  function applyCanvas(canvas) {
+    if (canvas.brief !== undefined) $("brief").value = canvas.brief || "";
+    if (canvas.scope) $("scope").value = canvas.scope;
+    if (canvas.quality) $("quality").value = canvas.quality;
+    render(canvas);
+  }
+  async function loadCanvas(id) {
+    if (!id) return;
+    try {
+      const d = await api(`/api/canvas/${id}/state`);
+      setRun(id);
+      applyCanvas(d.canvas);
+    } catch (e) { err("Couldn't resume that canvas — it may have been cleared."); clearRun(); }
+  }
+  async function loadRecents() {
+    try {
+      const d = await api("/api/canvas/list");
+      $("resume").innerHTML = '<option value="">Resume…</option>' +
+        (d.canvases || []).map((c) =>
+          `<option value="${c.run_id}">${escapeHtml(c.title)}</option>`).join("");
+    } catch (e) { /* non-fatal */ }
+  }
+
+  // ── Events ─────────────────────────────────────────────────────────────────
+  $("plan-btn").addEventListener("click", async () => {
+    err("");
+    const brief = $("brief").value.trim();
+    if (!brief) { err("Enter a brief first."); return; }
+    $("plan-btn").disabled = true; $("plan-btn").textContent = "Planning…";
+    try {
+      const d = await api("/api/canvas/plan", {
+        brief, scope: $("scope").value, quality: $("quality").value,
+      });
+      setRun(d.run_id);
+      render(d.canvas);
+      loadRecents();
+    } catch (e) { err(e.message); }
+    finally { $("plan-btn").disabled = false; $("plan-btn").textContent = "Plan ✨"; }
+  });
+
+  // Render the whole reel (prod by default) via the proven pipeline.
+  $("render-btn").addEventListener("click", async () => {
+    if (!runId) return;
+    err("");
+    const btn = $("render-btn");
+    btn.disabled = true; btn.textContent = "🎬 Rendering…";
+    try {
+      const d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value });
+      render(d.canvas);   // canvas.render_id is now set → render() opens the stream
+    } catch (e) { err(e.message); btn.disabled = false; btn.textContent = "🎬 Render reel"; }
+  });
+
+  // New canvas — clear the board and the saved pointer.
+  $("new-btn").addEventListener("click", () => {
+    clearRun();
+    if (renderStream) { renderStream.close(); renderStream = null; }
+    $("brief").value = "";
+    $("board").innerHTML = ""; $("rail").innerHTML = "";
+    $("legend").hidden = true; $("chat").hidden = true; $("assets").hidden = true;
+    $("render-btn").hidden = true; $("render-panel").hidden = true;
+    $("render-video").hidden = true; $("render-dl").hidden = true; $("render-log").textContent = "";
+    err("");
+  });
+
+  // Resume a saved canvas from the picker.
+  $("resume").addEventListener("change", (ev) => {
+    if (ev.target.value) loadCanvas(ev.target.value);
+  });
+
+  // On open: list recents and resume the last canvas (URL ?run= or localStorage).
+  loadRecents();
+  (function initResume() {
+    const fromUrl = new URLSearchParams(location.search).get("run");
+    let last = null;
+    try { last = localStorage.getItem("hob_canvas_run"); } catch (e) { /* ignore */ }
+    const id = fromUrl || last;
+    if (id) loadCanvas(id);
+  })();
+
+  // Delegated change handler: per-card image upload, or an edited text field.
+  $("board").addEventListener("change", (ev) => {
+    const fileInput = ev.target.closest('input[type="file"]');
+    if (fileInput && fileInput.files[0]) {
+      const fid = fileInput.getAttribute("data-frame");
+      const sel = document.querySelector(`select.amode[data-frame="${fid}"]`);
+      uploadAndAttach(fileInput.files[0], { frame_id: fid, mode: sel ? sel.value : "reference" });
+      fileInput.value = "";
+      return;
+    }
+    const el = ev.target.closest(".edit");
+    if (el) saveField(el);
+  });
+
+  // Character-level: attach a real photo of the person to every people-shot.
+  $("char-photo").addEventListener("change", (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const mode = $("char-mode").value;
+    uploadAndAttach(file, { all_talent: true, mode });
+    ev.target.value = "";
+  });
+  $("board").addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && ev.target.matches("input.edit")) ev.target.blur();
+  });
+
+  // Chat command box — refine + re-plan (the Studio-Chat equivalent).
+  async function sendChat() {
+    const inp = $("chat-input");
+    const message = inp.value.trim();
+    if (!runId || !message) return;
+    inp.disabled = true; $("chat-send").disabled = true; err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/chat`, { message });
+      inp.value = "";
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+    finally { inp.disabled = false; $("chat-send").disabled = false; inp.focus(); }
+  }
+  $("chat-send").addEventListener("click", sendChat);
+  $("chat-input").addEventListener("keydown", (ev) => { if (ev.key === "Enter") sendChat(); });
+
+  $("rail").addEventListener("click", async (ev) => {
+    const gen = ev.target.closest("[data-stage]");
+    const appr = ev.target.closest("[data-approve]");
+    if (!runId || (!gen && !appr)) return;
+    err("");
+    try {
+      if (gen) {
+        const stage = gen.getAttribute("data-stage");
+        gen.disabled = true; gen.textContent = "Working…";
+        const d = await api(`/api/canvas/${runId}/advance`, { stage });
+        if (d.dispatch_required) {
+          // Paid stage: cost shown, spend cap checked — render dispatch is next phase.
+          err(`${d.dispatch_required}: ${usd(d.estimate_usd)} — ${
+            d.spend_ok ? "within spend cap" : "blocked by spend cap"}. ${d.note}`);
+          const s = await api(`/api/canvas/${runId}/state`);
+          render(s.canvas);
+        } else {
+          render(d.canvas);
+        }
+      } else {
+        const stage = appr.getAttribute("data-approve");
+        const d = await api(`/api/canvas/${runId}/approve`, { stage });
+        render(d.canvas);
+      }
+    } catch (e) { err(e.message); }
+  });
+})();

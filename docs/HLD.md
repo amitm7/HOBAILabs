@@ -17,6 +17,7 @@ finished, captioned, scored **9:16 MP4** — for two distinct use cases sharing 
 | **Story / creator mode** | `/` | HOB team creating personal story reels |
 | **Brand / Ad mode (B1)** | `/brand` | Creator + brand partners doing paid collabs |
 | **Studio mode (MODE3)** | `/studio` | Prompt → full reel with a reusable Talent/Product identity library; commerce + general scopes |
+| **Director Canvas (WIP)** | `/canvas` | Stage-gated "board" over the SAME engine: Script → Storyboard → Keyframes → Audio → Video → Final Cut, with a per-stage cost gate + approval. New `canvas_run` *orchestrator* (not a pipeline fork); reuses agents + engine services. See `docs/AGENTIC_CANVAS_PLAN.md`. |
 
 The defining product principle is **realism preservation + test-cheap/finish-expensive**:
 real user media is never AI-regenerated; per-shot routing uses cheap models in Dev and

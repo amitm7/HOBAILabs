@@ -19,6 +19,11 @@ agents/
   scene_intelligence.py   LLM director: treatment pass + per-frame scene design + vision-grounded motion
   llm.py                  pluggable chat()/vision brain (OpenAI|Anthropic|Bedrock|Gemini), 3 tiers + JSON schema
   shot_planner.py         Studio mode: brief (+scope/talent/product) → frames[] (cached, schema, fallback)
+  canvas_run.py           Director Canvas orchestrator: staged state machine over the shared agents.
+                          Sequences + gates only — cost via pricing.estimate (sliced per stage),
+                          real-vs-AI via model_router; NEVER re-implements cost/routing/render. State
+                          stored inside the run payload (run_store). new_canvas/run_stage/approve/
+                          invalidate_from/public_state; PaidStageDispatch signals render reuse.
   model_router.py         shot → model id (pure logic over config/models.json)
   image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends); prompt-hash cache
   image_editor.py         [edit:] pass on a still (gpt-image)
@@ -633,6 +638,14 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/products` | GET/POST | List products / register a product (name + specs JSON + reference photo) |
 | `/api/products/<id>` | DELETE | Delete a product |
 | `/api/studio/plan` | POST | `shot_planner.plan(brief, scope, talent, product)` → editable `frames[]` |
+| `/canvas` | GET | Director Canvas board page (`canvas.html` + `canvas.js`) |
+| `/api/canvas/plan` | POST | `canvas_run.new_canvas(brief)` → new canvas (runs free Script stage); returns `run_id` + `public_state`. State persisted in the run payload via `run_store` |
+| `/api/canvas/<run_id>/state` | GET | Current board state (`canvas_run.public_state`) |
+| `/api/canvas/<run_id>/advance` | POST (operator) | Run a stage. Free stages execute in-process; **paid stages return a per-stage cost + `check_spend_cap` result *before* any spend** (the anti-wallet-drain), then dispatch to the render pipeline. 409 if the stage is locked |
+| `/api/canvas/<run_id>/approve` | POST (operator) | Approve a finished stage → unlocks the next stage's Generate |
+| `/api/canvas/<run_id>/frame` | POST (operator) | Edit one shot's text/prompt from the board (`canvas_run.edit_frame`: caption/director_note/motion/negative/image_prompt); cascade-invalidates downstream |
+| `/api/canvas/<run_id>/chat` | POST (operator) | Natural-language command box (`canvas_run.chat`): refine + re-plan shots via `shot_planner` (reuses the brain); resets downstream |
+| `/api/canvas/<run_id>/asset` | POST (operator) | Attach an uploaded image to shot(s) (`canvas_run.attach_asset`): **real** (non-AI `photo_spec` → `model_router` PASSTHROUGH, the moat), **reference** (real face → AI likeness, kept `ai_portrait`+`character_ref_path`), or **scene**. `all_talent` applies to every people-shot. Path validated via `_path_allowed`; image first uploaded through `/upload-photo` |
 | `/parse-script` | POST | `parse_frame_script` → frame cards + cast + suggestion chips |
 | `/suggest-frame` | POST | Vision-grounded per-frame suggestion (`suggest_from_image`) → best camera + director note; validates the still path, cached, no-op on failure |
 | `/preview` , `/preview-result/<run_id>` | POST/GET | Generate stills only (fast iteration); brand-safe critique if `is_brand` |
@@ -655,7 +668,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). |
 | `/login` , `/logout` , `/me` | POST / POST / GET | Operator auth (Gap #1): `authenticate()` → HS256 JWT in an httpOnly cookie; `/me` reports the current operator. Seed operators with `python -m agents.auth add-operator`. |
 
-**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
+**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, `/api/canvas/<id>/{advance,approve,frame,chat,asset}`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
 
 **Storage (Gap #2).** `agents/db.py` selects SQLite (default) or Postgres from `HOB_DB_URL`; new stores (`auth`) route through it dialect-neutrally. The legacy per-store SQLite bridges migrate onto it for the RDS cutover (SCALE_PLAN Phase 2).
 

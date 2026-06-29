@@ -231,6 +231,40 @@ Bold animated/ kinetic on-screen text (price tags, badges, word-by-word callouts
 and product picture-in-picture are **Phase B2** — B1 uses bold static captions as
 the on-screen text.
 
+## 3e. Director Canvas (`/canvas`) — *work in progress*
+
+A **stage-gated board** that builds your reel one approved step at a time —
+**Script → Storyboard → Key Frames → Audio → Video → Final Cut**. Open it from the
+**Canvas** link in the header.
+
+**Why it's different from the wizard:**
+- **You approve each stage before the next one runs.** Nothing paid happens until
+  you click **Generate** on that stage's card — and the card shows the **exact cost
+  first** (no surprise charges, no one-click wallet drain).
+- **The Storyboard stage** lays out every shot as a card with its framing, a
+  **motion arrow** (which way the camera moves), the emotion/beat, and a colour
+  badge for the asset: 🟢 **Real** (your real photo, untouched), 🟡 **AI** (a
+  generated symbol/object), 🔴 **AI face** (a generated likeness — needs consent
+  before it can render). Real media always passes through untouched.
+- **Edit any shot inline.** Each card lets you tweak the **caption**, the **camera
+  move**, and (after Storyboard) the **actual image prompt** — editing a shot marks
+  everything downstream stale so you never ship a stale render.
+- **Command box** at the bottom: refine in plain English ("make it darker, add a
+  rain shot") and the shot list re-plans — the same idea as a chat assistant, wired
+  to our planner.
+- **Add your own photos.** Use *"📎 Add a real photo of the person"* (applies to
+  every people-shot) or the *📎 Image* button on any card, and choose:
+  **Real** — your photo appears in the reel *untouched* (🟢, the thing competitors
+  can't do); **Reference** — AI keeps the person's *likeness* across shots (🔴,
+  consent-gated); **Scene** — a mood/look reference for a no-person shot (🟡). The
+  badge and cost update live, and downstream stages reset so nothing stale ships.
+- It runs on the **same engine** as Story/Studio/Brand — same models, same costs,
+  same safety and spend gates — just surfaced as a board you drive stage by stage.
+
+> Status: the Script and Storyboard stages are live; the paid stages (Key Frames,
+> Audio, Video, Final Cut) show their cost and spend-cap check now and wire to the
+> existing render pipeline next. See [docs/AGENTIC_CANVAS_PLAN.md](docs/AGENTIC_CANVAS_PLAN.md).
+
 ## 3d. Studio Mode (`/studio`)
 
 A third page where you **type a brief and get a full reel** — no script to write.

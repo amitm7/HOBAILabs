@@ -216,6 +216,30 @@ def performance_summary() -> dict:
     return {"runs_with_data": row["n"], "total_views": row["views"], "total_likes": row["likes"]}
 
 
+def list_canvases(limit: int = 25) -> list[dict]:
+    """Recent Director Canvas sessions (status='canvas'), newest first — powers the
+    'resume a saved canvas' picker. Title is the brief snippet from the payload."""
+    rows = _conn().execute(
+        "SELECT run_id, payload_json, updated_at FROM runs WHERE status='canvas' "
+        "ORDER BY updated_at DESC LIMIT ?",
+        (limit,),
+    )
+    out = []
+    for r in rows:
+        try:
+            payload = json.loads(r["payload_json"] or "{}")
+        except Exception:
+            payload = {}
+        canvas = payload.get("canvas") or {}
+        brief = (canvas.get("brief") or "").strip().replace("\n", " ")
+        out.append({
+            "run_id": r["run_id"],
+            "title": (brief[:60] or "Untitled canvas"),
+            "updated_at": r["updated_at"],
+        })
+    return out
+
+
 def append_log(run_id: str, line: str) -> None:
     _conn().execute(
         "INSERT INTO run_logs(run_id, line) VALUES (?, ?)",

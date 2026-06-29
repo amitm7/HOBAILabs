@@ -1,6 +1,6 @@
 # AGENTIC_CANVAS_PLAN.md — staged "director canvas" over the shared engine
 
-> Status: **PROPOSAL / not started** · Date: 2026-06-30 · Owner: Amit
+> Status: **IN PROGRESS** (branch `feature/agentic-canvas`) · Date: 2026-06-30 · Owner: Amit
 > Trigger: competitive teardown of **galleri5 AI Studio** (aistudio.galleri5.com) — a more
 > mature competitor whose "Agentic Canvas" runs Script → Assets → Storyboard → Keyframes →
 > Audio → Video → Final Cut as a stage-gated, cost-metered node canvas.
@@ -32,6 +32,43 @@ keeps our **real-media moat** front-and-centre (the exact thing galleri5 structu
 **Recommendation: Option C (shared primitive + mode-aware canvas view), phased.** See §4–§5.
 
 ---
+
+## 0.5 BUILD LOG (branch `feature/agentic-canvas`)
+
+**Landed (first vertical slice, P0 + P1 skeleton + P2 board):**
+- `agents/canvas_run.py` — the staged orchestrator (state machine, per-stage cost
+  via `pricing.estimate`, three-way asset classification via `model_router`,
+  structured motion arrows, cascade `invalidate_from`, `PaidStageDispatch`). Holds
+  the bright line: reuses agents + services, renders nothing itself.
+- `web_app.py` — `/canvas` + `/api/canvas/{plan,<id>/state,<id>/advance,<id>/approve}`;
+  paid stages return a **per-stage cost + spend-cap check before any spend** (the
+  anti-wallet-drain); advance/approve gated by `require_operator`. Canvas state
+  persisted inside the run payload (`run_store`) — no parallel store.
+- `web/templates/canvas.html` + `web/static/canvas.js` — the board UI: stage rail
+  with cost-gated Generate, storyboard cards with motion-arrow SVGs + the 🟢/🟡/🔴
+  real-vs-AI legend (the moat made visible).
+- `tests/test_canvas_run.py` — 10 offline tests (state machine, cost slicing,
+  classification, cascade). **Verify loop green:** py_compile ✓, `node --check` ✓,
+  pytest 10/10 ✓, Flask test-client e2e ✓ (plan→storyboard→approve→paid-gate→lock 409).
+- **Editable prompt box + command box (parity with the competitor's Studio Chat):**
+  `canvas_run.edit_frame` + `/api/canvas/<id>/frame` (edit caption/motion/image_prompt/
+  negative per shot, cascade-invalidate downstream) and `canvas_run.chat` +
+  `/api/canvas/<id>/chat` (natural-language refine → re-plan via `shot_planner`). Board
+  cards render inline editable fields; a sticky command bar drives re-planning.
+- **Attach-your-image Assets flow (the moat, surfaced):** `canvas_run.attach_asset`
+  + `/api/canvas/<id>/asset` — upload a photo (reuses `/upload-photo`) and assign it
+  per-shot or to all people-shots as **real** (PASSTHROUGH, untouched), **reference**
+  (AI likeness conditioned on the real face), or **scene**. Board renders the real
+  thumbnail + live 🟢/🟡/🔴 badge; cascade-invalidates downstream. Verified by browser
+  e2e (real upload → REAL badge + thumbnail; character ref → 5 REF tags on people-shots).
+- Docs synced: HLD (front-door table), LLD (module map + route table + auth list),
+  GUIDE (§3e), this plan.
+
+**Script + Storyboard stages are live** (cheap text, reuse `shot_planner` +
+`scene_intelligence`, degrade offline). **Paid stages** (Key Frames/Audio/Video/
+Final Cut) currently show server-truth cost + spend gate; **next:** wire their
+execution to the existing `_execute_pipeline` (reuse, never re-implement), add SSE
+`stage_done` events, per-stage spend reservation, and the storyboard art renderer.
 
 ## 1. OBSERVE
 

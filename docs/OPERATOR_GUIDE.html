@@ -92,6 +92,7 @@
   <a href="#studio-library">14a · Identity library (Talent &amp; Product)</a>
   <a href="#studio-plan">14b · Brief → shots</a>
   <a href="#studio-controls">14c · Per-shot controls</a>
+  <a href="#canvas">15 · Director Canvas — stage-gated board (WIP)</a>
 </div>
 
 <h2 id="layout">0 · App layout (wizard + preview)</h2>
@@ -603,6 +604,27 @@ all text still passes the safety check.</p>
 <p>Each shot card adds a <b>Talent</b>/<b>Product</b> selector, a <b>Negative
 prompt</b> (what to avoid), and a <b>Continuity lock</b> (outfit/styling that must
 not change). Sensible defaults are prefilled; tweak per shot as needed.</p>
+
+<h2 id="canvas">15 · Director Canvas — stage-gated board <span style="font-size:14px;color:var(--muted)">(work in progress)</span></h2>
+<p>Open <b>Canvas</b> from the header. Instead of the wizard, you get a <b>board</b>
+that builds the reel one approved step at a time: <b>Script → Storyboard → Key
+Frames → Audio → Video → Final Cut</b>.</p>
+<ul>
+  <li><b>Nothing paid happens until you click Generate on a stage</b> — and each
+  paid stage shows its <b>exact cost and a spend-cap check first</b>. No surprise
+  charges, no one-click wallet drain.</li>
+  <li><b>Storyboard cards</b> show each shot's framing, a <b>motion arrow</b>
+  (camera direction), the beat/emotion, and an asset badge:
+  <span style="color:#16a34a"><b>🟢 Real</b></span> (your photo, untouched),
+  <span style="color:#d97706"><b>🟡 AI</b></span> (generated symbol/object),
+  <span style="color:#dc2626"><b>🔴 AI face</b></span> (generated likeness — needs
+  consent before it renders). Real media always passes through untouched.</li>
+  <li>Same engine, models, costs and safety/spend gates as the other modes —
+  just driven stage by stage.</li>
+</ul>
+<p class="muted">Canvas workflow: <b>Write brief → Plan → review Storyboard →
+Approve → Generate each stage (cost shown) → Final Cut.</b> Script &amp; Storyboard
+are live; paid stages show cost + spend gate and wire to the render pipeline next.</p>
 
 <hr>
 <p class="muted">Story mode workflow: <b>Write short lines → Parse → set Picture + Note + Camera per shot → Dev test → Production final → Download.</b><br>
