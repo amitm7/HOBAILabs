@@ -79,12 +79,25 @@ Rules:
 - motion = ONE short camera move.
 - shot_size = wide establishing | medium | close-up | extreme close-up | detail insert. Vary it between consecutive beats.
 - product_beat=false and uses_talent=true unless the beat is clearly an object-only/symbolic shot.
-- 5-8 frames. Ground everything in authentic, specific real-world detail."""
+- Ground everything in authentic, specific real-world detail."""
 
 
-def _cache_key(brief: str, scope: str, talent: dict | None, product: dict | None) -> str:
+def _length_directive(target_seconds: int) -> str:
+    """Turn a target length into shot-count guidance. 0 = auto (let the story decide)."""
+    if not target_seconds or target_seconds <= 0:
+        return ("\n- LENGTH: plan AS MANY beats as the story genuinely needs — one shot per"
+                " distinct moment. A short anecdote may be 5-8 shots; a rich life story may be"
+                " 20-40. Do NOT pad or compress to a fixed length; match the story's real arc."
+                " Each shot ~3-6s.")
+    shots = max(4, round(target_seconds / 4.5))
+    return (f"\n- LENGTH: target ~{target_seconds}s total → about {shots} shots averaging ~4-5s"
+            f" each. Cover the whole arc within that budget; merge minor beats if needed.")
+
+
+def _cache_key(brief: str, scope: str, talent: dict | None, product: dict | None,
+               target_seconds: int = 0) -> str:
     h = hashlib.md5()
-    h.update(f"{scope}|{brief}".encode())
+    h.update(f"{scope}|{target_seconds}|{brief}".encode())
     if talent:
         h.update(f"|tal:{talent.get('name','')}|{talent.get('descriptor','')}".encode())
     if product:
@@ -156,18 +169,19 @@ def _fallback_frames(brief: str, scope: str) -> list[dict]:
 
 
 def plan(brief: str, *, scope: str = "general", talent: dict | None = None,
-         product: dict | None = None, mood: str = "") -> list[dict]:
+         product: dict | None = None, mood: str = "", target_seconds: int = 0) -> list[dict]:
     """
     Expand a brief into an editable frames[] list. Cached + safe.
-    scope: "commerce" | "general". talent/product: optional locked-asset dicts
-    (as returned by product_surface.get_talent / get_product).
+    scope: "commerce" | "general". talent/product: optional locked-asset dicts.
+    target_seconds: desired reel length (0 = auto — let the story decide the shot count,
+    so a rich life story can run 2-4 min instead of a forced ~30s).
     """
     brief = (brief or "").strip()
     if not brief:
         return _fallback_frames("", scope)
 
     scope = scope if scope in ("commerce", "general") else "general"
-    key = _cache_key(brief, scope, talent, product)
+    key = _cache_key(brief, scope, talent, product, target_seconds)
     cache_path = PLAN_CACHE_DIR / f"{key}.json"
     if cache_path.exists():
         try:
@@ -176,14 +190,19 @@ def plan(brief: str, *, scope: str = "general", talent: dict | None = None,
             pass
 
     system = _COMMERCE_SYSTEM if scope == "commerce" else _GENERAL_SYSTEM
+    system += _length_directive(target_seconds)
     if mood:
         system += f"\nOverall mood: {mood}."
+    # Scale the token budget with the target length — a 3-4 min reel is 30-50 shots
+    # and would otherwise truncate. Auto gets a generous ceiling.
+    est_shots = round(target_seconds / 4.5) if target_seconds > 0 else 40
+    max_toks = max(2500, min(12000, est_shots * 130))
     try:
         text = llm.chat(
             [{"role": "system", "content": system},
              {"role": "user", "content": _user_message(brief, scope, talent, product)}],
             json_mode=True, json_schema=_PLAN_SCHEMA,
-            temperature=0.8, max_tokens=2500, model_tier="reasoning",
+            temperature=0.8, max_tokens=max_toks, model_tier="reasoning",
         )
         raw = llm.json_loads_lenient(text)
         frames = _to_frames(raw.get("frames", []), scope)

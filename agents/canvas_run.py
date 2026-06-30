@@ -254,7 +254,8 @@ def chat(state: dict, message: str) -> dict:
     state["brief"] = (state.get("brief", "") + "\n\nRefinement: " + msg).strip()
     from agents import shot_planner
     new_frames = shot_planner.plan(state["brief"], scope=state.get("scope", "general"),
-                                   mood=state.get("mood", ""))
+                                   mood=state.get("mood", ""),
+                                   target_seconds=state.get("target_seconds", 0))
     if new_frames:
         state["frames"] = new_frames
     invalidate_from(state, "script")
@@ -280,17 +281,19 @@ def _fresh_stages() -> dict:
 
 def new_canvas(brief: str, *, scope: str = "general", mood: str = "",
                talent: dict | None = None, product: dict | None = None,
-               quality: str = "dev") -> dict:
+               quality: str = "dev", target_seconds: int = 0) -> dict:
     """Create a canvas and run the (free) script stage. Reuses shot_planner, which
-    already degrades to a sentence split offline — so this is network-safe."""
+    already degrades to a sentence split offline — so this is network-safe.
+    target_seconds: 0 = auto (length follows the story; rich stories run minutes)."""
     from agents import shot_planner
     frames = shot_planner.plan(brief, scope=scope, talent=talent,
-                               product=product, mood=mood)
+                               product=product, mood=mood, target_seconds=target_seconds)
     stages = _fresh_stages()
     stages["script"].update(status="done")
     stages["storyboard"].update(ready=True)
     state = {
         "brief": brief, "scope": scope, "mood": mood, "quality": quality,
+        "target_seconds": target_seconds,
         "frames": frames,
         "stages": stages,
         "costs": stage_costs(frames, quality=quality),
@@ -365,6 +368,7 @@ def public_state(state: dict) -> dict:
         "brief": state.get("brief", ""),
         "scope": state.get("scope", "general"),
         "quality": state.get("quality", "dev"),
+        "target_seconds": state.get("target_seconds", 0),
         "stages": [
             {"id": s, **STAGE_META[s], **state["stages"][s],
              "cost_usd": state.get("costs", {}).get(s, 0.0),

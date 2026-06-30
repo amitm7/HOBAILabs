@@ -14,7 +14,8 @@
   .cv-nav a.active, .cv-nav a:hover { color:var(--accent,#e0a32e); }
   .saved { font-size:12px; color:#16a34a; margin-right:6px; }
   #resume { font:inherit; font-size:13px; padding:5px 8px; border:1px solid #e5e7eb; border-radius:8px; margin-right:8px; max-width:220px; }
-  .cv-brief { display:grid; grid-template-columns:1fr auto auto auto; gap:10px; margin-bottom:18px; }
+  .cv-brief { display:grid; grid-template-columns:1fr auto auto auto auto; gap:10px; margin-bottom:18px; }
+  .cv-brief select { font:inherit; padding:8px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; }
   .cv-brief textarea { width:100%; min-height:58px; resize:vertical; padding:10px 12px; border-radius:10px;
     border:1px solid #e5e7eb; font:inherit; }
   /* Stage rail */
@@ -139,6 +140,13 @@
   <div class="cv-brief">
     <textarea id="brief" placeholder="A 30-second Humans of Bombay story: a Mumbai chai seller who funded his daughter's medical degree…"></textarea>
     <select id="scope"><option value="general">Story</option><option value="commerce">Commerce</option></select>
+    <select id="length" title="Reel length — Auto lets the story decide (can be minutes)">
+      <option value="0">Auto length</option>
+      <option value="30">~30s</option>
+      <option value="60">~60s</option>
+      <option value="90">~90s</option>
+      <option value="180">~3 min</option>
+    </select>
     <select id="quality"><option value="dev">Dev (cheap)</option><option value="prod">Prod</option></select>
     <button id="plan-btn" class="btn-primary">Plan ✨</button>
   </div>

@@ -303,6 +303,7 @@
     if (canvas.brief !== undefined) $("brief").value = canvas.brief || "";
     if (canvas.scope) $("scope").value = canvas.scope;
     if (canvas.quality) $("quality").value = canvas.quality;
+    if (canvas.target_seconds !== undefined) $("length").value = String(canvas.target_seconds);
     render(canvas);
   }
   async function loadCanvas(id) {
@@ -331,6 +332,7 @@
     try {
       const d = await api("/api/canvas/plan", {
         brief, scope: $("scope").value, quality: $("quality").value,
+        target_seconds: parseInt($("length").value, 10) || 0,
       });
       setRun(d.run_id);
       render(d.canvas);

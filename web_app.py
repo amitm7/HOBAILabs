@@ -302,9 +302,14 @@ def api_canvas_plan():
         return jsonify({"error": "Enter a brief first."}), 400
     from agents import canvas_run
     run_id = str(uuid.uuid4())
+    try:
+        target_seconds = int(data.get("target_seconds") or 0)
+    except (TypeError, ValueError):
+        target_seconds = 0
     state = canvas_run.new_canvas(brief, scope=data.get("scope", "general"),
                                   mood=data.get("mood", ""),
-                                  quality=data.get("quality", "dev"))
+                                  quality=data.get("quality", "dev"),
+                                  target_seconds=target_seconds)
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
