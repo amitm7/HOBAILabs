@@ -166,7 +166,11 @@
       <option value="reference">Reference — AI keeps the likeness</option>
       <option value="real">Real — use the photo untouched (our edge)</option>
     </select>
-    <span class="muted" id="char-hint">Applies to every shot of the person.</span>
+    <span class="muted">·</span>
+    <input id="assets-folder" type="text" placeholder="/path/to/your/photos folder"
+      style="flex:1;min-width:180px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:8px;font:inherit;font-size:12px">
+    <button id="match-btn" class="attach-btn">🖼 Use my photos (auto-match)</button>
+    <span class="muted" id="match-hint"></span>
   </div>
 
   <div id="rail" class="cv-rail"></div>

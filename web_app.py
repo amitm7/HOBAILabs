@@ -491,6 +491,7 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
     """Shared payload for the canvas's stills/video render (one builder, two callers)."""
     return {
         "beat_grid_bpm": _canvas_tempo_bpm(state.get("mood", "")),
+        "assets_dir": state.get("assets_dir", ""),   # real-photo folder (the moat)
         "mode": "story", "quality": state.get("quality", "prod"),
         "frames": state["frames"], "mood": state.get("mood", ""),
         "subject_name": "", "subject_description": "",
@@ -535,6 +536,43 @@ def api_canvas_keyframes(run_id: str, operator: str):
     state["stages"]["keyframes"].update(status="generating")
     _canvas_save(run_id, state)
     return jsonify({"render_id": render_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/match-photos", methods=["POST"])
+@auth.require_operator()
+def api_canvas_match_photos(run_id: str, operator: str):
+    """Use REAL photos from a folder for the person shots (the moat) instead of
+    AI portraits of a real named person. Clears the `ai_portrait` spec on talent
+    shots so `image_matcher.smart_match` can content-match the operator's real
+    media → those shots become real passthrough (untouched), AI fills the rest."""
+    from agents import canvas_run, image_matcher
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    folder = ((request.json or {}).get("assets_dir") or "").strip()
+    if not folder or not os.path.isdir(folder):
+        return jsonify({"error": f"Folder not found: {folder}"}), 400
+    if not _path_allowed(folder):
+        return jsonify({"error": "Folder is outside the allowed root"}), 400
+    # Make talent/AI-portrait shots eligible for real-photo matching.
+    for f in state["frames"]:
+        if f.get("uses_talent") or (f.get("photo_spec") or "").startswith("ai_portrait"):
+            f["photo_spec"] = ""
+            f.pop("visual_path", None)
+    try:
+        matched = image_matcher.smart_match(state["frames"], folder, lambda fn: True)
+    except Exception as e:
+        print(f"[Canvas] photo match failed ({e})")
+        matched = False
+    state["assets_dir"] = folder
+    if state["stages"]["keyframes"]["status"] in ("done", "approved", "generating"):
+        canvas_run.invalidate_from(state, "keyframes")
+    state["board"] = canvas_run.board_cards(state["frames"])
+    state["costs"] = canvas_run.stage_costs(state["frames"], quality=state.get("quality", "dev"))
+    _canvas_save(run_id, state)
+    real = sum(1 for c in state["board"] if c["asset_kind"] == "real")
+    return jsonify({"matched": bool(matched), "real_shots": real,
+                    "canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/render", methods=["POST"])

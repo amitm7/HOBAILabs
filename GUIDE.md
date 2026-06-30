@@ -252,6 +252,11 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Command box** at the bottom: refine in plain English ("make it darker, add a
   rain shot") and the shot list re-plans — the same idea as a chat assistant, wired
   to our planner.
+- **Use a whole folder of your real photos (recommended for real people).** Paste the
+  path to your media folder and click **🖼 Use my photos (auto-match)** — it reads your
+  images/videos and matches the right one to each story beat, used **untouched** (🟢 REAL).
+  This is the right way to make a reel about a *real, named person*: their actual footage,
+  not an AI lookalike. AI fills only the beats with no matching photo.
 - **Add your own photos.** Use *"📎 Add a real photo of the person"* (applies to
   every people-shot) or the *📎 Image* button on any card, and choose:
   **Real** — your photo appears in the reel *untouched* (🟢, the thing competitors

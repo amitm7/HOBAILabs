@@ -117,7 +117,10 @@
       // show it as a small corner chip over the shot's placeholder, never full-frame.
       let frameInner, img = false;
       if (c.real_path) {
-        frameInner = `<img class="thumb" src="${mediaUrl(c.real_path)}" alt="">`;
+        const isVid = /\.(mov|mp4|m4v|webm|avi)$/i.test(c.real_path);
+        frameInner = isVid
+          ? `<video class="clip" src="${mediaUrl(c.real_path)}" muted autoplay loop playsinline></video>`
+          : `<img class="thumb" src="${mediaUrl(c.real_path)}" alt="">`;
         img = true;
       } else {
         const chip = c.ref_path
@@ -405,6 +408,22 @@
     }
     const el = ev.target.closest(".edit");
     if (el) saveField(el);
+  });
+
+  // Auto-match a whole folder of the operator's real photos/videos to the shots
+  // (the moat: real media, not synthetic portraits of a real person).
+  $("match-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    const folder = $("assets-folder").value.trim();
+    if (!folder) { err("Enter the path to your photos folder."); return; }
+    err(""); const btn = $("match-btn");
+    btn.disabled = true; $("match-hint").textContent = "matching… (reading your images)";
+    try {
+      const d = await api(`/api/canvas/${runId}/match-photos`, { assets_dir: folder });
+      $("match-hint").textContent = `✓ ${d.real_shots} shots now use your real media`;
+      render(d.canvas);
+    } catch (e) { err(e.message); $("match-hint").textContent = ""; }
+    finally { btn.disabled = false; }
   });
 
   // Character-level: attach a real photo of the person to every people-shot.
