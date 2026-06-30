@@ -63,15 +63,19 @@ ladder keeps the AI *off* those and *on* everything else:
 **Bottom line: no authenticity is lost on the dimensions that define it.** Keep the person
 real (rungs 0-1); give the world the cinematic lift (rung 3).
 
-## 4. Per-shot UX (when we build it)
-- Each canvas shot gets a **Fidelity** selector: **Passthrough · Restore · Re-create**.
-- The director brain + a **quality score** on the matched real clip **auto-suggests** the
-  rung: an amateur establishing/B-roll shot → *Re-create (ambient)*; a precious real
-  close-up of the person → *Restore* (keep them real, just clean it).
-- Default policy: **a named real person's face stays real (rung 0-1)** unless the operator
-  explicitly consents to rung 4. Ambience defaults to whatever best serves the reel.
+## 4. Per-shot UX ✅ shipped (rung 1d)
+- Each canvas shot has a **Fidelity** selector: **Real (untouched) · Restore (clean) ·
+  Re-create (cinematic)** — surfacing the rungs already shipped (0/1/3) as a per-shot choice.
+- **⚡ Suggest fidelity** scores each real clip (`restore.quality_score`: ffprobe resolution +
+  OpenCV Laplacian-variance sharpness) and **auto-suggests** the rung: amateur ambient B-roll
+  → *Re-create*; soft/low-res → *Restore*; clean → *keep Real*. One-tap chip; the operator
+  decides (advisory, never forced).
+- **Identity policy enforced in the options themselves:** a shot that shows the real person
+  (`uses_talent`) is only offered **Real / Restore** — *Re-create is not in its dropdown*, so a
+  real face can't be faked here. Rung 4 (consent-gated person re-create) is **deferred**, a
+  separate path. Switching back to **Real** restores the untouched original (`orig_visual`).
 - Cost-aware: Restore is cheap; Re-create costs image/video gen — shown in the per-stage
-  cost gate we already have.
+  cost gate we already have. Suggest itself is read-only (no spend).
 
 ## 5. Consolidated roadmap (single source of truth)
 Reconciles the OODA round-3 **parity-gap** list (catch up to galleri5) with this
@@ -91,7 +95,8 @@ doesn't change the axis. So moat-deepening out-ranks most parity work.
 | **2** | **Upfront cost + balance** display (surface `pricing.estimate`) | Parity | No | S | ✅ shipped |
 | **3** | **Re-create "ambient"** (ladder 1b) — cinematic scene/B-roll *inspired from real*, no face | Moat | No | M | ✅ shipped (opt-in, 3-guard identity safety) |
 | **4** | **Characters/Assets stage** — real-identity from real photos, consent-gated (their stage 2, our way) | Parity | No | M | ✅ shipped (cast detect → ref+consent → shot anchoring) |
-| **5** | **Re-create person** (1c) + **Fidelity selector + auto-suggest** (1d) | Moat | No (consent-gated) | M | next |
+| **5a** | **Fidelity selector + auto-suggest** (1d) — per-shot Real/Restore/Re-create + ⚡ quality suggest | Moat | No | M | ✅ shipped (person shots capped at Restore) |
+| **5b** | **Re-create person** (1c) — consent-gated likeness, reference-conditioned | Moat | No (consent-gated) | M | deferred (owner to greenlight) |
 | **6** | **Storyboard art** (pencil board) | Parity | No | M |
 | **7** | **Agent Room** (multi-agent discussion) | Parity | No | L — last |
 | — | **(ongoing)** continuity P2 motion-chaining; polish; cloud scale | — | No | — |

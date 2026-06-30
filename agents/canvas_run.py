@@ -169,9 +169,107 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "can_recreate": not bool(f.get("uses_talent")),
             "recreated":    bool(f.get("recreated_from_real")),
             "restored":     bool(f.get("restored")),
+            # Reality–Fidelity ladder selector (rung 1d): current rung, the rungs allowed
+            # for THIS shot (person shots never get ambient re-create), and the auto-suggest.
+            "fidelity":           current_fidelity(f),
+            "fidelity_options":   fidelity_options(f),
+            "fidelity_suggested": f.get("fidelity_suggested") or "",
+            "fidelity_reason":    f.get("fidelity_reason") or "",
+            "quality_score":      f.get("quality_score"),
             "duration":   f.get("duration"),
         })
     return cards
+
+
+# ── Reality–Fidelity ladder selector (rung 1d) ──────────────────────────────────
+# The rungs already shipped (Passthrough=0, Restore=1, Re-create ambient=3) surfaced as
+# a per-shot choice + a quality auto-suggest. Person re-create (rung 4) is intentionally
+# NOT offered here — it's the consent-gated path, deferred. See REAL_MEDIA_QUALITY_LADDER.
+
+FIDELITY_RUNGS = ("passthrough", "restore", "recreate")
+
+
+def current_fidelity(frame: dict) -> str:
+    """Which rung this shot is currently on, from the flags the routes set."""
+    if frame.get("recreated_from_real"):
+        return "recreate"
+    if frame.get("restored"):
+        return "restore"
+    return "passthrough"
+
+
+def fidelity_options(frame: dict) -> list[str]:
+    """Rungs offered for THIS shot. Only REAL footage has a ladder (an AI shot is already
+    generated). A shot that shows the real person never gets ambient re-create — that
+    would synthesize a likeness — so it's capped at Restore (identity stays real)."""
+    if asset_kind(frame) != ASSET_REAL:
+        return []
+    if frame.get("uses_talent"):
+        return ["passthrough", "restore"]
+    return ["passthrough", "restore", "recreate"]
+
+
+def suggest_fidelity(frame: dict, score: dict | None = None) -> dict:
+    """Recommend a rung from the shot's quality + whether it shows a person.
+    `score` is `restore.quality_score(...)`. Conservative by design: when unsure, keep
+    it real (passthrough); a person + low quality → Restore (never re-create the person);
+    only amateur AMBIENT B-roll is pushed toward Re-create."""
+    opts = fidelity_options(frame)
+    if not opts:
+        return {"suggested": None, "reason": ""}
+    s = (score or {}).get("score")
+    reason = (score or {}).get("reason") or ""
+    if s is None:
+        return {"suggested": "passthrough", "reason": "couldn't assess — kept real"}
+    if s >= 0.8:
+        return {"suggested": "passthrough", "reason": f"looks clean ({reason})"}
+    if "recreate" not in opts:   # person shot, low quality → clean it, keep them real
+        return {"suggested": "restore", "reason": f"{reason} — clean it, keep them real"}
+    if s <= 0.45:                # ambient + amateur → re-create cinematically
+        return {"suggested": "recreate", "reason": f"{reason} — amateur B-roll, re-create"}
+    return {"suggested": "restore", "reason": f"{reason} — clean it up"}
+
+
+def score_fidelity(state: dict) -> list[dict]:
+    """Score every REAL shot and store its auto-suggestion on the frame (read back by
+    board_cards). Reuses restore.quality_score. Best-effort per shot."""
+    from agents import restore
+    out = []
+    for f in state.get("frames", []):
+        opts = fidelity_options(f)
+        if not opts:
+            continue
+        spec = str(f.get("photo_spec") or "")
+        src = f.get("visual_path") or (spec if spec and not spec.startswith("ai_") else "")
+        try:
+            q = restore.quality_score(src) if src else {"score": None, "reason": "no media"}
+        except Exception as e:
+            q = {"score": None, "reason": f"assess failed ({e})"}
+        sug = suggest_fidelity(f, q)
+        f["quality_score"] = q.get("score")
+        f["quality_reason"] = q.get("reason")
+        f["fidelity_suggested"] = sug["suggested"]
+        f["fidelity_reason"] = sug["reason"]
+        out.append({"frame_id": f.get("frame_id"), "score": q.get("score"),
+                    "suggested": sug["suggested"], "reason": sug["reason"],
+                    "options": opts})
+    return out
+
+
+def revert_passthrough(state: dict, frame_id: str) -> dict:
+    """Reality–Fidelity rung 0: drop any restore/re-create override and put the shot back
+    on the ORIGINAL real media (preserved as `orig_visual` by the restore/recreate routes
+    before they overwrite). The moat's default — untouched real footage."""
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == frame_id), None)
+    if not f:
+        raise ValueError("unknown shot")
+    orig = f.get("orig_visual")
+    if orig:
+        f["visual_path"] = orig
+        f["photo_spec"] = orig
+    f.pop("restored", None)
+    f.pop("recreated_from_real", None)
+    return f
 
 
 # ── Attach operator-supplied images (the moat: your real media) ─────────────────

@@ -267,6 +267,14 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **opt-in per shot**, never automatic. For safety it **refuses any footage with a person
   in it** — your subjects stay real (use Enhance for those). Re-created scenes are clearly
   labelled **AI · from real**.
+- **Fidelity per shot + ⚡ auto-suggest.** Every real shot has a **Fidelity** dropdown:
+  **Real (untouched)** · **Restore (clean)** · **Re-create (cinematic)** — the three rungs in
+  one place, per shot. Click **⚡ Suggest fidelity** and it assesses each real shot's quality
+  (resolution + sharpness) and recommends a rung — *keep it real* if it's already clean,
+  *Restore* if it's soft or low-res, *Re-create* only for amateur **ambient** B-roll. The
+  suggestion is a one-tap chip (⚡); you decide. **Shots that show a real person are never
+  offered Re-create** — only Real or Restore, so a real face is never faked. Switching back to
+  **Real** always returns the untouched original footage.
 - **Add your own photos.** Use *"📎 Add a real photo of the person"* (applies to
   every people-shot) or the *📎 Image* button on any card, and choose:
   **Real** — your photo appears in the reel *untouched* (🟢, the thing competitors

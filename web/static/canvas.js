@@ -155,6 +155,7 @@
             value="${escapeHtml(c.motion || "")}" placeholder="camera move">
           ${promptBox}
           <div class="sub">${escapeHtml(c.emotion || "")}${c.duration ? " · " + c.duration + "s" : ""}</div>
+          ${fidelityRow(c)}
           <div class="attach">
             <select class="amode" data-frame="${fid}">
               <option value="reference">Reference (likeness)</option>
@@ -167,6 +168,60 @@
         </div>
       </div>`;
     }).join("");
+  }
+
+  // Reality–Fidelity ladder selector (rung 1d): per-shot choice across the rungs we
+  // already shipped, plus a one-tap ⚡ auto-suggest. Only REAL shots have a ladder;
+  // person shots are capped at Restore (never re-create a real person here).
+  function fidelityLabel(r) {
+    return r === "passthrough" ? "Real (untouched)"
+         : r === "restore" ? "Restore (clean)"
+         : r === "recreate" ? "Re-create (cinematic)" : r;
+  }
+  function fidelityRow(c) {
+    if (!c.fidelity_options || !c.fidelity_options.length) return "";
+    const fid = c.frame_id;
+    const opts = c.fidelity_options.map((r) =>
+      `<option value="${r}"${r === c.fidelity ? " selected" : ""}>${fidelityLabel(r)}</option>`).join("");
+    let suggest = "";
+    if (c.fidelity_suggested && c.fidelity_suggested !== c.fidelity) {
+      suggest = `<button class="fid-suggest" data-frame="${fid}" data-rung="${c.fidelity_suggested}"
+        title="${escapeHtml(c.fidelity_reason || "")}">⚡ ${fidelityLabel(c.fidelity_suggested)}</button>`;
+    } else if (c.fidelity_suggested) {
+      suggest = `<span class="fid-ok" title="${escapeHtml(c.fidelity_reason || "")}">⚡ best already</span>`;
+    }
+    return `<div class="fidelity">
+      <span class="lbl">Fidelity</span>
+      <select class="fid-sel" data-frame="${fid}">${opts}</select>
+      ${suggest}
+    </div>`;
+  }
+
+  // Dispatch a Fidelity change to the right (already-verified) route: Passthrough reverts
+  // to the untouched original; Restore + Re-create reuse the shipped /restore + /recreate.
+  async function setFidelity(fid, rung, sel) {
+    if (!runId) return;
+    err("");
+    try {
+      if (rung === "passthrough") {
+        const d = await api(`/api/canvas/${runId}/fidelity`, { frame_id: fid, rung });
+        render(d.canvas);
+      } else if (rung === "restore") {
+        if (sel) sel.disabled = true;
+        await api(`/api/canvas/${runId}/restore`, { frame_id: fid });
+        $("match-hint").textContent = "enhancing this shot…";
+        pollRestore();
+      } else if (rung === "recreate") {
+        if (sel) sel.disabled = true;
+        const fr = document.querySelector(`.cv-card[data-frame="${fid}"] .frame`);
+        if (fr) fr.classList.add("shimmer");
+        const d = await api(`/api/canvas/${runId}/recreate`, { frame_id: fid });
+        render(d.canvas);
+      }
+    } catch (e) {
+      err((rung === "recreate" ? "Re-create: " : "") + e.message);
+      try { const s = await api(`/api/canvas/${runId}/state`); render(s.canvas); } catch (_) {}
+    }
   }
 
   // Upload an image then attach it to shot(s) with the chosen mode. Reuses the
@@ -446,11 +501,15 @@
     const rb = ev.target.closest(".reroll");
     if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); return; }
     const rc = ev.target.closest(".recreate");
-    if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); }
+    if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
+    const fs = ev.target.closest(".fid-suggest");
+    if (fs) { ev.preventDefault(); setFidelity(fs.getAttribute("data-frame"), fs.getAttribute("data-rung")); }
   });
 
-  // Delegated change handler: per-card image upload, or an edited text field.
+  // Delegated change handler: Fidelity selector, per-card image upload, or edited text.
   $("board").addEventListener("change", (ev) => {
+    const fidSel = ev.target.closest(".fid-sel");
+    if (fidSel) { setFidelity(fidSel.getAttribute("data-frame"), fidSel.value, fidSel); return; }
     const fileInput = ev.target.closest('input[type="file"]');
     if (fileInput && fileInput.files[0]) {
       const fid = fileInput.getAttribute("data-frame");
@@ -482,6 +541,24 @@
   // Enhance (Restore, ladder rung 1): non-generative cleanup of the real footage.
   // Keeps identity 100% real — just upscale/denoise/stabilize/grade. Threaded → poll.
   let restorePoll = null;
+  // Poll the threaded restore job to completion (used by the bulk Enhance button AND the
+  // per-shot Fidelity → Restore selector). Re-renders the board so a 'best already' hint
+  // and the restored thumbnail appear as soon as the ffmpeg pass finishes.
+  function pollRestore(onDone) {
+    if (restorePoll) clearInterval(restorePoll);
+    restorePoll = setInterval(async () => {
+      try {
+        const s = await api(`/api/canvas/${runId}/state`);
+        const c = s.canvas;
+        $("match-hint").textContent = c.restoring
+          ? `enhancing ${c.restore_done}/${c.restore_total}…`
+          : `✓ enhanced ${c.restore_total} real shot${c.restore_total === 1 ? "" : "s"}`;
+        if (!c.restoring) {
+          clearInterval(restorePoll); restorePoll = null; render(c); if (onDone) onDone();
+        }
+      } catch (e) { /* keep polling */ }
+    }, 2500);
+  }
   $("restore-btn").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     err(""); const btn = $("restore-btn");
@@ -490,18 +567,23 @@
       const d = await api(`/api/canvas/${runId}/restore`, {});
       render(d.canvas);
       $("match-hint").textContent = `enhancing 0/${d.total}…`;
-      if (restorePoll) clearInterval(restorePoll);
-      restorePoll = setInterval(async () => {
-        try {
-          const s = await api(`/api/canvas/${runId}/state`);
-          const c = s.canvas;
-          $("match-hint").textContent = c.restoring
-            ? `enhancing ${c.restore_done}/${c.restore_total}…`
-            : `✓ enhanced ${c.restore_total} real shots`;
-          if (!c.restoring) { clearInterval(restorePoll); restorePoll = null; btn.disabled = false; render(c); }
-        } catch (e) { /* keep polling */ }
-      }, 2500);
+      pollRestore(() => { btn.disabled = false; });
     } catch (e) { err(e.message); btn.disabled = false; }
+  });
+
+  // ⚡ Auto-suggest a Fidelity rung for every real shot (quality assessment, no spend).
+  $("fidelity-btn") && $("fidelity-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err(""); const btn = $("fidelity-btn");
+    btn.disabled = true; $("match-hint").textContent = "assessing shot quality…";
+    try {
+      const d = await api(`/api/canvas/${runId}/fidelity-suggest`, {});
+      const n = (d.suggestions || []).length;
+      const flagged = (d.suggestions || []).filter((s) => s.suggested && s.suggested !== "passthrough").length;
+      $("match-hint").textContent = `⚡ assessed ${n} real shot${n === 1 ? "" : "s"} — ${flagged} could improve`;
+      render(d.canvas);
+    } catch (e) { err(e.message); $("match-hint").textContent = ""; }
+    finally { btn.disabled = false; }
   });
 
   // Characters stage: surface the real people in the story; anchor each to a real photo.

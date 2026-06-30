@@ -85,6 +85,14 @@
   .cv-card .attach .attach-btn { padding:5px 8px; font-size:11px; }
   .kb-real{background:#16a34a;} .kb-ai{background:#d97706;} .kb-ai_person{background:#dc2626;}
   .cv-card .meta { padding:9px 11px; }
+  .cv-card .fidelity { display:flex; align-items:center; gap:6px; margin-top:7px; flex-wrap:wrap; }
+  .cv-card .fidelity .lbl { font-size:11px; color:#6b7280; font-weight:600; }
+  .cv-card .fidelity .fid-sel { flex:1; min-width:120px; font:inherit; font-size:12px;
+    padding:4px 6px; border:1px solid #e5e7eb; border-radius:7px; }
+  .fid-suggest { cursor:pointer; font-size:11px; font-weight:700; border:0; border-radius:7px;
+    padding:4px 8px; background:#fef3c7; color:#92400e; white-space:nowrap; }
+  .fid-suggest:hover { background:#fde68a; }
+  .fid-ok { font-size:11px; color:#16a34a; font-weight:600; white-space:nowrap; }
   .cv-card .cap { font-size:13px; line-height:1.35; }
   .cv-card .sub { font-size:11px; color:#6b7280; margin-top:5px; }
   .arrow { stroke:#2563eb; stroke-width:7; fill:none; marker-end:url(#ah); }
@@ -200,6 +208,7 @@
     <button id="match-btn" class="attach-btn">🖼 Use my photos (auto-match)</button>
     <button id="restore-btn" class="attach-btn" title="Non-generative cleanup of your real footage — upscale, denoise, stabilize, grade. Keeps it 100% real.">✨ Enhance real footage</button>
     <button id="chars-btn" class="attach-btn" title="Find the real people in the story and anchor each to their real photo + consent">👥 Characters</button>
+    <button id="fidelity-btn" class="attach-btn" title="Assess each real shot's quality and suggest a Fidelity rung — keep real, Restore (clean), or Re-create (ambient B-roll)">⚡ Suggest fidelity</button>
     <span class="muted" id="match-hint"></span>
   </div>
 

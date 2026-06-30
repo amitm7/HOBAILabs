@@ -626,11 +626,13 @@ def api_canvas_recreate(run_id: str, operator: str):
     if spend_missing:
         return jsonify({"error": spend_missing[0]}), 400
     try:
+        frame.setdefault("orig_visual", frame.get("visual_path") or frame.get("photo_spec"))
         frame["photo_spec"] = "ai_symbolic"          # AI scene, no person
         frame.pop("visual_path", None)
         out = image_generator.recreate_ambient(frame, assets_dir, reference_path=ref)
         frame["visual_path"] = out
         frame["recreated_from_real"] = True
+        frame.pop("restored", None)                  # re-create supersedes a prior restore
         governance.release_reservation(one, run_id=run_id, reason="canvas_recreate_done")
         governance.record_cost_event(governance.project_key(one), item="canvas_recreate",
                                      usd=_estimate_payload_cost(one), run_id=run_id, event_type="estimate")
@@ -665,6 +667,10 @@ def api_canvas_restore(run_id: str, operator: str):
                if canvas_run.asset_kind(f) == canvas_run.ASSET_REAL
                and (f.get("visual_path") or
                     (f.get("photo_spec") and not f["photo_spec"].startswith("ai_")))]
+    # Per-shot restore (Fidelity selector): scope to one shot if frame_id is given.
+    fid = (request.json or {}).get("frame_id") if request.is_json else None
+    if fid:
+        targets = [f for f in targets if f.get("frame_id") == fid]
     if not targets:
         return jsonify({"error": "No real footage to enhance yet — match your photos first."}), 400
     out_dir = str(RUNS_DIR / run_id / "restored")
@@ -677,12 +683,14 @@ def api_canvas_restore(run_id: str, operator: str):
         from agents import restore
         for i, f in enumerate(targets, 1):
             src = f.get("visual_path") or f.get("photo_spec")
+            f.setdefault("orig_visual", src)   # preserve original for Passthrough revert
             try:
                 newp = restore.restore_file(src, out_dir)
                 if newp and newp != src:
                     f["visual_path"] = newp
                     f["photo_spec"] = newp
                     f["restored"] = True
+                    f.pop("recreated_from_real", None)   # restore supersedes a prior re-create
             except Exception as e:
                 print(f"[Restore] {src} ({e})")
             st["restore_done"] = i
@@ -698,6 +706,48 @@ def api_canvas_restore(run_id: str, operator: str):
     threading.Thread(target=_job, args=(state,), daemon=True).start()
     return jsonify({"restoring": True, "total": len(targets),
                     "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/fidelity-suggest", methods=["POST"])
+@auth.require_operator()
+def api_canvas_fidelity_suggest(run_id: str, operator: str):
+    """Reality–Fidelity auto-suggest (ladder rung 1d): score each REAL shot's quality
+    (resolution + sharpness) and recommend a rung — Passthrough (clean), Restore (soft/
+    low-res), Re-create (amateur ambient B-roll). Person shots are never pushed past
+    Restore. Read-only assessment — no spend, no media changes."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    suggestions = canvas_run.score_fidelity(state)
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"suggestions": suggestions, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/fidelity", methods=["POST"])
+@auth.require_operator()
+def api_canvas_fidelity(run_id: str, operator: str):
+    """Set a shot's Fidelity rung. Restore/Re-create are dispatched by the UI to the
+    existing /restore and /recreate routes (verified paths, reused untouched); this route
+    handles **Passthrough** — revert to the untouched original real footage (rung 0)."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    fid, rung = body.get("frame_id", ""), body.get("rung", "")
+    if rung != "passthrough":
+        return jsonify({"error": "Use /restore or /recreate for that rung"}), 400
+    try:
+        canvas_run.revert_passthrough(state, fid)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        canvas_run.invalidate_from(state, "keyframes")   # visual changed → re-render
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/characters", methods=["POST"])
