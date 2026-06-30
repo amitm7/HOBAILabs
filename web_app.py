@@ -297,6 +297,25 @@ def _track_render(render_id: str, target, *args):
     threading.Thread(target=_runner, daemon=True).start()
 
 
+# Transient side-jobs (restore / storyboard-art) set a flag on the canvas while a daemon
+# thread works. Like renders, those threads die on restart — track the run_ids running
+# here so _canvas_load can clear a stale flag (else the board polls a finished job forever).
+_ACTIVE_JOBS: set[str] = set()
+
+
+def _track_job(run_id: str, target, *args):
+    """Spawn a canvas side-job thread and mark its run_id live for the duration."""
+    _ACTIVE_JOBS.add(run_id)
+
+    def _runner():
+        try:
+            target(*args)
+        finally:
+            _ACTIVE_JOBS.discard(run_id)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
 def _canvas_load(run_id: str) -> dict | None:
     from agents import run_store
     stored = run_store.load(run_id)
@@ -315,6 +334,12 @@ def _canvas_load(run_id: str) -> dict | None:
                 print(f"[Canvas] {run_id}: reset orphaned 'generating' stage(s) "
                       f"(render {rid} not live here) → re-triggerable")
                 _canvas_save(run_id, state)
+        # Transient side-job flags (restore/storyboard) whose thread didn't survive a restart.
+        if (state.get("sketching") or state.get("restoring")) and run_id not in _ACTIVE_JOBS:
+            state["sketching"] = False
+            state["restoring"] = False
+            print(f"[Canvas] {run_id}: cleared orphaned side-job flag (no live worker)")
+            _canvas_save(run_id, state)
     return state
 
 
@@ -782,6 +807,71 @@ def api_canvas_upscale(run_id: str, operator: str):
     return jsonify({"frame_id": fid, "creative": creative, "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/storyboard-art", methods=["POST"])
+@auth.require_operator()
+def api_canvas_storyboard_art(run_id: str, operator: str):
+    """Render a pencil-sketch STORYBOARD panel per shot — the comic-board planning view
+    (galleri5's signature visual). A PLANNING artifact: loose graphite sketches of framing/
+    blocking/camera move, NOT the final render and NOT a photoreal likeness, never used in
+    the reel itself. Cheap draft model, content-hash cached, threaded (one image per shot).
+    Spend-gated up front. Progress on `public_state.sketching/sketch_done/sketch_total`."""
+    from agents import canvas_run, governance, pricing
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    frames = state.get("frames", [])
+    if not frames:
+        return jsonify({"error": "Plan a story first."}), 400
+    usd = pricing.storyboard_cost() * len(frames)
+    one = {"mode": "story", "quality": "dev", "frames": frames,
+           "session_id": run_id, "operator_id": operator}
+    spend_missing = governance.reserve_spend(one, usd, run_id=run_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    out_dir = str(RUNS_DIR / run_id / "storyboard")
+    state["sketching"] = True
+    state["sketch_total"] = len(frames)
+    state["sketch_done"] = 0
+    _canvas_save(run_id, state)
+
+    def _job(st):
+        # Panels are independent → render them CONCURRENTLY (each ~10s on the draft model;
+        # sequential would be N×10s). Pool capped so we don't exceed the model's fal limit.
+        from agents import image_generator
+        from concurrent.futures import ThreadPoolExecutor
+        lock = threading.Lock()
+        progress = {"done": 0}
+
+        def _panel(f):
+            try:
+                p = image_generator.generate_storyboard_panel(f, out_dir)
+                if p:
+                    f["storyboard_art"] = p
+            except Exception as e:
+                print(f"[Storyboard] {f.get('frame_id')} ({e})")
+            with lock:
+                progress["done"] += 1
+                st["sketch_done"] = progress["done"]
+                st["board"] = canvas_run.board_cards(st["frames"])
+                _canvas_save(run_id, st)
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            list(ex.map(_panel, st["frames"]))
+        st["sketching"] = False
+        try:
+            governance.release_reservation(one, run_id=run_id, reason="canvas_storyboard_done")
+            governance.record_cost_event(governance.project_key(one), item="canvas_storyboard",
+                                         usd=usd, run_id=run_id, event_type="estimate")
+        except Exception:
+            pass
+        st["board"] = canvas_run.board_cards(st["frames"])
+        _canvas_save(run_id, st)
+
+    _track_job(run_id, _job, state)
+    return jsonify({"sketching": True, "total": len(frames),
+                    "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/restore", methods=["POST"])
 @auth.require_operator()
 def api_canvas_restore(run_id: str, operator: str):
@@ -833,7 +923,7 @@ def api_canvas_restore(run_id: str, operator: str):
         st["costs"] = canvas_run.stage_costs(st["frames"], quality=st.get("quality", "dev"))
         _canvas_save(run_id, st)
 
-    threading.Thread(target=_job, args=(state,), daemon=True).start()
+    _track_job(run_id, _job, state)
     return jsonify({"restoring": True, "total": len(targets),
                     "canvas": canvas_run.public_state(state)})
 

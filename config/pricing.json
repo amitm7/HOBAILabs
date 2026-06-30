@@ -14,6 +14,7 @@
     "openai_edit_usd":     0.04,
     "seedream_usd":        0.01,
     "nano_banana_usd":     0.06,
+    "storyboard_usd":      0.01,
     "_note": "Per image generated or edited. seedream = cheap draft/test model; nano_banana = premium photoreal (verify on fal.ai)."
   },
 

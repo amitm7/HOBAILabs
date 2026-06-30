@@ -267,6 +267,13 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **opt-in per shot**, never automatic. For safety it **refuses any footage with a person
   in it** — your subjects stay real (use Enhance for those). Re-created scenes are clearly
   labelled **AI · from real**.
+- **Storyboard view (✏️).** Click **✏️ Storyboard** to flip the board into **hand-drawn
+  pencil-sketch panels** — one comic-board panel per shot (graphite sketch of the framing +
+  blocking, with blue motion arrows for the camera move). It's a **planning view** — loose
+  concept sketches, *not* the final render and *not* a likeness of anyone — for seeing the
+  whole reel's shot flow at a glance. First click renders the panels (cheap, a few seconds
+  each, in parallel); after that it's an instant toggle (they're cached). Click again to flip
+  back to your photos/AI shots.
 - **Upscale a shot (⬆, final-render quality).** Hover a shot with a still and click **⬆** to
   generatively upscale it. It's **routed for safety**: a **real** shot uses a *faithful*
   super-resolution that sharpens without inventing detail — your subject's face stays exactly

@@ -316,3 +316,46 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
     _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path
+
+
+# ── Storyboard panel (planning sketch, not a final render) ──────────────────────
+
+STORYBOARD_STYLE = (
+    "Black-and-white graphite pencil STORYBOARD sketch — a rough hand-drawn film "
+    "storyboard panel, loose gestural lines, light cross-hatching, soft shading, with "
+    "BLUE pencil motion arrows indicating the camera move. It is a planning sketch: focus "
+    "on COMPOSITION and BLOCKING (where subjects and objects sit in the frame, the framing, "
+    "the camera angle) — deliberately loose, NOT photoreal, NOT a portrait likeness of any "
+    "real person. Tall vertical portrait composition. No text, no numbers, no captions, no "
+    "words, no aspect-ratio labels anywhere in the image."
+)
+
+
+def generate_storyboard_panel(frame: dict, assets_dir: str, model_id: str = "") -> str:
+    """Render a pencil-sketch STORYBOARD panel for a shot — a planning artifact (framing +
+    blocking + camera move), NOT the final render and NOT a photoreal likeness. Uses a
+    cheap draft model and the RAW generate path (no photoreal QC gates — a loose sketch
+    would falsely fail face-sanity/critique). Content-hash cached; degrades to '' on error
+    so the caller can fall back to the SVG-arrow placeholder."""
+    frame_id = frame["frame_id"]
+    scene = frame.get("scene", {})
+    shot = frame.get("shot_size", "") or scene.get("shot_size", "")
+    cam = scene.get("camera_angle", "")
+    motion = frame.get("motion_override") or scene.get("motion_prompt") or ""
+    action = (scene.get("scene_description") or scene.get("image_prompt")
+              or frame.get("caption", ""))
+    prompt = (
+        f"{STORYBOARD_STYLE}\n"
+        f"SHOT: {shot or 'medium shot'}{(' · ' + cam) if cam else ''}. "
+        f"CAMERA MOVE: {motion or 'slow push in'}. "
+        f"SCENE (sketch the composition loosely, no real faces): {str(action)[:200]}."
+    )
+    chosen = model_id or "seedream"   # cheap draft model — it's only a sketch
+    os.makedirs(assets_dir, exist_ok=True)
+    out_path = os.path.join(
+        assets_dir, f"storyboard_{frame_id}_{_prompt_hash(chosen, prompt, frame_id)}.jpg")
+    if _image_cached(out_path):
+        return out_path
+    print(f"[ImageGen] Storyboard panel ({frame_id}) via {chosen}…")
+    _generate_image(chosen, prompt, out_path, "gpt_image")   # raw — no photoreal gates
+    return out_path

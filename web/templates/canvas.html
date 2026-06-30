@@ -151,6 +151,12 @@
   .src-btn.ai-gen:hover { background:#dbeafe; border-color:#bfdbfe; }
   .src-btn.revert-real { background:#dcfce7; border-color:#bbf7d0; color:#166534; }
   .src-btn.revert-real:hover { background:#bbf7d0; }
+  /* Storyboard view: active toggle + the pencil panel + overlaid motion arrow */
+  #storyboard-btn.on { background:#1e3a8a; }
+  .cv-card .frame .thumb.sketch { filter:grayscale(0.15) contrast(1.05); }
+  .cv-card .frame .sketch-arrow { position:absolute; bottom:6px; right:6px; z-index:2;
+    opacity:.85; pointer-events:none; filter:drop-shadow(0 1px 2px #0008); }
+  .cv-card .frame .sketch-arrow svg { width:42px; height:48px; }
   /* Per-shot photo picker gallery (fix a wrong auto-match) */
   .cv-card .picker { display:grid; grid-template-columns:repeat(auto-fill, minmax(56px,1fr));
     gap:5px; margin-top:8px; max-height:200px; overflow-y:auto; padding:7px; background:#f9fafb;
@@ -235,6 +241,7 @@
     <button id="restore-btn" class="attach-btn" title="Non-generative cleanup of your real footage — upscale, denoise, stabilize, grade. Keeps it 100% real.">✨ Enhance real footage</button>
     <button id="chars-btn" class="attach-btn" title="Find the real people in the story and anchor each to their real photo + consent">👥 Characters</button>
     <button id="fidelity-btn" class="attach-btn" title="Assess each real shot's quality and suggest a Fidelity rung — keep real, Restore (clean), or Re-create (ambient B-roll)">⚡ Suggest fidelity</button>
+    <button id="storyboard-btn" class="attach-btn" title="Pencil-sketch storyboard view — a hand-drawn comic-board panel per shot (planning sketches, not the final render)">✏️ Storyboard</button>
     <span class="muted" id="match-hint"></span>
   </div>
 

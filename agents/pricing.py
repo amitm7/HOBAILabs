@@ -44,6 +44,11 @@ def image_cost(kind: str = "flux") -> float:
     }.get(kind, 0.04)
 
 
+def storyboard_cost() -> float:
+    """Cost to render one pencil-sketch storyboard panel (cheap draft model)."""
+    return load()["image_gen"].get("storyboard_usd", 0.01)
+
+
 def upscale_cost(creative: bool = False) -> float:
     """Cost to upscale one still. creative=clarity (AI stills), else aura_sr (real, faithful)."""
     p = load().get("upscale", {})

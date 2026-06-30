@@ -186,6 +186,8 @@ def board_cards(frames: list[dict]) -> list[dict]:
             # AI→creative by the route. `upscaled` shows the badge + hides the button.
             "can_upscale":     _is_image(f.get("visual_path") or real_path) and not f.get("upscaled"),
             "upscaled":        bool(f.get("upscaled")),
+            # Pencil-sketch storyboard panel (planning view) — path if rendered, else ''
+            "storyboard_art":  f.get("storyboard_art") or "",
             "duration":   f.get("duration"),
         })
     return cards
@@ -602,6 +604,9 @@ def public_state(state: dict) -> dict:
         "restoring": bool(state.get("restoring", False)),
         "restore_done": state.get("restore_done", 0),
         "restore_total": state.get("restore_total", 0),
+        "sketching": bool(state.get("sketching", False)),
+        "sketch_done": state.get("sketch_done", 0),
+        "sketch_total": state.get("sketch_total", 0),
         "characters": state.get("characters", []),
     }
 

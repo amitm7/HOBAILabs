@@ -109,8 +109,8 @@ doesn't change the axis. So moat-deepening out-ranks most parity work.
 | **4** | **Characters/Assets stage** — real-identity from real photos, consent-gated (their stage 2, our way) | Parity | No | M | ✅ shipped (cast detect → ref+consent → shot anchoring) |
 | **5a** | **Fidelity selector + auto-suggest** (1d) — per-shot Real/Restore/Re-create + ⚡ quality suggest | Moat | No | M | ✅ shipped (person shots capped at Restore) |
 | **5b** | **Re-create person** (1c) — consent-gated likeness, reference-conditioned | Moat | No (consent-gated) | M | deferred (owner to greenlight) |
-| **6** | **Storyboard art** (pencil board) | Parity | No | M |
-| **7** | **Agent Room** (multi-agent discussion) | Parity | No | L — last |
+| **6** | **Storyboard art** (pencil board) | Parity | No | M | ✅ shipped (✏️ toggle, parallel sketch panels) |
+| **7** | **Agent Room** (multi-agent discussion) | Parity | No | L | deferred — last |
 | — | **(ongoing)** continuity P2 motion-chaining; polish; cloud scale | — | No | — |
 
 **Open judgment call:** #1/#3 (Quality Ladder) vs #4 (Characters stage). Ranked quality

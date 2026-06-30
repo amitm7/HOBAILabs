@@ -73,6 +73,11 @@
 
   function mediaUrl(p) { return "/media?path=" + encodeURIComponent(p); }
 
+  // Storyboard (pencil-sketch) view toggle + last-rendered canvas (for re-render on toggle).
+  let storyboardView = false;
+  let lastCanvas = null;
+  let sketchPoll = null;
+
   // ── Audio options (music / upload song / voiceover) ──────────────────────────
   let canvasMusicPath = "";
   function audioOpts() {
@@ -119,7 +124,13 @@
       // conditioning source (each shot will render a DIFFERENT keyframe from it) →
       // show it as a small corner chip over the shot's placeholder, never full-frame.
       let frameInner, img = false;
-      if (c.real_path) {
+      if (storyboardView && c.storyboard_art) {
+        // Storyboard view: the pencil panel replaces the photo/placeholder for EVERY shot
+        // (it's the planning board), with the motion arrow overlaid as the camera-move cue.
+        frameInner = `<img class="thumb sketch" src="${mediaUrl(c.storyboard_art)}" alt="storyboard panel">`
+                   + `<span class="sketch-arrow">${arrowSvg(c.arrow)}</span>`;
+        img = true;
+      } else if (c.real_path) {
         const isVid = /\.(mov|mp4|m4v|webm|avi)$/i.test(c.real_path);
         frameInner = isVid
           ? `<video class="clip" src="${mediaUrl(c.real_path)}" muted autoplay loop playsinline></video>`
@@ -361,6 +372,7 @@
   }
 
   function render(canvas) {
+    lastCanvas = canvas;
     renderRail(canvas.stages);
     renderBoard(canvas.board);
     const hasBoard = canvas.board && canvas.board.length > 0;
@@ -702,6 +714,43 @@
       render(d.canvas);
     } catch (e) { err(e.message); $("match-hint").textContent = ""; }
     finally { btn.disabled = false; }
+  });
+
+  // ✏️ Storyboard view — toggle the board between photo/placeholder and pencil-sketch
+  // panels. First enable renders the panels (cheap draft model, one per shot); after that
+  // it's just a view toggle (panels are cached).
+  function pollSketch() {
+    if (sketchPoll) clearInterval(sketchPoll);
+    sketchPoll = setInterval(async () => {
+      try {
+        const s = await api(`/api/canvas/${runId}/state`);
+        const c = s.canvas;
+        $("match-hint").textContent = c.sketching
+          ? `✏️ sketching ${c.sketch_done}/${c.sketch_total}…`
+          : "✏️ storyboard ready";
+        if (!c.sketching) {
+          clearInterval(sketchPoll); sketchPoll = null;
+          $("storyboard-btn").disabled = false; render(c);
+        }
+      } catch (e) { /* keep polling */ }
+    }, 2500);
+  }
+  $("storyboard-btn") && $("storyboard-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err("");
+    storyboardView = !storyboardView;
+    $("storyboard-btn").classList.toggle("on", storyboardView);
+    $("storyboard-btn").textContent = storyboardView ? "✏️ Exit storyboard" : "✏️ Storyboard";
+    if (lastCanvas) render(lastCanvas);               // toggle the view immediately
+    // Generate any missing panels on first enable.
+    if (storyboardView && lastCanvas && (lastCanvas.board || []).some((c) => !c.storyboard_art)) {
+      const btn = $("storyboard-btn"); btn.disabled = true;
+      try {
+        const d = await api(`/api/canvas/${runId}/storyboard-art`, {});
+        $("match-hint").textContent = `✏️ sketching 0/${d.total}…`;
+        pollSketch();
+      } catch (e) { err(e.message); btn.disabled = false; }
+    }
   });
 
   // Characters stage: surface the real people in the story; anchor each to a real photo.
