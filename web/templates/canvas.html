@@ -149,6 +149,15 @@
   .src-btn.ai-gen:hover { background:#dbeafe; border-color:#bfdbfe; }
   .src-btn.revert-real { background:#dcfce7; border-color:#bbf7d0; color:#166534; }
   .src-btn.revert-real:hover { background:#bbf7d0; }
+  /* Per-shot photo picker gallery (fix a wrong auto-match) */
+  .cv-card .picker { display:grid; grid-template-columns:repeat(auto-fill, minmax(56px,1fr));
+    gap:5px; margin-top:8px; max-height:200px; overflow-y:auto; padding:7px; background:#f9fafb;
+    border:1px solid #e5e7eb; border-radius:8px; }
+  .cv-card .picker .pk { width:100%; aspect-ratio:1; object-fit:cover; border-radius:6px;
+    cursor:pointer; border:2px solid transparent; transition:border-color .1s; }
+  .cv-card .picker .pk:hover { border-color:#16a34a; }
+  .cv-card .picker .pk-file { display:flex; align-items:center; justify-content:center;
+    background:#e5e7eb; color:#6b7280; font-size:10px; font-weight:700; }
   /* Shimmer loader for in-flight stages / re-rolls */
   @keyframes cvshimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
   .shimmer { position:relative; }

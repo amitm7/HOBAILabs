@@ -201,18 +201,35 @@ def assign_images(frames: list[dict], descriptions: dict) -> dict:
     img_list = "\n".join(
         f"{i+1}. [{os.path.basename(p)}] {d}" for i, (p, d) in enumerate(items)
     )
-    frm_list = "\n".join(f"{f['frame_id']}: {f.get('caption', '') or '(no caption)'}"
-                         for f in frames)
+
+    def _frline(f):
+        # Richer signal than the bare caption: the storyboard's description of what the
+        # shot DEPICTS (who/what is on screen) + its emotional tone. An abstract caption
+        # like "But we never felt 'less'" matches far better with "depicts: a modest 1RK
+        # room, mother and daughter" attached.
+        bits = [(f.get("caption") or "").strip() or "(no caption)"]
+        depicts = (f.get("depicts") or "").strip()
+        if depicts:
+            bits.append("depicts: " + depicts[:200])
+        if f.get("emotion"):
+            bits.append("mood: " + str(f["emotion"]))
+        return f"{f['frame_id']}: " + " | ".join(bits)
+
+    frm_list = "\n".join(_frline(f) for f in frames)
     prompt = (
         "You are a film editor placing real photos onto the beats of a story.\n\n"
         f"IMAGES (number, [filename], description):\n{img_list}\n\n"
-        f"STORY FRAMES (id: caption):\n{frm_list}\n\n"
-        "For each frame, choose the IMAGE NUMBER that best matches its meaning — "
-        "use names/text visible in an image as a strong signal, then emotional "
-        "tone and setting. Items marked '(real video clip)' are REAL FOOTAGE — "
-        "prefer them over photos when they fit a beat about as well, since real "
-        "footage looks better than an animated still. Avoid reusing an item unless "
-        "there are fewer items than frames.\n"
+        f"STORY FRAMES (id: caption | depicts | mood):\n{frm_list}\n\n"
+        "For each frame choose the IMAGE NUMBER that best matches it. Priority order:\n"
+        "  1. Named people/text visible in an image vs named in the frame (strongest).\n"
+        "  2. The 'depicts' line — match who/what is literally on screen (a person vs an "
+        "object vs a place; the SAME person across beats about that person).\n"
+        "  3. Emotional tone and setting.\n"
+        "Do NOT match on loose word overlap with the caption alone — a beat whose caption "
+        "is abstract should still go to the image whose CONTENT fits the 'depicts' line. "
+        "Items marked '(real video clip)' are REAL FOOTAGE — prefer them when they fit a "
+        "beat about as well, since real footage beats an animated still. Avoid reusing an "
+        "item unless there are fewer items than frames.\n"
         'Reply ONLY as JSON mapping each frame id to an item number, e.g. '
         '{"f01": 3, "f02": 7}.'
     )
@@ -279,10 +296,18 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
         print(f"[Matcher] Smart-matching {len(need)} frames against "
               f"{len(candidates)} images via {llm._provider()}…")
         descriptions = describe_images(candidates)
-        mapping = assign_images(
-            [{"frame_id": f["frame_id"], "caption": f.get("caption", "")} for f in need],
-            descriptions,
-        )
+
+        def _match_view(f):
+            sc = f.get("scene") or {}
+            return {
+                "frame_id": f["frame_id"],
+                "caption": f.get("caption", ""),
+                # what the shot literally shows (storyboard) — the key matching signal
+                "depicts": sc.get("scene_description") or sc.get("image_prompt") or "",
+                "emotion": sc.get("emotion") or "",
+            }
+
+        mapping = assign_images([_match_view(f) for f in need], descriptions)
     except Exception as e:
         print(f"[Matcher] smart match failed ({e}) — positional fallback")
         return False

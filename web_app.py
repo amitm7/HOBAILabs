@@ -878,6 +878,33 @@ def api_canvas_match_photos(run_id: str, operator: str):
                     "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/assets", methods=["GET"])
+@auth.require_operator()
+def api_canvas_assets(run_id: str, operator: str):
+    """List the operator's media folder so the board can show a thumbnail PICKER —
+    auto-match is never perfect on abstract beats, so let the operator swap any shot to
+    the RIGHT real photo in two clicks (instead of re-matching everything). Returns
+    {path, name, is_video} for each file; thumbnails are served by /media."""
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    folder = state.get("assets_dir") or ""
+    if not folder or not os.path.isdir(folder) or not _path_allowed(folder):
+        return jsonify({"assets": [], "folder": folder})
+    vid_exts = {".mp4", ".mov", ".avi", ".m4v", ".webm", ".mkv"}
+    img_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
+    out = []
+    try:
+        for fn in sorted(os.listdir(folder)):
+            ext = os.path.splitext(fn)[1].lower()
+            if ext in vid_exts | img_exts:
+                p = os.path.join(folder, fn)
+                out.append({"path": p, "name": fn, "is_video": ext in vid_exts})
+    except Exception as e:
+        return jsonify({"assets": [], "folder": folder, "error": str(e)})
+    return jsonify({"assets": out, "folder": folder})
+
+
 @app.route("/api/canvas/<run_id>/video", methods=["POST"])
 @auth.require_operator()
 def api_canvas_video(run_id: str, operator: str):

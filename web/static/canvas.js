@@ -161,7 +161,8 @@
           ${fidelityRow(c)}
           <div class="source">
             <span class="lbl">Replace</span>
-            <label class="src-btn" title="Use your own real photo, untouched (🟢 the moat)">📎 Real
+            <button class="src-btn pick-btn" data-frame="${fid}" title="Pick the right photo from your folder (fix a wrong auto-match)">🖼 Pick</button>
+            <label class="src-btn" title="Upload a different real photo, untouched (🟢 the moat)">📎 Real
               <input type="file" accept="image/*" data-frame="${fid}" data-mode="real" hidden></label>
             <label class="src-btn" title="AI image conditioned on a face you upload — labeled AI · likeness">🎭 AI face
               <input type="file" accept="image/*" data-frame="${fid}" data-mode="reference" hidden></label>
@@ -281,6 +282,53 @@
       render(d.canvas);
     } catch (e) { err(e.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = "🔁"; } }
+  }
+
+  // Per-shot photo picker — auto-match is never perfect on abstract beats, so let the
+  // operator swap a shot to the RIGHT photo from their own folder in two clicks. The
+  // folder list is fetched once and reused across all cards.
+  let assetCache = null;
+  async function loadAssets() {
+    if (assetCache) return assetCache;
+    const d = await api(`/api/canvas/${runId}/assets`);
+    assetCache = d.assets || [];
+    return assetCache;
+  }
+  async function openPicker(fid) {
+    if (!runId) return;
+    const card = document.querySelector(`.cv-card[data-frame="${fid}"]`);
+    if (!card) return;
+    const open = card.querySelector(".picker");
+    if (open) { open.remove(); return; }            // toggle closed
+    document.querySelectorAll(".picker").forEach((g) => g.remove());  // one at a time
+    err("");
+    let assets;
+    try { assets = await loadAssets(); } catch (e) { err(e.message); return; }
+    if (!assets.length) {
+      $("match-hint").textContent = "No folder yet — paste your photos folder above and Match first.";
+      return;
+    }
+    const gal = document.createElement("div");
+    gal.className = "picker";
+    // HEIC/HEIF/BMP don't render in <img> — show a labeled tile (still selectable).
+    const undisplayable = (n) => /\.(heic|heif|bmp)$/i.test(n);
+    gal.innerHTML = assets.map((a) => {
+      const dp = encodeURIComponent(a.path);
+      if (a.is_video)
+        return `<video class="pk" data-path="${dp}" src="${mediaUrl(a.path)}" muted title="${a.name}"></video>`;
+      if (undisplayable(a.name))
+        return `<div class="pk pk-file" data-path="${dp}" title="${a.name}">${a.name.split(".").pop().toUpperCase()}</div>`;
+      return `<img class="pk" data-path="${dp}" src="${mediaUrl(a.path)}" alt="${a.name}" title="${a.name}" loading="lazy">`;
+    }).join("");
+    card.appendChild(gal);
+  }
+  async function assignReal(fid, path) {
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/asset`, { path, mode: "real", frame_id: fid });
+      render(d.canvas);
+      $("match-hint").textContent = "✓ shot set to your chosen real photo 🟢";
+    } catch (e) { err(e.message); }
   }
 
   // Save an edited shot field on change (blur/Enter). Server cascade-invalidates
@@ -545,6 +593,16 @@
     if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
     const rot = ev.target.closest(".rotate");
     if (rot) { ev.preventDefault(); rotateShot(rot.getAttribute("data-frame"), rot); return; }
+    const pb = ev.target.closest(".pick-btn");
+    if (pb) { ev.preventDefault(); openPicker(pb.getAttribute("data-frame")); return; }
+    const pk = ev.target.closest(".pk");
+    if (pk) {
+      ev.preventDefault();
+      const card = pk.closest(".cv-card");
+      assignReal(card.getAttribute("data-frame"), decodeURIComponent(pk.getAttribute("data-path")));
+      const g = card.querySelector(".picker"); if (g) g.remove();
+      return;
+    }
     const ag = ev.target.closest(".ai-gen");
     if (ag) { ev.preventDefault(); aiGeneric(ag.getAttribute("data-frame"), ag); return; }
     const rr = ev.target.closest(".revert-real");
@@ -580,6 +638,7 @@
     btn.disabled = true; $("match-hint").textContent = "matching… (reading your images)";
     try {
       const d = await api(`/api/canvas/${runId}/match-photos`, { assets_dir: folder });
+      assetCache = null;   // new folder → refresh the picker gallery
       $("match-hint").textContent = `✓ ${d.real_shots} shots now use your real media`;
       render(d.canvas);
     } catch (e) { err(e.message); $("match-hint").textContent = ""; }

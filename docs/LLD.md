@@ -124,8 +124,15 @@ Two LLM stages, both cached, both safe (return `False`/positional on any failure
    **Videos** are sampled into up to 3 keyframes (`ffmpeg` at 15/50/85%) and described
    as `(real video clip) …` ([:82](../agents/image_matcher.py#L82)).
 2. **`assign_images(frames, descriptions)`** ([:175](../agents/image_matcher.py#L175))
-   — one reasoning call returning `{frame_id: image_number}`. Prompt biases toward
-   names/text matches and **prefers real video clips over stills** for equal fit.
+   — one reasoning call returning `{frame_id: image_number}`. Each frame line carries
+   **caption + `depicts` (the storyboard `scene_description`/`image_prompt` — who/what is
+   literally on screen) + `emotion`**, not the bare caption: an abstract caption ("we
+   never felt less") matches far better with "depicts: a modest 1RK room, mother +
+   daughter" attached. Priority: visible names/text → the depicted subject (same person
+   across that person's beats) → tone/setting; **prefers real video clips over stills**
+   for equal fit. (`smart_match` builds the `depicts`/`emotion` view from each frame's
+   `scene`.) Auto-match is still imperfect on abstract beats → the canvas adds a per-shot
+   **photo picker** (`/api/canvas/<id>/assets`) so the operator corrects any match by hand.
 
 Only fills frames with no `photo_spec`, no `ai_*`, excludes pinned files; never
 touches the animation stage.
@@ -654,6 +661,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/render` | POST (operator) | **Final Cut** — gated behind **Video** approval; reuses the cached stills AND clips, only does audio + assembly. Render the board into a reel via `_canvas_render_thread` → generates a music bed (Suno, best-effort) so the engine's **beat-aware cutting** snaps cuts to the beat (anti-slideshow, P1). **Suno-independent:** sets `beat_grid_bpm` (`_canvas_tempo_bpm` from mood) so `assembler.beat_overlaps(fallback_bpm=)` cuts on a synthetic tempo grid even with no music. **Audio options** (body): `music_type` = generate (Suno) / upload (`music_path`, validated `_path_allowed`; song uploaded via `/upload-photo`) / voiceover (`voice_id` from `/voices`; sets `beat_grid_bpm=0` for gentle cuts) / none. Then dispatches `_execute_pipeline`. **Reuses the Key Frames render dir** so stills are cached. Sets `render_phase="full"`. Same governance gates as `/run`. (`/rendered` reconciles paid stage chips by `render_phase` so Key Frames-done ≠ Video-done) |
 | `/api/canvas/<run_id>/rendered` | POST (operator) | Per-shot rendered media read from the render dir (survives reloads) + reconciles paid stage statuses to the render's real status (so the rail can't stick on 'generating') |
 | `/api/canvas/<run_id>/reroll` | POST (operator) | Re-roll ONE shot: regenerate its still (`_generate_stills` force) + clip (`build_clips`), write into the render dir. Single-frame spend gate. Same path as `/redo-still`+`/redo-motion` |
+| `/api/canvas/<run_id>/assets` | GET (operator) | List the operator's media folder (`state["assets_dir"]`) → `[{path,name,is_video}]` for the **per-shot photo picker** (thumbnails served by `/media`). Auto-match is never perfect on abstract beats; the picker lets the operator swap any shot to the right real photo in two clicks (→ `/asset` mode=`real`) instead of re-matching everything. Validated `_path_allowed` |
 | `/api/canvas/<run_id>/ai-source` | POST (operator) | **AI escape hatch** for a matched real photo the operator dislikes that Restore can't fix (bad *content*, not quality): `canvas_run.set_ai_generic` replaces the shot with a **fully AI-generated** image (no real footage, no face ref) — identity-safe generic figure/scene from the shot's own prompt. Original real media preserved as `orig_visual` for undo. (AI-likeness-from-an-uploaded-face goes through `/asset` mode=`reference`, which sets `ai_likeness` + the 'AI · likeness' label; **operator decision: not consent-gated, but always labeled + flagged in `/provenance`**.) |
 | `/api/canvas/<run_id>/rotate` | POST (operator) | Rotate a **real** shot 90° CW (`restore.rotate_media`, ffmpeg transpose — non-generative orientation fix for landscape phone photos in a 9:16 reel). Real media only; stays 🟢 REAL; untouched original kept as `orig_visual`. Cascade-invalidates downstream |
 | `/api/canvas/<run_id>/fidelity-suggest` | POST (operator) | **Reality–Fidelity auto-suggest (ladder rung 1d):** `canvas_run.score_fidelity` scores every REAL shot via `restore.quality_score` (ffprobe resolution + OpenCV Laplacian-variance sharpness) and stores a recommended rung on each frame (`fidelity_suggested`/`fidelity_reason`/`quality_score`). Read-only — **no spend, no media change**. Person shots are never pushed past Restore. Degrades to 'unknown→passthrough' without OpenCV/ffprobe |
@@ -684,7 +692,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). |
 | `/login` , `/logout` , `/me` | POST / POST / GET | Operator auth (Gap #1): `authenticate()` → HS256 JWT in an httpOnly cookie; `/me` reports the current operator. Seed operators with `python -m agents.auth add-operator`. |
 
-**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, `/api/canvas/<id>/{advance,approve,frame,chat,asset,keyframes,video,render,rendered,reroll,match-photos,restore,recreate,characters,character,fidelity,fidelity-suggest,ai-source,rotate}`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
+**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, `/api/canvas/<id>/{advance,approve,frame,chat,asset,keyframes,video,render,rendered,reroll,match-photos,assets,restore,recreate,characters,character,fidelity,fidelity-suggest,ai-source,rotate}`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
 
 **Storage (Gap #2).** `agents/db.py` selects SQLite (default) or Postgres from `HOB_DB_URL`; new stores (`auth`) route through it dialect-neutrally. The legacy per-store SQLite bridges migrate onto it for the RDS cutover (SCALE_PLAN Phase 2).
 

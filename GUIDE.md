@@ -282,10 +282,15 @@ A **stage-gated board** that builds your reel one approved step at a time —
   upload (🔴, labeled **AI · likeness**); **Scene** — a mood/look reference (🟡). A
   confirmation tells you exactly what changed and on how many shots; the badge and cost
   update live, and downstream stages reset so nothing stale ships.
-- **Don't like a matched photo? Replace it per shot.** Each card has a **Replace** row:
-  **📎 Real** (a different real photo), **🎭 AI face** (AI conditioned on a face you upload),
-  or **🤖 AI** (a fully AI-generated image — the escape hatch when a real photo is wrong and
-  Enhance can't fix it). Swapped to AI? An **↩ Real** button brings your untouched photo back.
+- **Wrong photo on a beat? Fix it in two clicks.** Auto-match is good but not perfect on
+  abstract lines. Each card's **Replace** row has **🖼 Pick** — it opens a thumbnail gallery
+  of *your own folder*; click the right photo and that shot uses it (🟢 untouched). No
+  re-matching the whole story. (The matcher itself now reads what each shot *depicts*, not
+  just the caption, so there's less to correct.)
+- **Other Replace options per shot:** **📎 Real** (upload a different real photo),
+  **🎭 AI face** (AI conditioned on a face you upload), or **🤖 AI** (a fully AI-generated
+  image — the escape hatch when a real photo is wrong and Enhance can't fix it). Swapped to
+  AI? An **↩ Real** button brings your untouched photo back.
 - **Rotate a landscape photo.** Phone shots are often landscape but the reel is 9:16. Hover a
   real-photo card and click **🔁** to rotate it 90° — non-generative, stays 🟢 REAL.
 - **Cast your characters (real people, kept consistent).** Click **👥 Characters** — the
