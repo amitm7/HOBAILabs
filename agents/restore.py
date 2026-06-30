@@ -72,6 +72,36 @@ def restore_video(in_path: str, out_path: str, *, target_h: int = 1920,
     return out_path
 
 
+def rotate_media(in_path: str, out_dir: str, *, quarters: int = 1) -> str:
+    """Rotate an image/video by `quarters` × 90° clockwise (non-generative — orientation
+    only, identity untouched). Phone footage is often landscape while the reel is 9:16
+    portrait; this lets the operator stand a shot upright. Returns the rotated path, or
+    the ORIGINAL on any failure (graceful degradation)."""
+    if not in_path or not os.path.isfile(in_path):
+        return in_path
+    q = quarters % 4
+    if q == 0:
+        return in_path
+    ext = os.path.splitext(in_path)[1].lower()
+    if ext not in IMAGE_EXTS | VIDEO_EXTS:
+        return in_path
+    transpose = {1: ["transpose=1"], 2: ["transpose=2", "transpose=2"],
+                 3: ["transpose=2"]}[q]   # 1=90°CW, 2=90°CCW
+    base = os.path.splitext(os.path.basename(in_path))[0]
+    out_ext = ext if ext in VIDEO_EXTS else ".jpg"
+    out_path = os.path.join(out_dir, f"{base}_rot{q}{out_ext}")
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        cmd = ["ffmpeg", "-y", "-i", in_path, "-vf", ",".join(transpose)]
+        cmd += ["-c:a", "copy"] if ext in VIDEO_EXTS else ["-q:v", "2"]
+        cmd.append(out_path)
+        _run(cmd, timeout=180)
+        return out_path
+    except Exception as e:
+        print(f"[Rotate] {os.path.basename(in_path)} skipped ({e}) — using original")
+        return in_path
+
+
 def _probe_resolution(path: str) -> tuple[int, int]:
     """(w, h) of the first video/image stream via ffprobe, or (0, 0) on failure."""
     try:

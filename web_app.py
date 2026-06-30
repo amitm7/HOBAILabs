@@ -501,8 +501,61 @@ def api_canvas_asset(run_id: str, operator: str):
             frame_id=body.get("frame_id"), all_talent=bool(body.get("all_talent")))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    affected = state.pop("last_affected", 1)
     _canvas_save(run_id, state)
-    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+    return jsonify({"run_id": run_id, "affected": affected, "mode": body.get("mode", "reference"),
+                    "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/ai-source", methods=["POST"])
+@auth.require_operator()
+def api_canvas_ai_source(run_id: str, operator: str):
+    """Replace a shot's visual with a FULLY AI-generated image (no real footage, no face
+    reference) — the escape hatch for a matched real photo the operator dislikes that
+    Restore can't fix. Identity-safe: a generic figure/scene from the shot's own prompt.
+    (AI-likeness-from-an-uploaded-face goes through /asset in 'reference' mode.)"""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    try:
+        canvas_run.set_ai_generic(state, fid)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/rotate", methods=["POST"])
+@auth.require_operator()
+def api_canvas_rotate(run_id: str, operator: str):
+    """Rotate a real shot 90° clockwise (non-generative orientation fix — phone photos are
+    often landscape while the reel is 9:16 portrait). Real media only; keeps it 🟢 REAL.
+    The untouched original is preserved so 'Use real photo' still reverts to it."""
+    from agents import canvas_run, restore
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == fid), None)
+    if not f:
+        return jsonify({"error": "Unknown shot"}), 400
+    src = canvas_run._real_source(f)
+    if not src:
+        return jsonify({"error": "Only a real photo or clip can be rotated."}), 400
+    out_dir = str(RUNS_DIR / run_id / "rotated")
+    newp = restore.rotate_media(src, out_dir, quarters=1)
+    if not newp or newp == src:
+        return jsonify({"error": "Rotation failed (ffmpeg)."}), 500
+    f.setdefault("orig_visual", src)   # first rotate stashes the true original for undo
+    f["visual_path"] = newp
+    f["photo_spec"] = newp
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        canvas_run.invalidate_from(state, "keyframes")
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
 
 
 def _canvas_tempo_bpm(mood: str) -> int:

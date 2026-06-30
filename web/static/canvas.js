@@ -145,7 +145,10 @@
           }</span>
           <button class="reroll" data-frame="${fid}" title="Re-roll this shot (new still + clip)">↻</button>
           ${c.can_recreate ? `<button class="recreate" data-frame="${fid}" title="Re-create this scene cinematically, inspired from your real footage — no person faked (ambient only)">🎬</button>` : ""}
-          ${c.recreated ? `<span class="fromreal">AI · from real</span>` : ""}
+          ${c.can_rotate ? `<button class="rotate" data-frame="${fid}" title="Rotate 90° — for landscape photos in a 9:16 reel">🔁</button>` : ""}
+          ${c.recreated ? `<span class="fromreal">AI · from real</span>`
+            : c.ai_likeness ? `<span class="fromreal">AI · likeness</span>`
+            : c.forced_ai ? `<span class="fromreal">AI</span>` : ""}
           ${frameInner}
         </div>
         <div class="meta">
@@ -156,14 +159,14 @@
           ${promptBox}
           <div class="sub">${escapeHtml(c.emotion || "")}${c.duration ? " · " + c.duration + "s" : ""}</div>
           ${fidelityRow(c)}
-          <div class="attach">
-            <select class="amode" data-frame="${fid}">
-              <option value="reference">Reference (likeness)</option>
-              <option value="real">Real (untouched)</option>
-              <option value="scene">Scene ref</option>
-            </select>
-            <label class="attach-btn">📎 Image
-              <input type="file" accept="image/*" data-frame="${fid}" hidden></label>
+          <div class="source">
+            <span class="lbl">Replace</span>
+            <label class="src-btn" title="Use your own real photo, untouched (🟢 the moat)">📎 Real
+              <input type="file" accept="image/*" data-frame="${fid}" data-mode="real" hidden></label>
+            <label class="src-btn" title="AI image conditioned on a face you upload — labeled AI · likeness">🎭 AI face
+              <input type="file" accept="image/*" data-frame="${fid}" data-mode="reference" hidden></label>
+            <button class="src-btn ai-gen" data-frame="${fid}" title="Replace with a fully AI-generated image (no real footage, no identity)">🤖 AI</button>
+            ${c.can_revert_real ? `<button class="src-btn revert-real" data-frame="${fid}" title="Discard the AI version and go back to your real photo">↩ Real</button>` : ""}
           </div>
         </div>
       </div>`;
@@ -239,7 +242,45 @@
       const d = await api(`/api/canvas/${runId}/asset`,
         { path: up.tmp_path, mode, frame_id, all_talent });
       render(d.canvas);
+      // Visible confirmation — an attach used to change only a small REF chip + badge,
+      // which read as "nothing happened". Say exactly what changed and where.
+      const n = d.affected || 1;
+      const what = mode === "real" ? "real, untouched 🟢"
+                 : mode === "reference" ? "an AI likeness 🔴 (labeled)"
+                 : "a scene reference 🟡";
+      $("match-hint").textContent = `✓ your photo applied to ${n} shot${n === 1 ? "" : "s"} as ${what}`;
     } catch (e) { err(e.message); }
+  }
+
+  // Per-shot source swap (the escape hatch for a matched real photo you dislike):
+  // 🤖 fully AI-generated, ↩ back to your real photo. Likeness-from-a-face goes through
+  // uploadAndAttach('reference'). Rotate fixes a landscape phone photo for the 9:16 reel.
+  async function aiGeneric(fid, btn) {
+    if (!runId) return;
+    err(""); if (btn) btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/ai-source`, { frame_id: fid });
+      render(d.canvas);
+      $("match-hint").textContent = "✓ shot replaced with a fully AI-generated image";
+    } catch (e) { err(e.message); if (btn) btn.disabled = false; }
+  }
+  async function revertReal(fid) {
+    if (!runId) return;
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/fidelity`, { frame_id: fid, rung: "passthrough" });
+      render(d.canvas);
+      $("match-hint").textContent = "↩ back to your real photo 🟢";
+    } catch (e) { err(e.message); }
+  }
+  async function rotateShot(fid, btn) {
+    if (!runId) return;
+    err(""); if (btn) { btn.disabled = true; btn.textContent = "…"; }
+    try {
+      const d = await api(`/api/canvas/${runId}/rotate`, { frame_id: fid });
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = "🔁"; } }
   }
 
   // Save an edited shot field on change (blur/Enter). Server cascade-invalidates
@@ -502,19 +543,26 @@
     if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); return; }
     const rc = ev.target.closest(".recreate");
     if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
+    const rot = ev.target.closest(".rotate");
+    if (rot) { ev.preventDefault(); rotateShot(rot.getAttribute("data-frame"), rot); return; }
+    const ag = ev.target.closest(".ai-gen");
+    if (ag) { ev.preventDefault(); aiGeneric(ag.getAttribute("data-frame"), ag); return; }
+    const rr = ev.target.closest(".revert-real");
+    if (rr) { ev.preventDefault(); revertReal(rr.getAttribute("data-frame")); return; }
     const fs = ev.target.closest(".fid-suggest");
     if (fs) { ev.preventDefault(); setFidelity(fs.getAttribute("data-frame"), fs.getAttribute("data-rung")); }
   });
 
-  // Delegated change handler: Fidelity selector, per-card image upload, or edited text.
+  // Delegated change handler: Fidelity selector, per-card image upload (Replace row), text.
   $("board").addEventListener("change", (ev) => {
     const fidSel = ev.target.closest(".fid-sel");
     if (fidSel) { setFidelity(fidSel.getAttribute("data-frame"), fidSel.value, fidSel); return; }
-    const fileInput = ev.target.closest('input[type="file"]');
+    const fileInput = ev.target.closest('input[type="file"][data-mode]');
     if (fileInput && fileInput.files[0]) {
-      const fid = fileInput.getAttribute("data-frame");
-      const sel = document.querySelector(`select.amode[data-frame="${fid}"]`);
-      uploadAndAttach(fileInput.files[0], { frame_id: fid, mode: sel ? sel.value : "reference" });
+      uploadAndAttach(fileInput.files[0], {
+        frame_id: fileInput.getAttribute("data-frame"),
+        mode: fileInput.getAttribute("data-mode") || "reference",
+      });
       fileInput.value = "";
       return;
     }

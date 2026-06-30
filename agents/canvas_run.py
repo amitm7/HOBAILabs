@@ -176,6 +176,14 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "fidelity_suggested": f.get("fidelity_suggested") or "",
             "fidelity_reason":    f.get("fidelity_reason") or "",
             "quality_score":      f.get("quality_score"),
+            # Source-swap state (the per-shot Replace row): an AI swap is labeled, and a
+            # shot swapped away from real footage offers a one-tap revert to that footage.
+            "ai_likeness":     bool(f.get("ai_likeness")),
+            "forced_ai":       bool(f.get("forced_ai")),
+            "can_revert_real": bool(f.get("orig_visual")) and kind != ASSET_REAL,
+            # A real PHOTO (not video) can be rotated — phone shots are often landscape
+            # while the reel is 9:16 portrait.
+            "can_rotate":      kind == ASSET_REAL and _is_image_path(real_path),
             "duration":   f.get("duration"),
         })
     return cards
@@ -267,8 +275,13 @@ def revert_passthrough(state: dict, frame_id: str) -> dict:
     if orig:
         f["visual_path"] = orig
         f["photo_spec"] = orig
-    f.pop("restored", None)
-    f.pop("recreated_from_real", None)
+    for k in ("restored", "recreated_from_real", "forced_ai", "ai_likeness"):
+        f.pop(k, None)
+    # An AI swap conditioned on an operator face leaves a character_ref_path; reverting to
+    # the untouched real photo drops it too. (A Characters-anchored shot has no orig_visual,
+    # so it isn't offered this undo and its anchor is preserved.)
+    if orig:
+        f.pop("character_ref_path", None)
     return f
 
 
@@ -297,19 +310,71 @@ def attach_asset(state: dict, *, path: str, mode: str = "reference",
     if not targets:
         raise ValueError("no target shot for the image")
     for f in targets:
+        _preserve_real(f)                   # so 'Use real photo' can undo an AI swap
         if mode == "real":
             f["photo_spec"] = path          # non-AI spec → model_router PASSTHROUGH
             f["visual_path"] = path
-            f.pop("character_ref_path", None)
+            for k in ("character_ref_path", "ai_likeness", "forced_ai",
+                      "restored", "recreated_from_real", "orig_visual"):
+                f.pop(k, None)              # it IS real now — no override, no undo needed
         elif mode == "reference":
-            f["character_ref_path"] = path  # AI likeness conditioned on the real face
+            f["character_ref_path"] = path  # AI likeness conditioned on the operator face
             f["photo_spec"] = "ai_portrait"
+            f["ai_likeness"] = True         # labeled 'AI · likeness' + flagged in provenance
             f.pop("visual_path", None)
+            f.pop("restored", None); f.pop("recreated_from_real", None)
         else:  # scene
             f["character_ref_path"] = path
             if not (f.get("photo_spec") or "").startswith("ai_"):
                 f["photo_spec"] = "ai_symbolic"
+    state["last_affected"] = len(targets)   # for the operator-facing confirmation hint
     if state["stages"]["storyboard"]["status"] in ("done", "approved"):
+        invalidate_from(state, "storyboard")
+    state["board"] = board_cards(state["frames"])
+    state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
+    return state
+
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
+
+
+def _is_image_path(path: str) -> bool:
+    import os
+    return bool(path) and os.path.splitext(path)[1].lower() in _IMAGE_EXTS
+
+
+def _real_source(frame: dict) -> str:
+    """The shot's real media path (visual_path, or a non-AI photo_spec), else ''."""
+    spec = str(frame.get("photo_spec") or "")
+    return frame.get("visual_path") or (spec if spec and not spec.startswith("ai_") else "")
+
+
+def _preserve_real(frame: dict) -> None:
+    """Stash the original real media (once) before an AI swap, so the operator can undo
+    back to their untouched footage. No-op for a shot that has no real source."""
+    if "orig_visual" not in frame:
+        src = _real_source(frame)
+        if src:
+            frame["orig_visual"] = src
+
+
+def set_ai_generic(state: dict, frame_id: str) -> dict:
+    """Replace a shot's visual with a FULLY AI-generated image — no real footage, no face
+    reference. The escape hatch for a matched real photo the operator dislikes that Restore
+    can't fix (bad *content*, not bad quality). Identity-safe: a generic figure/scene from
+    the shot's own prompt, never conditioned on a real person. Person shots → a generic
+    `ai_portrait`; ambient → `ai_symbolic`. Original real media is preserved (`orig_visual`)
+    so 'Use real photo' can revert."""
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == frame_id), None)
+    if not f:
+        raise ValueError("unknown shot")
+    _preserve_real(f)
+    f["photo_spec"] = "ai_portrait" if f.get("uses_talent") else "ai_symbolic"
+    f["forced_ai"] = True
+    for k in ("visual_path", "character_ref_path", "ai_likeness",
+              "restored", "recreated_from_real"):
+        f.pop(k, None)                      # generic — no real media, no identity reference
+    if state["stages"]["storyboard"]["status"] in ("done", "approved", "generating"):
         invalidate_from(state, "storyboard")
     state["board"] = board_cards(state["frames"])
     state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))

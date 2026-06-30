@@ -276,11 +276,18 @@ A **stage-gated board** that builds your reel one approved step at a time —
   offered Re-create** — only Real or Restore, so a real face is never faked. Switching back to
   **Real** always returns the untouched original footage.
 - **Add your own photos.** Use *"📎 Add a real photo of the person"* (applies to
-  every people-shot) or the *📎 Image* button on any card, and choose:
+  every people-shot) or the per-card **Replace** row, and choose:
   **Real** — your photo appears in the reel *untouched* (🟢, the thing competitors
-  can't do); **Reference** — AI keeps the person's *likeness* across shots (🔴,
-  consent-gated); **Scene** — a mood/look reference for a no-person shot (🟡). The
-  badge and cost update live, and downstream stages reset so nothing stale ships.
+  can't do); **AI face** — AI keeps the person's *likeness* across shots from a face you
+  upload (🔴, labeled **AI · likeness**); **Scene** — a mood/look reference (🟡). A
+  confirmation tells you exactly what changed and on how many shots; the badge and cost
+  update live, and downstream stages reset so nothing stale ships.
+- **Don't like a matched photo? Replace it per shot.** Each card has a **Replace** row:
+  **📎 Real** (a different real photo), **🎭 AI face** (AI conditioned on a face you upload),
+  or **🤖 AI** (a fully AI-generated image — the escape hatch when a real photo is wrong and
+  Enhance can't fix it). Swapped to AI? An **↩ Real** button brings your untouched photo back.
+- **Rotate a landscape photo.** Phone shots are often landscape but the reel is 9:16. Hover a
+  real-photo card and click **🔁** to rotate it 90° — non-generative, stays 🟢 REAL.
 - **Cast your characters (real people, kept consistent).** Click **👥 Characters** — the
   board reads the story and lists the *real people* in it (e.g. *Narrator*, *Father*).
   For each, attach **one real reference photo** and tick **consent**; every shot where
