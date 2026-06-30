@@ -248,6 +248,40 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
     return out_path
 
 
+def recreate_ambient(frame: dict, assets_dir: str, reference_path: str = "",
+                     model_id: str = "") -> str:
+    """Reality–Fidelity ladder rung 3 (docs/REAL_MEDIA_QUALITY_LADDER.md): re-create a
+    NON-person scene cinematically, INSPIRED FROM the real footage (image-to-image),
+    preserving setting/composition/action at professional quality. **Identity-safe** —
+    only for ambient/B-roll shots with no real face (the caller enforces that); there is
+    deliberately NO 'keep the face' instruction, and the prompt forbids adding people.
+    Falls back to symbolic text-to-image when no usable reference is given.
+    """
+    frame_id = frame["frame_id"]
+    scene = frame.get("scene", {})
+    ctx = scene.get("image_prompt") or frame.get("director_note") or frame.get("caption", "")
+    prompt = (
+        "Re-imagine THIS EXACT scene as a cinematic film frame — keep the same setting, "
+        "composition, objects and action; do NOT add, remove or change any people. "
+        "Professional cinematography, filmic colour grade, crisp focus, natural light, "
+        "9:16 vertical, no text, no watermark. Context: " + ctx[:300]
+    )
+    if not (reference_path and os.path.exists(reference_path)):
+        return generate_symbolic_image(frame, assets_dir, model_id)   # no ref → text-to-image, still no person
+    out_path = os.path.join(
+        assets_dir,
+        f"ai_recreated_{frame_id}_{_prompt_hash('recreate_ambient', prompt + '|ref:' + _file_hash(reference_path), frame_id)}.jpg")
+    if _image_cached(out_path):
+        print(f"[ImageGen] Ambient recreate ({frame_id}) — reusing cached image")
+        return out_path
+    from agents.image_editor import edit_image
+    print(f"[ImageGen] Ambient recreate ({frame_id}) — cinematic, inspired from "
+          f"{os.path.basename(reference_path)} (no identity touched)…")
+    _generate_image_checked("", prompt, out_path, "", frame_id,
+                            generator=lambda: edit_image(reference_path, prompt, out_path))
+    return out_path
+
+
 def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") -> str:
     """
     Generate a symbolic/metaphorical image — objects and settings only, no people.

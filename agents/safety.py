@@ -54,6 +54,47 @@ def moderate_frames(frames: list[dict]) -> None:
         moderate_script(text)
 
 
+def face_count(image_path: str) -> int:
+    """Number of frontal faces in an image — best-effort. Returns the count, or -1 if
+    detection couldn't run (no cv2 / unreadable). Used to keep the ambient re-create
+    OFF real people: a non-person shot whose reference contains a face is NOT ambient,
+    and recreating it would synthesize a likeness (an authenticity violation)."""
+    try:
+        import cv2
+        img = cv2.imread(image_path)
+        if img is None:
+            return -1
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
+        return len(faces)
+    except Exception:
+        return -1
+
+
+def has_person(image_path: str) -> bool:
+    """Reliable 'is a real human person/face a subject here?' check via the vision LLM
+    (fast tier) — the moat guard for ambient re-create, where the cheap Haar cascade
+    misses angled/partial faces (it did, in testing). Returns True to BLOCK when a
+    person is seen; False on a clear 'no' OR any failure (the caller still has the
+    `uses_talent` + Haar guards as backup)."""
+    try:
+        from agents import llm
+        schema = {"name": "person_check", "schema": {
+            "type": "object", "additionalProperties": False,
+            "properties": {"has_person": {"type": "boolean"}}, "required": ["has_person"]}}
+        text = llm.chat(
+            [{"role": "user", "content": [
+                {"type": "text", "text": "Does this image show a recognizable real HUMAN "
+                 "PERSON or face as a subject — even partially, at any angle? Strict JSON."},
+                {"type": "image", "path": image_path}]}],
+            json_mode=True, json_schema=schema, max_tokens=50, model_tier="fast")
+        return bool(llm.json_loads_lenient(text).get("has_person"))
+    except Exception as e:
+        print(f"[Safety] has_person vision check unavailable ({e}) — relying on other guards")
+        return False
+
+
 def check_face_sanity(image_path: str, frame_id: str) -> bool:
     """
     Gate B: Validate a generated image before it enters the clip-build step.

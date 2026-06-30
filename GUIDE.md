@@ -257,6 +257,16 @@ A **stage-gated board** that builds your reel one approved step at a time —
   images/videos and matches the right one to each story beat, used **untouched** (🟢 REAL).
   This is the right way to make a reel about a *real, named person*: their actual footage,
   not an AI lookalike. AI fills only the beats with no matching photo.
+- **Enhance real footage (keeps it 100% real).** After matching your photos, click
+  **✨ Enhance real footage** — it upscales, denoises, stabilizes and colour-grades your
+  *actual* clips so phone footage reads cinematic. **Non-generative** — no AI faces, no
+  fabrication; same person, same moment, just cleaner.
+- **Re-create a scene cinematically (optional, ambient shots only).** On a shot that's a
+  *place or object* — no person — hover and click **🎬** to generate a polished, cinematic
+  version *inspired from* your real footage (the misty road, the kettle, the field). It's
+  **opt-in per shot**, never automatic. For safety it **refuses any footage with a person
+  in it** — your subjects stay real (use Enhance for those). Re-created scenes are clearly
+  labelled **AI · from real**.
 - **Add your own photos.** Use *"📎 Add a real photo of the person"* (applies to
   every people-shot) or the *📎 Image* button on any card, and choose:
   **Real** — your photo appears in the reel *untouched* (🟢, the thing competitors

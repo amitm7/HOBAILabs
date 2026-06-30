@@ -164,6 +164,11 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "asset_kind": kind,
             "real_path":  real_path,                         # real photo, shown untouched
             "ref_path":   f.get("character_ref_path") or "",  # real ref for AI likeness
+            # Ambient re-create (ladder rung 3) is identity-safe → only offered on
+            # NON-person shots. Person shots keep Restore (rungs 0-1).
+            "can_recreate": not bool(f.get("uses_talent")),
+            "recreated":    bool(f.get("recreated_from_real")),
+            "restored":     bool(f.get("restored")),
             "duration":   f.get("duration"),
         })
     return cards
@@ -385,6 +390,9 @@ def public_state(state: dict) -> dict:
         "total_cost_usd": round(sum(state.get("costs", {}).values()), 4),
         "legend": {"real": ASSET_REAL, "ai": ASSET_AI, "ai_person": ASSET_AI_PERSON},
         "render_id": state.get("render_id", ""),   # set once a full render is dispatched
+        "restoring": bool(state.get("restoring", False)),
+        "restore_done": state.get("restore_done", 0),
+        "restore_total": state.get("restore_total", 0),
     }
 
 

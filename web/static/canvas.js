@@ -144,6 +144,8 @@
             c.asset_kind === "real" ? "REAL" : c.asset_kind === "ai_person" ? "AI FACE" : "AI"
           }</span>
           <button class="reroll" data-frame="${fid}" title="Re-roll this shot (new still + clip)">↻</button>
+          ${c.can_recreate ? `<button class="recreate" data-frame="${fid}" title="Re-create this scene cinematically, inspired from your real footage — no person faked (ambient only)">🎬</button>` : ""}
+          ${c.recreated ? `<span class="fromreal">AI · from real</span>` : ""}
           ${frameInner}
         </div>
         <div class="meta">
@@ -215,7 +217,26 @@
     $("render-btn").title = videoApproved
       ? "Assemble the approved clips into the finished reel"
       : "Generate & approve Key Frames → Video first.";
+    updateCostBanner(canvas);
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
+  }
+
+  // Upfront whole-reel cost + spend-cap (parity with galleri5's credit warning,
+  // backed by our hard per-stage gate). Estimate is instant from public_state.
+  async function updateCostBanner(canvas) {
+    const el = $("cost-banner");
+    if (!canvas.board || !canvas.board.length) { el.hidden = true; return; }
+    el.hidden = false; el.classList.remove("over");
+    const est = canvas.total_cost_usd || 0;
+    el.innerHTML = `💰 Full reel ≈ $${est.toFixed(2)} <span class="sub">at ${canvas.quality}</span>`;
+    if (!runId) return;
+    try {
+      const b = await api(`/api/canvas/${runId}/budget`);
+      el.innerHTML = `💰 Full reel ≈ $${(b.estimate_usd ?? est).toFixed(2)} `
+        + `<span class="sub">at ${b.quality} · spend cap $${(b.spend_cap_usd || 0).toFixed(0)}`
+        + (b.over_cap ? ` · ⚠ exceeds your cap` : ``) + `</span>`;
+      el.classList.toggle("over", !!b.over_cap);
+    } catch (e) { /* keep the basic estimate */ }
   }
 
   // ── Per-shot render reveal ───────────────────────────────────────────────────
@@ -403,10 +424,29 @@
     }
   }
 
-  // Delegated re-roll click.
+  // Optional ambient re-create — opt-in per shot (non-person only).
+  async function recreateShot(fid, btn) {
+    if (!runId) return;
+    err("");
+    const frame = btn.closest(".frame");
+    if (frame) frame.classList.add("shimmer");
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const d = await api(`/api/canvas/${runId}/recreate`, { frame_id: fid });
+      render(d.canvas);
+    } catch (e) { err("Re-create: " + e.message); }
+    finally {
+      if (frame) frame.classList.remove("shimmer");
+      btn.disabled = false; btn.textContent = "🎬";
+    }
+  }
+
+  // Delegated re-roll / re-create clicks.
   $("board").addEventListener("click", (ev) => {
     const rb = ev.target.closest(".reroll");
-    if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); }
+    if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); return; }
+    const rc = ev.target.closest(".recreate");
+    if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); }
   });
 
   // Delegated change handler: per-card image upload, or an edited text field.
@@ -437,6 +477,31 @@
       render(d.canvas);
     } catch (e) { err(e.message); $("match-hint").textContent = ""; }
     finally { btn.disabled = false; }
+  });
+
+  // Enhance (Restore, ladder rung 1): non-generative cleanup of the real footage.
+  // Keeps identity 100% real — just upscale/denoise/stabilize/grade. Threaded → poll.
+  let restorePoll = null;
+  $("restore-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err(""); const btn = $("restore-btn");
+    btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/restore`, {});
+      render(d.canvas);
+      $("match-hint").textContent = `enhancing 0/${d.total}…`;
+      if (restorePoll) clearInterval(restorePoll);
+      restorePoll = setInterval(async () => {
+        try {
+          const s = await api(`/api/canvas/${runId}/state`);
+          const c = s.canvas;
+          $("match-hint").textContent = c.restoring
+            ? `enhancing ${c.restore_done}/${c.restore_total}…`
+            : `✓ enhanced ${c.restore_total} real shots`;
+          if (!c.restoring) { clearInterval(restorePoll); restorePoll = null; btn.disabled = false; render(c); }
+        } catch (e) { /* keep polling */ }
+      }, 2500);
+    } catch (e) { err(e.message); btn.disabled = false; }
   });
 
   // Character-level: attach a real photo of the person to every people-shot.

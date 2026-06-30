@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -314,6 +315,27 @@ def api_canvas_plan():
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/budget")
+def api_canvas_budget(run_id: str):
+    """Whole-reel cost up front + spend-cap status — surfaced before stage 1 so the
+    operator sees the total before committing (parity with galleri5's credit warning,
+    but backed by our hard per-stage gate). Fast: no live vendor probe."""
+    from agents import governance
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    estimate = round(sum(state.get("costs", {}).values()), 4)
+    cap, over = 0.0, False
+    try:
+        data = {"session_id": run_id}
+        cap = governance._spend_cap(data)
+        over = bool(governance.check_spend_cap(data, estimate))
+    except Exception as e:
+        print(f"[Canvas] budget cap check skipped ({e})")
+    return jsonify({"estimate_usd": estimate, "spend_cap_usd": round(cap, 2),
+                    "over_cap": over, "quality": state.get("quality", "dev")})
+
+
 @app.route("/api/canvas/list")
 def api_canvas_list():
     """Recent saved canvases so the operator can resume one (save/resume)."""
@@ -543,6 +565,139 @@ def api_canvas_keyframes(run_id: str, operator: str):
     state["stages"]["keyframes"].update(status="generating")
     _canvas_save(run_id, state)
     return jsonify({"render_id": render_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/recreate", methods=["POST"])
+@auth.require_operator()
+def api_canvas_recreate(run_id: str, operator: str):
+    """Re-create ambient (Reality–Fidelity ladder rung 3): for a NON-person shot,
+    generate a cinematic version of the SAME scene, inspired from the real footage
+    (image-to-image), at professional quality. Identity-safe — REJECTS person shots
+    (those keep Restore, or use the consent-gated person path). Labeled AI · from real."""
+    from agents import canvas_run, governance, image_generator
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    frame = next((f for f in state.get("frames", []) if f.get("frame_id") == fid), None)
+    if not frame:
+        return jsonify({"error": "Unknown shot"}), 400
+    # Identity guard — ambient re-create is ONLY for shots with no real person on screen.
+    if frame.get("uses_talent"):
+        return jsonify({"error": "This shot shows the person — keep it real (Enhance), "
+                                 "or use the consent-gated person re-create.",
+                        "person_shot": True}), 409
+
+    # Reference = the real footage; extract a representative frame if it's a video.
+    ref = frame.get("visual_path") or frame.get("photo_spec") or ""
+    if ref and not ref.startswith("ai_") and os.path.isfile(ref):
+        if os.path.splitext(ref)[1].lower() in {".mp4", ".mov", ".avi", ".m4v", ".webm", ".mkv"}:
+            rdir = RUNS_DIR / run_id / "recreate"
+            rdir.mkdir(parents=True, exist_ok=True)
+            refimg = str(rdir / f"{fid}_ref.jpg")
+            try:
+                subprocess.run(["ffmpeg", "-y", "-ss", "00:00:01", "-i", ref, "-frames:v", "1", refimg],
+                               capture_output=True, timeout=60)
+                if os.path.exists(refimg):
+                    ref = refimg
+            except Exception:
+                pass
+    else:
+        ref = ""
+
+    # Identity guard #2 (the real one): the reference must contain NO face. A shot can
+    # be tagged "ambient" yet have a person photo attached — recreating that would
+    # synthesize a likeness. Refuse if a face is detected.
+    if ref:
+        from agents import safety
+        # Haar (fast) OR the vision LLM (reliable — Haar misses angled/partial faces).
+        if safety.face_count(ref) > 0 or safety.has_person(ref):
+            return jsonify({"error": "That footage contains a person — ambient re-create "
+                                     "can't be used (it would synthesize a likeness). Use "
+                                     "Enhance to keep it real, or the consent-gated person path.",
+                            "person_in_footage": True}), 409
+
+    assets_dir = str(RUNS_DIR / run_id / "assets")
+    os.makedirs(assets_dir, exist_ok=True)
+    one = {"mode": "story", "quality": state.get("quality", "dev"),
+           "frames": [{**frame, "photo_spec": "ai_symbolic", "visual_path": ""}],
+           "session_id": run_id, "operator_id": operator}
+    spend_missing = governance.reserve_spend(one, _estimate_payload_cost(one), run_id=run_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    try:
+        frame["photo_spec"] = "ai_symbolic"          # AI scene, no person
+        frame.pop("visual_path", None)
+        out = image_generator.recreate_ambient(frame, assets_dir, reference_path=ref)
+        frame["visual_path"] = out
+        frame["recreated_from_real"] = True
+        governance.release_reservation(one, run_id=run_id, reason="canvas_recreate_done")
+        governance.record_cost_event(governance.project_key(one), item="canvas_recreate",
+                                     usd=_estimate_payload_cost(one), run_id=run_id, event_type="estimate")
+    except Exception as e:
+        try:
+            governance.release_reservation(one, run_id=run_id, reason="canvas_recreate_failed")
+        except Exception:
+            pass
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        canvas_run.invalidate_from(state, "keyframes")
+    state["board"] = canvas_run.board_cards(state["frames"])
+    state["costs"] = canvas_run.stage_costs(state["frames"], quality=state.get("quality", "dev"))
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/restore", methods=["POST"])
+@auth.require_operator()
+def api_canvas_restore(run_id: str, operator: str):
+    """Restore (Reality–Fidelity ladder rung 1): non-generative cleanup of the matched
+    REAL footage — upscale, denoise, sharpen, grade, stabilize — so amateur phone media
+    reads cinematic WITHOUT faking anyone. Zero authenticity cost (same identity/claims).
+    Threaded (ffmpeg is CPU-bound); progress on the canvas state."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    targets = [f for f in state["frames"]
+               if canvas_run.asset_kind(f) == canvas_run.ASSET_REAL
+               and (f.get("visual_path") or
+                    (f.get("photo_spec") and not f["photo_spec"].startswith("ai_")))]
+    if not targets:
+        return jsonify({"error": "No real footage to enhance yet — match your photos first."}), 400
+    out_dir = str(RUNS_DIR / run_id / "restored")
+    state["restoring"] = True
+    state["restore_total"] = len(targets)
+    state["restore_done"] = 0
+    _canvas_save(run_id, state)
+
+    def _job(st):
+        from agents import restore
+        for i, f in enumerate(targets, 1):
+            src = f.get("visual_path") or f.get("photo_spec")
+            try:
+                newp = restore.restore_file(src, out_dir)
+                if newp and newp != src:
+                    f["visual_path"] = newp
+                    f["photo_spec"] = newp
+                    f["restored"] = True
+            except Exception as e:
+                print(f"[Restore] {src} ({e})")
+            st["restore_done"] = i
+            st["board"] = canvas_run.board_cards(st["frames"])
+            _canvas_save(run_id, st)
+        st["restoring"] = False
+        if st["stages"]["keyframes"]["status"] in ("done", "approved", "generating"):
+            canvas_run.invalidate_from(st, "keyframes")   # new visuals → re-render downstream
+        st["board"] = canvas_run.board_cards(st["frames"])
+        st["costs"] = canvas_run.stage_costs(st["frames"], quality=st.get("quality", "dev"))
+        _canvas_save(run_id, st)
+
+    threading.Thread(target=_job, args=(state,), daemon=True).start()
+    return jsonify({"restoring": True, "total": len(targets),
+                    "canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/match-photos", methods=["POST"])
