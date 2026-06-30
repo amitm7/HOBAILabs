@@ -45,7 +45,10 @@
         ? `<div class="cost free">Free</div>`
         : `<div class="cost">${usd(s.cost_usd)}${eta ? ` · <span class="eta">${eta}</span>` : ""}</div>`;
       let btn = "";
-      if (s.status === "generating") {
+      if (s.id === "audio") {
+        // Audio is chosen in the audio bar and produced inside Final Cut — not a gate.
+        btn = `<button disabled>in Final Cut</button>`;
+      } else if (s.status === "generating") {
         btn = `<button disabled>Generating…</button>`;
       } else if (s.status === "done") {
         btn = `<button class="appr" data-approve="${s.id}">Approve ✓</button>`;
@@ -204,12 +207,14 @@
     renderRail(canvas.stages);
     renderBoard(canvas.board);
     const hasBoard = canvas.board && canvas.board.length > 0;
-    const kf = (canvas.stages || []).find((s) => s.id === "keyframes");
-    const kfApproved = kf && kf.status === "approved";
+    const vid = (canvas.stages || []).find((s) => s.id === "video");
+    const videoApproved = vid && vid.status === "approved";
     $("render-btn").hidden = !hasBoard;
-    $("render-btn").disabled = !kfApproved;
-    $("render-btn").title = kfApproved
-      ? "" : "Generate & approve Key Frames first — review the stills before the reel.";
+    $("render-btn").disabled = !videoApproved;
+    $("render-btn").textContent = videoApproved ? "🎬 Final Cut" : "🎬 Render reel";
+    $("render-btn").title = videoApproved
+      ? "Assemble the approved clips into the finished reel"
+      : "Generate & approve Key Frames → Video first.";
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
   }
 
@@ -474,8 +479,10 @@
         let d;
         if (stage === "keyframes") {
           d = await api(`/api/canvas/${runId}/keyframes`, {});           // cheap stills only
-        } else if (stage === "video" || stage === "audio" || stage === "finalcut") {
-          d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value, ...audioOpts() }); // reuses stills
+        } else if (stage === "video") {
+          d = await api(`/api/canvas/${runId}/video`, {});               // clips only (gated by Key Frames)
+        } else if (stage === "finalcut") {
+          d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value, ...audioOpts() }); // assemble (reuses clips)
         } else {
           d = await api(`/api/canvas/${runId}/advance`, { stage });      // free stages
         }

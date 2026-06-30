@@ -338,12 +338,18 @@ def run_stage(state: dict, stage: str) -> dict:
     return state
 
 
+# Gated flow: Script → Storyboard → Key Frames → Video → Final Cut. Audio is chosen
+# in the audio bar and produced inside Final Cut, so it is not a separate gate.
+_NEXT_GATE = {"script": "storyboard", "storyboard": "keyframes",
+              "keyframes": "video", "video": "finalcut"}
+
+
 def approve(state: dict, stage: str) -> dict:
     """Approve a finished stage and unlock the next one's Generate button."""
     state["stages"][stage].update(status="approved")
-    idx = STAGES.index(stage)
-    if idx + 1 < len(STAGES):
-        state["stages"][STAGES[idx + 1]].update(ready=True)
+    nxt = _NEXT_GATE.get(stage)
+    if nxt:
+        state["stages"][nxt].update(ready=True)
     return state
 
 

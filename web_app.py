@@ -364,8 +364,10 @@ def api_canvas_rendered(run_id: str, operator: str):
         val = {"running": "generating", "done": "done"}.get(status)
         if val and phase == "keyframes":
             _set(["keyframes"], val)
+        elif val and phase == "video":
+            _set(["video"], val)
         elif val and phase == "full":
-            _set(["keyframes", "audio", "video", "finalcut"], val)
+            _set(["audio", "finalcut"], val)   # keyframes + video already approved
         if changed:
             _canvas_save(run_id, state)
     return jsonify({"render_id": rid, "stills": stills, "frames": clips,
@@ -580,24 +582,62 @@ def api_canvas_match_photos(run_id: str, operator: str):
                     "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/video", methods=["POST"])
+@auth.require_operator()
+def api_canvas_video(run_id: str, operator: str):
+    """Video stage — animate the approved Key Frames into clips ONLY (no assembly),
+    so the operator reviews the motion before the Final Cut. Reuses the proven
+    pipeline with `stop_after='clips'`; the clips are cached so Final Cut reuses
+    them (no re-spend). Gated behind Key Frames approval."""
+    from agents import canvas_run, governance, run_store
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    if state["stages"]["keyframes"].get("status") != "approved":
+        return jsonify({"error": "Generate and approve Key Frames first.",
+                        "need_keyframes": True}), 409
+    render_id = state.get("render_id") or str(uuid.uuid4())
+    data = _canvas_render_data(state, render_id, operator)
+    data["stop_after"] = "clips"      # build + cache clips, skip assembly
+    governance.record_consent(data, confirmed_by=operator)
+    governance.record_likeness_consent(data, confirmed_by=operator)
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
+    if spend_missing:
+        return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
+    run_dir = RUNS_DIR / render_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with _runs_lock:
+        _runs[render_id] = {"status": "running", "log": [], "output_path": None,
+                            "clips": {}, "events": []}
+    try:
+        run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
+    except Exception as e:
+        print(f"[RunStore] canvas video save skipped ({e})")
+    threading.Thread(target=_execute_pipeline, args=(render_id, data, run_dir), daemon=True).start()
+    state["render_id"] = render_id
+    state["render_phase"] = "video"
+    state["stages"]["video"].update(status="generating")
+    _canvas_save(run_id, state)
+    return jsonify({"render_id": render_id, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/render", methods=["POST"])
 @auth.require_operator()
 def api_canvas_render(run_id: str, operator: str):
-    """Render the planned board into a finished reel by dispatching the EXISTING
-    pipeline (`_execute_pipeline` → `_run_inner`) — the canvas plans + gates; the
-    proven engine renders. Same governance gates as /run. Progress streams on
-    /progress/<render_id>; each shot's clip arrives via clip_ready events."""
+    """Final Cut — assemble the approved clips + audio + captions into the finished
+    reel by dispatching the EXISTING pipeline (`_run_inner`), which reuses the cached
+    stills AND clips (no re-spend) and only does audio + assembly. Same governance
+    gates as /run. Gated behind Video approval."""
     from agents import canvas_run, governance, run_store
     state = _canvas_load(run_id)
     if state is None:
         return jsonify({"error": "Unknown canvas"}), 404
     body = request.json or {}
-    # Gate: the reel render produces the finished video — require the Key Frames
-    # stage to be generated AND approved first, so nothing expensive/whole runs
-    # before you've reviewed the stills. (Stops "it made the reel without asking".)
-    if state["stages"]["keyframes"].get("status") != "approved":
-        return jsonify({"error": "Generate and approve Key Frames first — then render the reel.",
-                        "need_keyframes": True}), 409
+    # Gate: Final Cut needs the Video stage generated AND approved — so you review the
+    # clips before the reel is assembled (and nothing whole runs un-reviewed).
+    if state["stages"]["video"].get("status") != "approved":
+        return jsonify({"error": "Generate and approve Video clips first — then Final Cut.",
+                        "need_video": True}), 409
     if body.get("quality"):
         state["quality"] = body["quality"]
     # Reuse the render dir from the Key Frames stage so the stills are reused
@@ -642,7 +682,7 @@ def api_canvas_render(run_id: str, operator: str):
         print(f"[RunStore] canvas render save skipped ({e})")
     threading.Thread(target=_canvas_render_thread, args=(render_id, data, run_dir), daemon=True).start()
 
-    for s in ("keyframes", "audio", "video", "finalcut"):
+    for s in ("audio", "finalcut"):      # keyframes + video stay approved
         state["stages"][s].update(status="generating")
     state["render_id"] = render_id
     state["render_phase"] = "full"
@@ -2411,6 +2451,16 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         clips = build_clips(assignments, clip_temp, width, height, fps,
                             force_5s=(quality == "dev"), kling_mode=kling_mode,
                             provider=provider, on_clip_ready=_on_clip_ready)
+
+        # Per-stage gate (canvas): stop after the clips so the operator approves the
+        # Video stage before the Final Cut assembles. The clips persist in the run dir
+        # AND the content-hash clip cache, so the later Final Cut render reuses them
+        # (no re-spend) and only does audio + assembly.
+        if data.get("stop_after") == "clips":
+            print(f"[Pipeline] Video stage: {len(clips)} clips built — stopping before "
+                  f"assembly (approve Video, then run Final Cut).")
+            shutil.rmtree(clip_temp, ignore_errors=True)
+            return
 
         # Beat-aware cutting (P1): for music-bed reels, derive per-junction
         # overlaps from the music's beats so cuts land ON the beat (punchy) instead
