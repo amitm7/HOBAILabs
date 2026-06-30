@@ -100,8 +100,12 @@ into the Video render — full 4-way per-stage split is the remaining increment.
 | 7 | **Reference-chaining UI + Model Garden view + render Gallery** | parity breadth | `model_router`/`/models`, `run_store` | M |
 | 8 | **Agent Room** (multi-agent creative discussion) | flashy, low operator ROI | reuse `llm.py` tiers | L — last |
 
-**Parallel track (do alongside):** P1 **beat-aware cutting** ([[reel-continuity-quality-roadmap]])
-— a prettier board exposes a slideshow assembly otherwise. Highest output-quality ROI, $0 render.
+**Parallel track:** ✅ P1 **beat-aware cutting** wired for the canvas — the engine
+(`assembler.transition_plan`/`beat_overlaps`) already does hard-cut-on-beat vs dissolve-off-beat;
+the canvas render now generates a music bed (`_canvas_render_thread`) so cuts snap to the beat
+instead of uniform 0.4s crossfades (the slideshow root cause). Engine verified by `test_beat_cutting.py`
++ a synth-beat run (2 hard cuts on-beat + 2 dissolves off-beat). *Live-reel demo blocked only by a
+Suno music-credit top-up — separate pool from video credits; graceful fallback to uniform on failure.*
 
 **Recommended order:** 1 → 3 → 4 (quick, high-perception wins) → 2 (the big one) → 5/6 → 7 → 8.
 

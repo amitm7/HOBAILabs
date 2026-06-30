@@ -543,7 +543,9 @@ def api_canvas_render(run_id: str, operator: str):
     # (content-hash cache) instead of re-spent.
     render_id = state.get("render_id") or str(uuid.uuid4())
     data = _canvas_render_data(state, render_id, operator)
-    data["music_type"] = body.get("music_type", "none")
+    # Generate a music bed by default → the engine's beat-aware cutting snaps cuts to
+    # the beat (anti-slideshow, P1). Estimate includes the music so the cap covers it.
+    data["music_type"] = body.get("music_type", "generate")
     data["canvas_run_id"] = run_id
     quality = data["quality"]
     # Same gates as /run — money/rights are not bypassed by the canvas surface.
@@ -568,7 +570,7 @@ def api_canvas_render(run_id: str, operator: str):
         run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
     except Exception as e:
         print(f"[RunStore] canvas render save skipped ({e})")
-    threading.Thread(target=_execute_pipeline, args=(render_id, data, run_dir), daemon=True).start()
+    threading.Thread(target=_canvas_render_thread, args=(render_id, data, run_dir), daemon=True).start()
 
     for s in ("keyframes", "audio", "video", "finalcut"):
         state["stages"][s].update(status="generating")
@@ -2112,6 +2114,30 @@ def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
         _finish("error")
     finally:
         _thread_run.run_id = None   # pooled threads are reused — don't leak the binding
+
+
+def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
+    """Canvas render = generate a music bed first (so the engine's beat-aware cutting
+    has beats to snap cuts to — the anti-slideshow fix, P1), then run the proven
+    pipeline. Music is best-effort: on any failure the reel still renders (uniform
+    cutting), never a hard fail."""
+    _thread_run.run_id = run_id
+    try:
+        if data.get("music_type") == "generate" and not data.get("music_path"):
+            from agents.music_generator import generate_music, compose_music_brief
+            music_path = str(run_dir / "music.mp3")
+            brief = compose_music_brief([f.get("caption", "") for f in data.get("frames", [])],
+                                        mood=data.get("mood", ""))
+            print("[Canvas] Generating music bed (enables beat-aware cutting)…")
+            generate_music(brief, music_path)
+            if os.path.exists(music_path):
+                data["music_path"] = music_path
+                print("[Canvas] ✓ music bed ready — cuts will land on the beat")
+    except Exception as e:
+        print(f"[Canvas] music bed skipped ({e}) — uniform cutting")
+    finally:
+        _thread_run.run_id = None
+    _execute_pipeline(run_id, data, run_dir)
 
 
 def _execute_preview(run_id: str, data: dict, run_dir: Path):
