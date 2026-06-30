@@ -1,0 +1,12 @@
+{
+  "_note": "Pluggable music engine (the one generation axis that used to be hardcoded Suno). provider = lyria | suno. Lyria 3 (Google, via the Gemini API) makes vocal songs AND instrumental score, with cleaner commercial licensing + SynthID watermarking; Suno is the fallback / vocal-song alternative. Beds under narration stay instrumental (the prompt says 'no vocals'); a future lyrics control unlocks full vocal songs.",
+  "_status": "Lyria client is wired + verified-correct (the Gemini v1beta/interactions endpoint accepted the request + model id), but the current GEMINI_API_KEY project returned HTTP 429 'not enough quota' for the Lyria 3 PREVIEW models — enable billing / request Lyria quota on that Google Cloud project. Until then default stays 'suno'. TO ENABLE LYRIA once quota is live: set provider='lyria' here (fallback 'suno' kept as a safety net), or env MUSIC_PROVIDER=lyria.",
+  "provider": "suno",
+  "fallback": "",
+  "lyria": {
+    "model": "lyria-3-pro-preview",
+    "clip_model": "lyria-3-clip-preview",
+    "_note": "Gemini API (GEMINI_API_KEY), POST v1beta/interactions. pro = full song up to ~3 min; clip = fast 30s draft. Vocals + timed lyrics via [Verse]/[Chorus] tags in the prompt; omit them for an instrumental bed. PREVIEW models — VERIFY the model ids on ai.google.dev/gemini-api/docs/music-generation before a big paid run."
+  },
+  "suno": { "model": "V5_5" }
+}

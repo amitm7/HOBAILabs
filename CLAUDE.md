@@ -18,8 +18,8 @@ the repo: secrets are in `.env` (gitignored); only `.env.example` is tracked.
 - **Never fork the pipeline.** Modes are flags into the shared `_run_inner` + `agents/*`,
   not parallel pipelines.
 - **Use the pluggable seams**, don't hardcode: `config/models.json` (models + routing),
-  `config/pricing.json` (costs), `config/llm.json` (LLM provider), `config/voices.json`,
-  `config/watermarks.json`.
+  `config/pricing.json` (costs), `config/llm.json` (LLM provider), `config/music.json`
+  (music engine: lyria|suno), `config/voices.json`, `config/watermarks.json`.
 - **Read `.agents/skills/build-feature/SKILL.md` first** before changing `agents/`,
   `web_app.py`, `run_caption.py`, the web UI (`web/`), or `config/`. It encodes the
   conventions, the safety/caching/cost rules, and the compile→offline→live verify loop.

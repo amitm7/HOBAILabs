@@ -54,6 +54,7 @@ agents/
   restore.py              non-gen ffmpeg cleanup (ladder rung 1) + quality_score + _probe_resolution
   upscaler.py             generative upscale (fal): aura_sr=faithful (real), clarity=creative (AI)
   caption_writer.py       frames → ASS subtitle file (uses effective_timecodes)
+  music_generator.py      pluggable music engine (config/music.json): lyria (Gemini interactions)|suno; provider dispatch + graceful fallback; instrumental beds vs vocal songs
   beat_track.py           music → onset/beat times (ffmpeg + numpy, no librosa; graceful [])
   assembler.py            clips → normalize → concat/xfade → captions → music → voiceover
                           → apply_brand_overlay (brand post-pass);
@@ -289,6 +290,7 @@ and a "💳 AI Credits" panel on both story and brand pages. Each probe returns
 | **ElevenLabs** | ✅ ok | `GET /v1/user/subscription` (`xi-api-key`) → `character_limit − character_count` |
 | **Kling** | ✅ ok | `GET /account/costs` (JWT, 30-day window) → sum `resource_pack_subscribe_infos[].remaining_quantity` |
 | **Suno (sunoapi.org)** | ✅ ok | `GET /api/v1/generate/credit` (Bearer) → credits |
+| **Lyria 3 (Gemini)** | ⚠️ quota | `POST generativelanguage.googleapis.com/v1beta/interactions` (`x-goog-api-key`, model `lyria-3-pro-preview`/`-clip-preview`, base64 audio out). Wired + endpoint verified; current key project 429s ('not enough quota') for the preview models → enable billing/Lyria quota, then flip `config/music.json` provider to `lyria`. Falls back to Suno meanwhile. |
 | **fal.ai** | ✅ ok | `GET rest.alpha.fal.ai/billing/user_balance` (`Key`) → USD *(alpha endpoint, best-effort)* |
 | **Higgsfield** | — unsupported | no public REST balance path on `platform.higgsfield.ai` (probes 3 candidates, then degrades) |
 | **OpenAI / Gemini / Bedrock / Hedra / SyncLabs** | — unsupported | no usable balance API (documented reason per vendor) |

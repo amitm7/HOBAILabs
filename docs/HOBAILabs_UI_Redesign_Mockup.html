@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOBAILabs — Premium UI Redesign (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* warm-ink neutral ramp */
+    --bg:#0B0A0F; --bg-grad:#100D15;
+    --surface-1:#15131C; --surface-2:#1C1925; --surface-3:#262130;
+    --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.14);
+    --hair:rgba(255,255,255,.05);
+    /* brand: warm ember + supporting gold + plum */
+    --ember:#F2774A; --ember-2:#E8813A; --ember-soft:rgba(242,119,74,.13);
+    --gold:#E7B24C; --plum:#9B6CC9; --teal:#3FB6A0;
+    --grad-ember:linear-gradient(135deg,#F2884B 0%,#E0623C 100%);
+    --text:#F4F1EC; --text-2:#C9C3D2; --muted:#8C8598; --faint:#615B6E;
+    --green:#54C28A; --red:#E0606A; --blue:#7AA8F0;
+    --r:14px; --r-sm:9px; --r-pill:999px;
+    --ui:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --display:"Fraunces","Cambria",Georgia,serif;
+    --header-h:60px; --bar-h:70px;
+    --shadow:0 18px 50px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1100px 600px at 78% -8%, rgba(242,119,74,.10), transparent 60%),
+      radial-gradient(900px 520px at -5% 110%, rgba(231,178,76,.07), transparent 55%),
+      linear-gradient(180deg,var(--bg-grad),var(--bg));
+    color:var(--text);font-family:var(--ui);font-size:14px;line-height:1.6;min-height:100vh;
+    padding-bottom:calc(var(--bar-h) + 14px);-webkit-font-smoothing:antialiased}
+  a{text-decoration:none;color:inherit}
+  .mocknote{max-width:1280px;margin:10px auto 0;padding:8px 24px;font-size:12px;color:var(--faint);letter-spacing:.3px}
+  .mocknote b{color:var(--muted)}
+
+  /* ── header ── */
+  .app-header{position:sticky;top:0;z-index:100;height:var(--header-h);
+    background:rgba(17,14,22,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:20px;padding:0 26px}
+  .logo{display:flex;align-items:center;gap:11px}
+  .logo .mark{width:30px;height:30px;border-radius:9px;background:var(--grad-ember);position:relative;
+    box-shadow:0 4px 14px rgba(242,119,74,.4);flex-shrink:0}
+  .logo .mark:after{content:"";position:absolute;inset:8px 8px auto 8px;height:3px;border-radius:2px;background:rgba(255,255,255,.92);
+    box-shadow:0 6px 0 rgba(255,255,255,.55),0 11px 0 rgba(255,255,255,.3)}
+  .logo .wm{font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.2px;color:var(--text)}
+  .logo .wm b{color:var(--ember)}
+  .logo .sub{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:var(--muted);margin-top:-3px}
+  .nav{display:flex;gap:2px;background:var(--surface-2);padding:4px;border-radius:var(--r-pill);border:1px solid var(--border);margin-left:6px}
+  .nav a{padding:7px 16px;border-radius:var(--r-pill);font-size:13px;font-weight:500;color:var(--muted);transition:.15s}
+  .nav a:hover{color:var(--text-2)}
+  .nav a.active{background:var(--surface-3);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  .h-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+  .h-link{font-size:13px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .h-link:hover{color:var(--ember)}
+  .who{font-size:13px;color:var(--text-2);display:flex;align-items:center;gap:7px}
+  .who .av{width:24px;height:24px;border-radius:50%;background:var(--surface-3);border:1px solid var(--border-strong);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--ember)}
+  .btn-ghost{font-size:13px;color:var(--muted);padding:6px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:transparent;cursor:pointer}
+  .gear{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);
+    display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+  /* ── step wizard ── */
+  .steps{max-width:1280px;margin:0 auto;display:flex;align-items:center;gap:6px;padding:16px 26px 4px}
+  .step{display:flex;align-items:center;gap:10px;padding:9px 16px 9px 9px;border-radius:var(--r-pill);
+    border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:500;background:rgba(255,255,255,.015)}
+  .step .n{width:24px;height:24px;border-radius:50%;background:var(--surface-3);display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:var(--muted)}
+  .step.active{border-color:rgba(242,119,74,.5);background:var(--ember-soft);color:var(--text)}
+  .step.active .n{background:var(--grad-ember);color:#1a0f0a}
+  .step.done{color:var(--text-2)} .step.done .n{background:rgba(84,194,138,.18);color:var(--green)}
+  .step-sep{flex:0 0 22px;height:1px;background:var(--border)}
+
+  /* ── layout: balanced, no dead band ── */
+  .stage{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:30px;padding:18px 26px 0;align-items:start}
+  .editor{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .preview{position:sticky;top:calc(var(--header-h) + 18px);display:flex;flex-direction:column;gap:14px}
+
+  /* ── panels ── */
+  .panel{background:linear-gradient(180deg,var(--surface-1),rgba(21,19,28,.6));border:1px solid var(--border);
+    border-radius:var(--r);overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.03) inset}
+  .p-head{padding:18px 22px 0}
+  .p-title{font-family:var(--display);font-size:22px;font-weight:600;letter-spacing:-.3px;color:var(--text)}
+  .p-sub{font-size:13px;color:var(--muted);margin-top:3px}
+  .p-body{padding:18px 22px 22px}
+  .eyebrow{font-size:11px;letter-spacing:2.4px;text-transform:uppercase;color:var(--ember);font-weight:700;margin-bottom:5px}
+
+  /* fields */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .field label{display:block;font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:7px}
+  .input{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);
+    font-family:var(--ui);font-size:14px;padding:11px 13px;outline:none;transition:.15s}
+  .input::placeholder{color:var(--faint)}
+  .input:focus{border-color:var(--ember);box-shadow:0 0 0 3px var(--ember-soft)}
+  textarea.input{min-height:150px;resize:vertical;font-family:"SF Mono",ui-monospace,monospace;font-size:13px;line-height:1.7}
+
+  /* source row */
+  .source{display:flex;align-items:center;gap:12px;padding:14px;border:1px dashed var(--border-strong);border-radius:var(--r-sm);
+    background:rgba(255,255,255,.018)}
+  .source .fic{width:40px;height:40px;border-radius:10px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;
+    font-size:18px;flex-shrink:0}
+  .source .ftext{flex:1;min-width:0}
+  .source .ftext b{font-size:13.5px;color:var(--text)} .source .ftext p{font-size:12px;color:var(--muted)}
+  .mini{padding:8px 14px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);
+    font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .mini:hover{border-color:var(--border-strong);color:var(--text)}
+
+  /* grouped AI assists as toggle pills */
+  .group-label{font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);font-weight:600;margin:18px 0 9px}
+  .assist-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .assist{display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border:1px solid var(--border);border-radius:var(--r-sm);
+    background:var(--surface-2);cursor:pointer;transition:.15s}
+  .assist:hover{border-color:var(--border-strong)}
+  .assist.on{border-color:rgba(242,119,74,.5);background:var(--ember-soft)}
+  .assist .ic{width:30px;height:30px;border-radius:8px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;
+    font-size:15px;flex-shrink:0}
+  .assist.on .ic{background:var(--grad-ember)}
+  .assist .t b{font-size:13px;color:var(--text);display:block}
+  .assist .t span{font-size:11.5px;color:var(--muted)}
+  .sw{margin-left:auto;width:34px;height:20px;border-radius:999px;background:var(--surface-3);position:relative;flex-shrink:0;transition:.15s}
+  .sw:after{content:"";position:absolute;width:15px;height:15px;border-radius:50%;background:#aaa;top:2.5px;left:2.5px;transition:.15s}
+  .assist.on .sw{background:var(--ember)} .assist.on .sw:after{left:16.5px;background:#fff}
+
+  /* consent callout */
+  .consent{display:flex;gap:12px;align-items:flex-start;margin-top:14px;padding:13px 15px;border-radius:var(--r-sm);
+    border:1px solid rgba(231,178,76,.35);background:rgba(231,178,76,.06)}
+  .consent .ci{font-size:16px}
+  .consent p{font-size:12.5px;color:var(--text-2)} .consent b{color:var(--gold)}
+
+  /* input-mode segmented */
+  .seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-pill);padding:4px;gap:3px;margin:4px 0 14px}
+  .seg button{padding:8px 18px;border:none;border-radius:var(--r-pill);background:transparent;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--ui)}
+  .seg button.active{background:var(--grad-ember);color:#1a0f0a}
+
+  .hint{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--r-sm);background:rgba(255,255,255,.025);
+    border:1px solid var(--hair);margin-top:14px}
+  .hint .hi{color:var(--ember);font-size:15px} .hint p{font-size:12.5px;color:var(--muted)} .hint b{color:var(--text-2)}
+
+  /* ── living preview ── */
+  .phone{background:linear-gradient(180deg,var(--surface-1),var(--surface-2));border:1px solid var(--border);border-radius:30px;
+    padding:12px;box-shadow:var(--shadow)}
+  .screen{position:relative;background:#08070b;border-radius:21px;overflow:hidden;aspect-ratio:9/16;display:flex;flex-direction:column}
+  .pv-top{position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:center;z-index:3}
+  .notch{width:96px;height:7px;border-radius:99px;background:rgba(255,255,255,.16)}
+  .storyboard{flex:1;display:flex;flex-direction:column;gap:8px;padding:34px 12px 12px}
+  .sb{flex:1;border-radius:11px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.06);
+    background:linear-gradient(110deg,#1a1722 8%,#241f2e 18%,#1a1722 33%);background-size:300% 100%;animation:shimmer 2.6s linear infinite}
+  .sb:nth-child(2){animation-delay:.5s} .sb:nth-child(3){animation-delay:1s}
+  @keyframes shimmer{to{background-position:-300% 0}}
+  .sb .tag{position:absolute;top:8px;left:8px;font-size:9px;font-weight:700;letter-spacing:.5px;color:#fff;
+    background:rgba(242,119,74,.85);padding:2px 7px;border-radius:5px}
+  .sb .cap{position:absolute;left:8px;right:8px;bottom:8px;height:7px;border-radius:4px;background:rgba(255,255,255,.22)}
+  .sb .cap.s{right:38%}
+  .safez{position:absolute;left:0;right:0;bottom:0;height:15%;border-top:1px dashed rgba(255,255,255,.35);
+    background:linear-gradient(to top,rgba(224,96,106,.18),transparent);display:flex;align-items:flex-start;justify-content:center;
+    font-size:9px;color:rgba(255,255,255,.6);padding-top:3px;z-index:2}
+  .pv-cap{text-align:center;font-size:12px;color:var(--muted);padding:2px 6px}
+  .pv-cap b{color:var(--text-2)}
+  .pv-meta{display:flex;gap:8px;justify-content:center}
+  .pv-meta span{font-size:11px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 11px}
+
+  /* ── action bar ── */
+  .bar{position:fixed;bottom:0;left:0;right:0;z-index:90;height:var(--bar-h);background:rgba(17,14,22,.9);
+    backdrop-filter:blur(16px);border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 26px}
+  .bar .inner{max-width:1280px;margin:0 auto;width:100%;display:flex;align-items:center;gap:14px}
+  .b-back{color:var(--muted);background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:11px 18px;font-weight:600;font-size:13px;cursor:pointer}
+  .cost{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--gold);
+    background:rgba(231,178,76,.1);border:1px solid rgba(231,178,76,.3);border-radius:999px;padding:8px 14px}
+  .b-sec{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:var(--r-sm);padding:12px 20px;font-weight:600;font-size:13.5px;cursor:pointer}
+  .b-sec:hover{border-color:var(--border-strong)}
+  .b-pri{background:var(--grad-ember);color:#1a0f0a;border:none;border-radius:var(--r-sm);padding:13px 28px;font-weight:700;font-size:14px;cursor:pointer;
+    box-shadow:0 8px 22px rgba(242,119,74,.35);display:flex;align-items:center;gap:8px}
+  .b-pri:hover{filter:brightness(1.05)}
+  .b-next{background:transparent;border:1px solid var(--border-strong);color:var(--text);border-radius:var(--r-sm);padding:12px 20px;font-weight:600;font-size:13.5px;cursor:pointer}
+
+  @media(max-width:1040px){.stage{grid-template-columns:1fr}.preview{position:static;order:-1}}
+</style>
+</head>
+<body>
+
+  <div class="mocknote"><b>DESIGN MOCKUP</b> — premium rebrand direction for the Story screen. Not the live app. Toggles/segments are clickable to show interaction states.</div>
+
+  <!-- header -->
+  <header class="app-header">
+    <a class="logo" href="#">
+      <span class="mark"></span>
+      <span><span class="wm">HOB<b>AI</b>Labs</span><span class="sub" style="display:block">Humans of Bombay</span></span>
+    </a>
+    <nav class="nav">
+      <a class="active">Story</a><a>Studio</a><a>Brand</a><a>Canvas</a>
+    </nav>
+    <div class="h-right">
+      <a class="h-link">📖 Guide</a>
+      <span class="who"><span class="av">D</span>dev · admin</span>
+      <button class="btn-ghost">Log out</button>
+      <button class="gear">⚙</button>
+    </div>
+  </header>
+
+  <!-- step wizard -->
+  <div class="steps">
+    <div class="step active"><span class="n">1</span>Start</div>
+    <div class="step-sep"></div>
+    <div class="step"><span class="n">2</span>Frames</div>
+    <div class="step-sep"></div>
+    <div class="step"><span class="n">3</span>Polish</div>
+    <div class="step-sep"></div>
+    <div class="step"><span class="n">4</span>Render</div>
+  </div>
+
+  <!-- body -->
+  <div class="stage">
+
+    <!-- editor -->
+    <div class="editor">
+
+      <section class="panel">
+        <div class="p-head">
+          <div class="eyebrow">Who's the story about</div>
+          <div class="p-title">Subject</div>
+          <div class="p-sub">Leave blank and the director brain infers it from the story itself.</div>
+        </div>
+        <div class="p-body">
+          <div class="grid2">
+            <div class="field"><label>Name <span style="text-transform:none;color:var(--faint)">· optional</span></label>
+              <input class="input" placeholder="e.g. Lalita"></div>
+            <div class="field"><label>Description <span style="text-transform:none;color:var(--faint)">· optional</span></label>
+              <input class="input" placeholder="e.g. woman, 28, humble background"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="p-head" style="display:flex;justify-content:space-between;align-items:flex-end">
+          <div>
+            <div class="eyebrow">Step 1 · the raw material</div>
+            <div class="p-title">Start your reel</div>
+            <div class="p-sub">Bring a story and a folder of real photos. We keep the real, fill the gaps.</div>
+          </div>
+          <button class="mini" style="padding:10px 18px">Parse frames →</button>
+        </div>
+        <div class="p-body">
+
+          <!-- source -->
+          <div class="source">
+            <div class="fic">🖼️</div>
+            <div class="ftext"><b>Photos &amp; videos folder</b><p>Matched to frames automatically — override any frame individually.</p></div>
+            <button class="mini">Browse</button>
+            <button class="mini">Server</button>
+          </div>
+
+          <!-- grouped AI assists -->
+          <div class="group-label">AI assists</div>
+          <div class="assist-grid">
+            <div class="assist on" onclick="this.classList.toggle('on')">
+              <div class="ic">🧠</div><div class="t"><b>Smart-match images</b><span>Match photos to lines by content</span></div><div class="sw"></div>
+            </div>
+            <div class="assist" onclick="this.classList.toggle('on')">
+              <div class="ic">🎞️</div><div class="t"><b>Multi-shot coverage</b><span>Split a beat into B-roll</span></div><div class="sw"></div>
+            </div>
+            <div class="assist" onclick="this.classList.toggle('on')">
+              <div class="ic">👤</div><div class="t"><b>Consistent AI face</b><span>Lock one face across portraits</span></div><div class="sw"></div>
+            </div>
+            <div class="assist" onclick="this.classList.toggle('on')">
+              <div class="ic">📎</div><div class="t"><b>Character face</b><span>Upload a reference face</span></div><div class="sw"></div>
+            </div>
+          </div>
+
+          <!-- consent -->
+          <div class="consent">
+            <span class="ci">🛡️</span>
+            <p><b>Consent required for an uploaded face.</b> AI renders this likeness; outputs are clearly labelled AI-assisted. Real photos are never regenerated.</p>
+          </div>
+
+          <!-- input mode -->
+          <div class="group-label">What are you starting from?</div>
+          <div class="seg">
+            <button class="active" onclick="seg(this)">I have a frame script</button>
+            <button onclick="seg(this)">I have a story</button>
+          </div>
+          <textarea class="input" placeholder="Paste your Reels frame script here (Format B)…
+Frame 1  [photo: 01_hospital.jpg]
+Bedridden, I lost my hair — but not my hope.
+
+Frame 2  [note: warm dawn light]
+The morning everything changed…"></textarea>
+
+          <div class="hint"><span class="hi">💡</span><p><b>How to start:</b> paste a finished frame script and hit Parse Frames — or paste raw story text and let AI draft editable frames first.</p></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- living preview -->
+    <aside class="preview">
+      <div class="phone">
+        <div class="screen">
+          <div class="pv-top"><div class="notch"></div></div>
+          <div class="storyboard">
+            <div class="sb"><span class="tag">REAL</span><span class="cap"></span><span class="cap s" style="bottom:18px"></span></div>
+            <div class="sb"><span class="tag" style="background:rgba(122,168,240,.85)">AI · SYMBOLIC</span><span class="cap"></span></div>
+            <div class="sb"><span class="tag" style="background:rgba(84,194,138,.85)">PHOTO</span><span class="cap"></span><span class="cap s" style="bottom:18px"></span></div>
+            <div class="safez">Reels safe-zone</div>
+          </div>
+        </div>
+      </div>
+      <div class="pv-cap"><b>Storyboard preview</b> — parse a story to populate frames</div>
+      <div class="pv-meta"><span>9:16</span><span>~7 frames</span><span>captions on</span></div>
+    </aside>
+  </div>
+
+  <!-- action bar -->
+  <div class="bar"><div class="inner">
+    <button class="b-back">← Back</button>
+    <span class="cost">💳 est. ₹0 · dry-run</span>
+    <button class="b-sec">Preview stills</button>
+    <button class="b-pri">✨ Generate video</button>
+    <button class="b-next">Next →</button>
+  </div></div>
+
+<script>
+  function seg(b){[...b.parentNode.children].forEach(x=>x.classList.remove('active'));b.classList.add('active');}
+</script>
+</body>
+</html>

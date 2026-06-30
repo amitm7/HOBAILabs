@@ -50,8 +50,20 @@ def upscale_cost(creative: bool = False) -> float:
     return p.get("clarity_usd", 0.05) if creative else p.get("aura_sr_usd", 0.02)
 
 
-def music_cost() -> float:
-    return load()["music"].get("suno_song_usd", 0.05)
+def music_cost(provider: str | None = None) -> float:
+    """Cost for one generated track, by the configured music provider (config/music.json
+    + env MUSIC_PROVIDER). Defaults to whatever the seam will actually use."""
+    m = load()["music"]
+    if provider is None:
+        import os
+        try:
+            with open(_PRICING_PATH.parent / "music.json") as f:
+                provider = os.environ.get("MUSIC_PROVIDER") or json.load(f).get("provider", "suno")
+        except Exception:
+            provider = "suno"
+    if provider == "lyria":
+        return m.get("lyria_pro_usd", 0.08)
+    return m.get("suno_song_usd", 0.05)
 
 
 def voice_cost(char_count: int) -> float:

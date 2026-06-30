@@ -30,7 +30,9 @@
 
   "music": {
     "suno_song_usd": 0.05,
-    "_note": "Per AI-generated song via Suno wrapper API."
+    "lyria_pro_usd": 0.08,
+    "lyria_clip_usd": 0.03,
+    "_note": "Per AI-generated track. suno = Suno wrapper. lyria_pro = Lyria 3 full song (~3min, Gemini API), lyria_clip = 30s draft. VERIFY Lyria prices on ai.google.dev / OpenRouter (preview pricing shifts)."
   },
 
   "higgsfield": {

@@ -67,7 +67,7 @@ CLIP-based scoring — these are on the roadmap (§9).
    · Upscale: fal.ai aura_sr (faithful/real), clarity (creative/AI)             │ fal Upscale  │
    · Video: Kling AI, Higgsfield, fal (Seedance/Veo/Hailuo)                    │ Veo / Hailuo │
    · Lip-sync: Hedra (photo), SyncLabs (video)                                 ├──────────────┤
-   · Voice: ElevenLabs · Music: Suno · Safety: OpenAI Moderation               │ Voice/Music/ │
+   · Voice: ElevenLabs · Music: Lyria 3 (Gemini) | Suno · Safety: OpenAI Mod    │ Voice/Music/ │
    · CDN for lip-sync uploads: Higgsfield CDN                                  │ Lipsync APIs │
                                                                                 └──────────────┘
 ```
