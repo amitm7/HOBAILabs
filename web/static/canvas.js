@@ -203,7 +203,13 @@
   function render(canvas) {
     renderRail(canvas.stages);
     renderBoard(canvas.board);
-    $("render-btn").hidden = !canvas.board || canvas.board.length === 0;
+    const hasBoard = canvas.board && canvas.board.length > 0;
+    const kf = (canvas.stages || []).find((s) => s.id === "keyframes");
+    const kfApproved = kf && kf.status === "approved";
+    $("render-btn").hidden = !hasBoard;
+    $("render-btn").disabled = !kfApproved;
+    $("render-btn").title = kfApproved
+      ? "" : "Generate & approve Key Frames first — review the stills before the reel.";
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
   }
 

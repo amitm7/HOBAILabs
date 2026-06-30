@@ -587,6 +587,12 @@ def api_canvas_render(run_id: str, operator: str):
     if state is None:
         return jsonify({"error": "Unknown canvas"}), 404
     body = request.json or {}
+    # Gate: the reel render produces the finished video — require the Key Frames
+    # stage to be generated AND approved first, so nothing expensive/whole runs
+    # before you've reviewed the stills. (Stops "it made the reel without asking".)
+    if state["stages"]["keyframes"].get("status") != "approved":
+        return jsonify({"error": "Generate and approve Key Frames first — then render the reel.",
+                        "need_keyframes": True}), 409
     if body.get("quality"):
         state["quality"] = body["quality"]
     # Reuse the render dir from the Key Frames stage so the stills are reused
