@@ -59,6 +59,9 @@
   .cv-card .frame .refchip img { width:26px; height:26px; object-fit:cover; border-radius:5px; display:block; }
   .cv-card .frame .refchip b { color:#fff; font-size:9px; font-weight:700; letter-spacing:.04em; }
   /* Attach controls */
+  .cv-audio { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;
+    padding:8px 12px; border:1px solid #eef0f3; border-radius:10px; font-size:13px; background:#fff; }
+  .cv-audio select { font:inherit; font-size:13px; padding:6px 8px; border:1px solid #e5e7eb; border-radius:8px; }
   .cv-assets { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;
     padding:10px 12px; border:1px dashed #d1d5db; border-radius:10px; font-size:13px; background:#fff; }
   .cv-assets select, .cv-card .attach select { font:inherit; font-size:12px; padding:5px 7px;
@@ -140,6 +143,20 @@
     <button id="plan-btn" class="btn-primary">Plan ✨</button>
   </div>
   <div id="err" class="err" hidden></div>
+
+  <div class="cv-audio" id="audio-bar">
+    <strong>Audio:</strong>
+    <select id="audio-mode">
+      <option value="generate">🎵 Music — auto (Suno)</option>
+      <option value="upload">⬆ Upload a song</option>
+      <option value="voiceover">🎙 Voiceover (ElevenLabs)</option>
+      <option value="none">🔇 None (rhythmic cuts only)</option>
+    </select>
+    <select id="voice-id" hidden title="Narrator voice"></select>
+    <label class="attach-btn" id="song-label" hidden>⬆ Choose song
+      <input id="song-file" type="file" accept="audio/*" hidden></label>
+    <span class="muted" id="song-name"></span>
+  </div>
 
   <div class="cv-assets" id="assets" hidden>
     <strong>Your media:</strong>

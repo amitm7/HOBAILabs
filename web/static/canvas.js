@@ -70,6 +70,41 @@
 
   function mediaUrl(p) { return "/media?path=" + encodeURIComponent(p); }
 
+  // ── Audio options (music / upload song / voiceover) ──────────────────────────
+  let canvasMusicPath = "";
+  function audioOpts() {
+    const mode = $("audio-mode").value;
+    const o = { music_type: mode };
+    if (mode === "upload") o.music_path = canvasMusicPath;
+    if (mode === "voiceover") o.voice_id = $("voice-id").value || "";
+    return o;
+  }
+  async function loadVoices() {
+    try {
+      const d = await api("/voices");
+      const voices = d.voices || d || [];
+      $("voice-id").innerHTML = voices.map((v) =>
+        `<option value="${v.voice_id}">${escapeHtml(v.name || v.voice_id)}</option>`).join("");
+    } catch (e) { /* ignore */ }
+  }
+  $("audio-mode").addEventListener("change", () => {
+    const m = $("audio-mode").value;
+    $("voice-id").hidden = m !== "voiceover";
+    $("song-label").hidden = m !== "upload";
+    if (m !== "upload") $("song-name").textContent = "";
+  });
+  $("song-file").addEventListener("change", async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    $("song-name").textContent = "uploading…";
+    try {
+      const fd = new FormData();
+      fd.append("photo", f); fd.append("session_id", runId || "canvas-song"); fd.append("frame_id", "song");
+      const up = await fetch("/upload-photo", { method: "POST", body: fd }).then((r) => r.json());
+      if (up.tmp_path) { canvasMusicPath = up.tmp_path; $("song-name").textContent = f.name; }
+      else { err(up.error || "song upload failed"); $("song-name").textContent = ""; }
+    } catch (e) { err(e.message); $("song-name").textContent = ""; }
+  });
+
   function renderBoard(board) {
     const empty = board.length === 0;
     $("legend").hidden = empty;
@@ -302,7 +337,7 @@
     const btn = $("render-btn");
     btn.disabled = true; btn.textContent = "🎬 Rendering…";
     try {
-      const d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value });
+      const d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value, ...audioOpts() });
       render(d.canvas);   // canvas.render_id is now set → render() opens the stream
     } catch (e) { err(e.message); btn.disabled = false; btn.textContent = "🎬 Render reel"; }
   });
@@ -324,8 +359,9 @@
     if (ev.target.value) loadCanvas(ev.target.value);
   });
 
-  // On open: list recents and resume the last canvas (URL ?run= or localStorage).
+  // On open: list recents + voices, resume the last canvas (URL ?run= or localStorage).
   loadRecents();
+  loadVoices();
   (function initResume() {
     const fromUrl = new URLSearchParams(location.search).get("run");
     let last = null;
@@ -412,7 +448,7 @@
         if (stage === "keyframes") {
           d = await api(`/api/canvas/${runId}/keyframes`, {});           // cheap stills only
         } else if (stage === "video" || stage === "audio" || stage === "finalcut") {
-          d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value }); // reuses stills
+          d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value, ...audioOpts() }); // reuses stills
         } else {
           d = await api(`/api/canvas/${runId}/advance`, { stage });      // free stages
         }

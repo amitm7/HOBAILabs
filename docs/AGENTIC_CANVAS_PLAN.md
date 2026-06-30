@@ -109,6 +109,11 @@ bed is available (e.g. Suno credits out), `beat_overlaps(fallback_bpm=)` snaps c
 **tempo grid** (`_canvas_tempo_bpm`: 80 somber / 92 default / 108 upbeat) so cutting stays rhythmic
 instead of degrading to uniform crossfades. With music, real beats are used. Other modes unaffected
 (no `beat_grid_bpm` → None → uniform). Verified: 56 tests incl. tempo-grid mix + uniform-preservation.
+- ✅ **Audio options (parity with Story mode):** the canvas render takes `music_type` =
+  **generate** (Suno) / **upload a song** (your track, via `/upload-photo`) / **voiceover**
+  (ElevenLabs, 21 voices from `/voices`) / **none**. Backend validates (upload-without-song → 400);
+  voiceover switches to gentle uniform cuts. So music is no longer hard-coded — and the anti-slideshow
+  works across all four. (Suno credits will be topped up; upload/voiceover work today regardless.)
 
 **Recommended order:** 1 → 3 → 4 (quick, high-perception wins) → 2 (the big one) → 5/6 → 7 → 8.
 

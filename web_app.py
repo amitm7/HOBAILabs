@@ -555,10 +555,19 @@ def api_canvas_render(run_id: str, operator: str):
     # (content-hash cache) instead of re-spent.
     render_id = state.get("render_id") or str(uuid.uuid4())
     data = _canvas_render_data(state, render_id, operator)
-    # Generate a music bed by default → the engine's beat-aware cutting snaps cuts to
-    # the beat (anti-slideshow, P1). Estimate includes the music so the cap covers it.
-    data["music_type"] = body.get("music_type", "generate")
     data["canvas_run_id"] = run_id
+    # Audio options (same set as Story mode): generate (Suno), upload a song,
+    # ElevenLabs voiceover, or none. Default = generate so beat-aware cutting has a
+    # bed; if it can't, the tempo-grid fallback keeps cuts rhythmic anyway.
+    data["music_type"] = body.get("music_type") or "generate"
+    if data["music_type"] == "upload":
+        mp = (body.get("music_path") or "").strip()
+        if not mp or not _path_allowed(mp):
+            return jsonify({"error": "Upload a song first, or choose a different audio option."}), 400
+        data["music_path"] = mp
+    if data["music_type"] == "voiceover":
+        data["voice_id"] = (body.get("voice_id") or "").strip()
+        data["beat_grid_bpm"] = 0   # gentle, uniform cuts under narration (don't beat-cut speech)
     quality = data["quality"]
     # Same gates as /run — money/rights are not bypassed by the canvas surface.
     missing = governance.validate_consent(data)

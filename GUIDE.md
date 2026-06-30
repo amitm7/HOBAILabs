@@ -263,11 +263,14 @@ A **stage-gated board** that builds your reel one approved step at a time —
   weak one, edit prompts — *before* spending on the expensive video. When you Generate
   the *Video* stage, it **reuses those approved stills** (no re-charge). This is the
   fix for the competitor's "one click drains your wallet."
-- **Render the reel** with the **🎬 Render reel** button (top bar). The render adds a
-  generated music score and **cuts on the beat** (hard cut on a beat, soft dissolve
-  off it) instead of a uniform crossfade — so it reads as a film, not a slideshow.
-  Even with no music, cuts follow a steady **tempo** (set by the mood), so the reel
-  stays rhythmic regardless of music availability. Each shot's clip
+- **Pick your audio** (same options as Story mode): **🎵 Music — auto** (generated
+  score), **⬆ Upload a song** (your own track), **🎙 Voiceover** (ElevenLabs narrates
+  the captions — choose a voice), or **🔇 None**.
+- **Render the reel** with the **🎬 Render reel** button (top bar). With a music bed it
+  **cuts on the beat** (hard cut on a beat, soft dissolve off it) instead of a uniform
+  crossfade — so it reads as a film, not a slideshow. Even with no music, cuts follow a
+  steady **tempo** (set by the mood); voiceover keeps gentle cuts so they don't fight
+  the narration. Each shot's clip
   appears on its card as it finishes, then the full reel plays in a panel below the
   board with a download link. The render reuses the same proven pipeline as the other
   modes, so models, costs, and safety/spend gates are identical. Stage cards show a
