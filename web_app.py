@@ -476,9 +476,21 @@ def api_canvas_asset(run_id: str, operator: str):
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
 
+def _canvas_tempo_bpm(mood: str) -> int:
+    """A sensible cut tempo from the mood, used as the beat grid when there's no
+    music bed so cutting stays rhythmic (not uniform). Coarse on purpose."""
+    m = (mood or "").lower()
+    if any(k in m for k in ("triumph", "joy", "upbeat", "energetic", "hope")):
+        return 108
+    if any(k in m for k in ("somber", "grief", "struggle", "cold", "sad", "loss")):
+        return 80
+    return 92   # default documentary pacing
+
+
 def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
     """Shared payload for the canvas's stills/video render (one builder, two callers)."""
     return {
+        "beat_grid_bpm": _canvas_tempo_bpm(state.get("mood", "")),
         "mode": "story", "quality": state.get("quality", "prod"),
         "frames": state["frames"], "mood": state.get("mood", ""),
         "subject_name": "", "subject_description": "",
@@ -2349,7 +2361,10 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         from agents.assembler import beat_overlaps
         _mt = data.get("music_type")
         _music_bed = data.get("music_path") if _mt in ("upload", "generate") else None
-        overlaps = beat_overlaps(clips, _music_bed, transition)
+        # `beat_grid_bpm` keeps cutting rhythmic even with no music bed (e.g. Suno
+        # credits out) — a synthetic tempo grid instead of uniform crossfades.
+        overlaps = beat_overlaps(clips, _music_bed, transition,
+                                 fallback_bpm=float(data.get("beat_grid_bpm", 0) or 0))
 
         # Effective per-frame windows in the rendered video — overlaps shift clip
         # starts, so every timing consumer below uses these, not raw durations.

@@ -66,22 +66,39 @@ def transition_plan(durations: list[float], beats: list[float], *,
     return overlaps
 
 
+def tempo_grid(total_dur: float, bpm: float) -> list[float]:
+    """A synthetic beat grid at `bpm` over `total_dur` seconds. Lets cuts be
+    rhythm-aware even with NO music bed (Suno-independent anti-slideshow) — the
+    reel still cuts on a steady pulse instead of uniform mush."""
+    if bpm <= 0 or total_dur <= 0:
+        return []
+    step = 60.0 / bpm
+    n = int(total_dur / step) + 1
+    return [round(i * step, 3) for i in range(n)]
+
+
 def beat_overlaps(clips: list[dict], music_path: str | None,
-                  transition: str = "crossfade") -> list[float] | None:
+                  transition: str = "crossfade", fallback_bpm: float = 0.0) -> list[float] | None:
     """Per-junction overlaps for beat-aware cutting (P1), or None for the uniform
-    path. Returns None — i.e. today's exact behaviour — when there is no music
-    bed, transition is 'none', there are <2 clips, or no beats are detected.
-    Beat detection is best-effort (no librosa); any failure → None."""
-    if not music_path or transition == "none" or len(clips) < 2:
+    path. Returns None — today's exact behaviour — when transition is 'none' or
+    there are <2 clips. With a music bed, snaps cuts to detected beats; with no
+    music but a `fallback_bpm`, snaps to a synthetic tempo grid so cutting stays
+    rhythmic without a music credit. Beat detection is best-effort; never raises."""
+    if transition == "none" or len(clips) < 2:
         return None
-    try:
-        from agents import beat_track
-        beats = beat_track.beat_times(music_path)
-    except Exception:
-        beats = []
+    beats = []
+    if music_path:
+        try:
+            from agents import beat_track
+            beats = beat_track.beat_times(music_path)
+        except Exception:
+            beats = []
+    durations = [c["actual_duration"] for c in clips]
+    if not beats and fallback_bpm and fallback_bpm > 0:
+        beats = tempo_grid(sum(durations), fallback_bpm)
     if not beats:
         return None
-    return transition_plan([c["actual_duration"] for c in clips], beats)
+    return transition_plan(durations, beats)
 
 
 def frame_timecodes(frames: list[dict], clips: list[dict],

@@ -67,3 +67,28 @@ def test_beat_overlaps_none_without_music_or_beats():
 def test_beat_times_graceful_on_bad_input():
     assert beat_times("") == []
     assert beat_times("/nope/missing.mp3") == []
+
+
+# ── Suno-independent rhythmic cutting: tempo-grid fallback ─────────────────────
+
+def test_tempo_grid_spacing():
+    from agents.assembler import tempo_grid
+    g = tempo_grid(6.0, bpm=120)          # 0.5s per beat
+    assert g[:3] == [0.0, 0.5, 1.0]
+    assert tempo_grid(6.0, 0) == [] and tempo_grid(0, 120) == []
+
+
+def test_fallback_bpm_keeps_cutting_rhythmic_without_music():
+    # No music bed, but a tempo grid → cuts are NOT uniform (anti-slideshow holds
+    # even when Suno credits are out).
+    clips = [{"actual_duration": d} for d in (4.5, 3.5, 4.0, 5.0, 3.0, 4.5, 5.5)]
+    ov = beat_overlaps(clips, music_path=None, fallback_bpm=92)
+    assert ov is not None
+    assert any(o < TRANSITION_DUR for o in ov)           # at least some hard cuts
+    assert ov != [TRANSITION_DUR] * len(ov)              # not the uniform slideshow
+
+
+def test_no_bpm_no_music_stays_uniform():
+    # Other modes (no beat_grid_bpm) are unchanged: None → uniform crossfade.
+    clips = [{"actual_duration": 4.0}, {"actual_duration": 5.0}]
+    assert beat_overlaps(clips, None, fallback_bpm=0) is None

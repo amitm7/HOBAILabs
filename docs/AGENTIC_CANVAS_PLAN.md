@@ -104,8 +104,11 @@ into the Video render — full 4-way per-stage split is the remaining increment.
 (`assembler.transition_plan`/`beat_overlaps`) already does hard-cut-on-beat vs dissolve-off-beat;
 the canvas render now generates a music bed (`_canvas_render_thread`) so cuts snap to the beat
 instead of uniform 0.4s crossfades (the slideshow root cause). Engine verified by `test_beat_cutting.py`
-+ a synth-beat run (2 hard cuts on-beat + 2 dissolves off-beat). *Live-reel demo blocked only by a
-Suno music-credit top-up — separate pool from video credits; graceful fallback to uniform on failure.*
++ a synth-beat run (2 hard cuts on-beat + 2 dissolves off-beat). **Suno-independent:** when no music
+bed is available (e.g. Suno credits out), `beat_overlaps(fallback_bpm=)` snaps cuts to a mood-derived
+**tempo grid** (`_canvas_tempo_bpm`: 80 somber / 92 default / 108 upbeat) so cutting stays rhythmic
+instead of degrading to uniform crossfades. With music, real beats are used. Other modes unaffected
+(no `beat_grid_bpm` → None → uniform). Verified: 56 tests incl. tempo-grid mix + uniform-preservation.
 
 **Recommended order:** 1 → 3 → 4 (quick, high-perception wins) → 2 (the big one) → 5/6 → 7 → 8.
 
