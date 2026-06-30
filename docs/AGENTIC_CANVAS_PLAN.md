@@ -80,7 +80,12 @@ reuses `_execute_pipeline`; produced a verified 30s prod reel ($1.60, distinct s
 verified prod reel) · ✅ **#1 per-card live reveal** (`/rendered`: clips on cards, persists on
 reload, overlays kept, stage-status reconciled — no more stuck 'generating') · ✅ **#3 per-shot
 re-roll** (`/reroll`: new still+clip for one shot, verified replacing the phone-artifact with a
-better shot) · ✅ **#4 ETA per stage ("~Nm") + shimmer loaders** · ✅ save/resume + recents picker.
+better shot) · ✅ **ETA per stage ("~Nm") + shimmer loaders** · ✅ save/resume + recents picker ·
+✅ **Key Frames ↔ Video gate** (`/keyframes` renders cheap stills only via `_execute_preview`;
+review/re-roll; then `/render` reuses those stills from the shared run dir — content-hash cache;
+verified Key Frames done while Video stays gated. Also fixed `_execute_preview` not persisting
+'done' to `run_store`. *Open: stills reuse is partial when scene prompts drift; Final Cut bundled
+into the Video render — full 4-way per-stage split is the remaining increment.*)
 
 **Remaining gaps → ordered plan (each row = one shippable step):**
 

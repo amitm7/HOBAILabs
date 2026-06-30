@@ -181,10 +181,24 @@
     v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true;
     frame.insertBefore(v, frame.firstChild);   // base layer; absolute overlays sit on top
   }
+  function showStillOnCard(fid, src) {
+    const frame = document.querySelector(`.cv-card[data-frame="${fid}"] .frame`);
+    if (!frame || frame.querySelector("video.clip")) return;   // a clip wins over the still
+    frame.classList.add("has-img");
+    frame.querySelectorAll("svg, .refchip").forEach((el) => el.remove());
+    let img = frame.querySelector("img.still");
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "thumb still";
+      frame.insertBefore(img, frame.firstChild);
+    }
+    if (img.src !== src) img.src = src;
+  }
   function showFinalVideo(url, rid) {
     $("render-panel").hidden = false;
     const v = $("render-video"), dl = $("render-dl");
-    v.src = url; v.hidden = false;
+    if (v.src !== location.origin + url) v.src = url;
+    v.hidden = false;
     dl.href = "/download/" + (rid || url.split("/").pop()); dl.hidden = false;
     $("render-status").textContent = "done ✓";
   }
@@ -195,27 +209,31 @@
     try {
       const d = await api(`/api/canvas/${runId}/rendered`, {});   // POST: also syncs stage chips
       if (d.canvas) renderRail(d.canvas.stages);                  // unstick 'generating'
-      Object.entries(d.frames || {}).forEach(([fid, path]) => showClipOnCard(fid, mediaUrl(path)));
+      Object.entries(d.stills || {}).forEach(([fid, p]) => showStillOnCard(fid, mediaUrl(p)));
+      Object.entries(d.frames || {}).forEach(([fid, p]) => showClipOnCard(fid, mediaUrl(p)));
       if (d.output_url) showFinalVideo(d.output_url, d.render_id);
       if (d.render_status === "running" && d.render_id && !renderStream) openRenderStream(d.render_id);
     } catch (e) { /* ignore */ }
   }
 
-  // ── Live render stream (per-shot clips arrive as they finish) ────────────────
-  let renderStream = null;
+  // ── Live render stream (logs + per-shot clips; poll fills stills) ────────────
+  let renderStream = null, renderPoll = null;
   function openRenderStream(rid) {
     $("render-panel").hidden = false;
     const log = $("render-log");
     $("render-status").textContent = "running…";
     renderStream = new EventSource(`/progress/${rid}`);
+    if (renderPoll) clearInterval(renderPoll);
+    renderPoll = setInterval(syncRendered, 4000);   // surface stills/clips as they land
     renderStream.onmessage = (ev) => {
       let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
       if (d.line) { log.textContent += d.line + "\n"; log.scrollTop = log.scrollHeight; }
       if (d.type === "clip_ready" && d.frame_id && d.url) showClipOnCard(d.frame_id, d.url);
       if (d.done) {
+        clearInterval(renderPoll); renderPoll = null;
         renderStream.close(); renderStream = null;
-        if (d.status === "done") showFinalVideo(`/output/${rid}`, rid);
-        else $("render-status").textContent = "error";
+        $("render-status").textContent = d.status === "done" ? "done ✓" : "error";
+        syncRendered();   // final refresh: stills/clips/output + stage statuses
       }
     };
     renderStream.onerror = () => { /* SSE auto-retries; ignore transient */ };
@@ -390,16 +408,15 @@
       if (gen) {
         const stage = gen.getAttribute("data-stage");
         gen.disabled = true; gen.textContent = "Working…";
-        const d = await api(`/api/canvas/${runId}/advance`, { stage });
-        if (d.dispatch_required) {
-          // Paid stage: cost shown, spend cap checked — render dispatch is next phase.
-          err(`${d.dispatch_required}: ${usd(d.estimate_usd)} — ${
-            d.spend_ok ? "within spend cap" : "blocked by spend cap"}. ${d.note}`);
-          const s = await api(`/api/canvas/${runId}/state`);
-          render(s.canvas);
+        let d;
+        if (stage === "keyframes") {
+          d = await api(`/api/canvas/${runId}/keyframes`, {});           // cheap stills only
+        } else if (stage === "video" || stage === "audio" || stage === "finalcut") {
+          d = await api(`/api/canvas/${runId}/render`, { quality: $("quality").value }); // reuses stills
         } else {
-          render(d.canvas);
+          d = await api(`/api/canvas/${runId}/advance`, { stage });      // free stages
         }
+        render(d.canvas);
       } else {
         const stage = appr.getAttribute("data-approve");
         const d = await api(`/api/canvas/${runId}/approve`, { stage });

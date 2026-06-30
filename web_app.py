@@ -328,31 +328,44 @@ def api_canvas_rendered(run_id: str, operator: str):
     if state is None:
         return jsonify({"error": "Unknown canvas"}), 404
     rid = state.get("render_id", "")
-    frames, output_url, status = {}, "", ""
+    phase = state.get("render_phase", "")
+    stills, clips, output_url, status = {}, {}, "", ""
     if rid:
         rdir = RUNS_DIR / rid
+        assets = rdir / "assets"
         for f in state.get("frames", []):
             fid = f.get("frame_id")
+            if assets.exists():
+                imgs = list(assets.glob(f"ai_*_{fid}_*.jpg"))
+                if imgs:
+                    stills[fid] = str(max(imgs, key=lambda p: p.stat().st_mtime))
             clip = rdir / f"clip_{fid}.mp4"
             if clip.exists():
-                frames[fid] = str(clip)          # served via /media (path-confined)
+                clips[fid] = str(clip)           # served via /media (path-confined)
         meta = run_store.load(rid) or {}
         status = meta.get("status", "")
         op = meta.get("output_path", "")
         if op and os.path.exists(op):
             output_url = f"/output/{rid}"
-        # Reconcile the paid stage chips with the real render status.
-        new_status = {"running": "generating", "done": "done"}.get(status)
-        if new_status:
-            changed = False
-            for s in ("keyframes", "audio", "video", "finalcut"):
-                if state["stages"][s].get("status") != new_status:
-                    state["stages"][s]["status"] = new_status
+        # Reconcile stage chips by phase (Key Frames render ≠ Video render).
+        changed = False
+
+        def _set(stage_ids, val):
+            nonlocal changed
+            for s in stage_ids:
+                if state["stages"][s].get("status") != val:
+                    state["stages"][s]["status"] = val
                     changed = True
-            if changed:
-                _canvas_save(run_id, state)
-    return jsonify({"render_id": rid, "frames": frames, "output_url": output_url,
-                    "render_status": status, "canvas": canvas_run.public_state(state)})
+        val = {"running": "generating", "done": "done"}.get(status)
+        if val and phase == "keyframes":
+            _set(["keyframes"], val)
+        elif val and phase == "full":
+            _set(["keyframes", "audio", "video", "finalcut"], val)
+        if changed:
+            _canvas_save(run_id, state)
+    return jsonify({"render_id": rid, "stills": stills, "frames": clips,
+                    "output_url": output_url, "render_status": status,
+                    "render_phase": phase, "canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/state")
@@ -463,6 +476,55 @@ def api_canvas_asset(run_id: str, operator: str):
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
 
+def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
+    """Shared payload for the canvas's stills/video render (one builder, two callers)."""
+    return {
+        "mode": "story", "quality": state.get("quality", "prod"),
+        "frames": state["frames"], "mood": state.get("mood", ""),
+        "subject_name": "", "subject_description": "",
+        "video_model": "auto", "image_model": "auto", "music_type": "none",
+        "caption_style": {"enabled": True, "font": "Montserrat", "size": 24,
+                          "position": "bottom", "max_lines": 3},
+        "orientation": "portrait", "session_id": render_id, "operator_id": operator,
+        "likeness_consent": {"face": True, "voice": True}, "canvas_run_id": "",
+    }
+
+
+@app.route("/api/canvas/<run_id>/keyframes", methods=["POST"])
+@auth.require_operator()
+def api_canvas_keyframes(run_id: str, operator: str):
+    """Render the cheap stills ONLY (reuses the preview path). Lets the operator
+    review / re-roll keyframes before committing to the expensive video — and the
+    later full render reuses these stills (shared run dir → content-hash cache)."""
+    from agents import canvas_run, governance, run_store
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    render_id = state.get("render_id") or str(uuid.uuid4())
+    state["render_id"] = render_id
+    data = _canvas_render_data(state, render_id, operator)
+    # Stills-only spend gate (images, not video).
+    governance.record_consent(data, confirmed_by=operator)
+    governance.record_likeness_consent(data, confirmed_by=operator)
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
+    if spend_missing:
+        return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
+    run_dir = RUNS_DIR / render_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with _runs_lock:
+        _runs[render_id] = {"status": "running", "log": [], "stills": None,
+                            "clips": {}, "events": []}
+    try:
+        run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
+    except Exception as e:
+        print(f"[RunStore] canvas keyframes save skipped ({e})")
+    threading.Thread(target=_execute_preview, args=(render_id, data, run_dir), daemon=True).start()
+    state["render_phase"] = "keyframes"
+    state["stages"]["keyframes"].update(status="generating")
+    _canvas_save(run_id, state)
+    return jsonify({"render_id": render_id, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/render", methods=["POST"])
 @auth.require_operator()
 def api_canvas_render(run_id: str, operator: str):
@@ -475,24 +537,15 @@ def api_canvas_render(run_id: str, operator: str):
     if state is None:
         return jsonify({"error": "Unknown canvas"}), 404
     body = request.json or {}
-    quality = body.get("quality") or state.get("quality") or "prod"
-    render_id = str(uuid.uuid4())
-    data = {
-        "mode": "story",
-        "quality": quality,
-        "frames": state["frames"],
-        "mood": state.get("mood", ""),
-        "subject_name": "", "subject_description": "",
-        "video_model": "auto", "image_model": "auto",
-        "music_type": body.get("music_type", "none"),
-        "caption_style": {"enabled": True, "font": "Montserrat", "size": 24,
-                          "position": "bottom", "max_lines": 3},
-        "orientation": "portrait",
-        "session_id": render_id,
-        "operator_id": operator,
-        "likeness_consent": {"face": True, "voice": True},
-        "canvas_run_id": run_id,
-    }
+    if body.get("quality"):
+        state["quality"] = body["quality"]
+    # Reuse the render dir from the Key Frames stage so the stills are reused
+    # (content-hash cache) instead of re-spent.
+    render_id = state.get("render_id") or str(uuid.uuid4())
+    data = _canvas_render_data(state, render_id, operator)
+    data["music_type"] = body.get("music_type", "none")
+    data["canvas_run_id"] = run_id
+    quality = data["quality"]
     # Same gates as /run — money/rights are not bypassed by the canvas surface.
     missing = governance.validate_consent(data)
     if missing:
@@ -520,6 +573,7 @@ def api_canvas_render(run_id: str, operator: str):
     for s in ("keyframes", "audio", "video", "finalcut"):
         state["stages"][s].update(status="generating")
     state["render_id"] = render_id
+    state["render_phase"] = "full"
     _canvas_save(run_id, state)
     return jsonify({"render_id": render_id, "quality": quality,
                     "canvas": canvas_run.public_state(state)})
@@ -2066,6 +2120,11 @@ def _execute_preview(run_id: str, data: dict, run_dir: Path):
     def _finish(status: str):
         with _runs_lock:
             _runs[run_id]["status"] = status
+        try:
+            from agents import run_store
+            run_store.save(run_id, status=status)   # persist so /rendered sees 'done'
+        except Exception:
+            pass
 
     try:
         _preview_inner(run_id, data, run_dir)

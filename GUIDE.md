@@ -258,6 +258,11 @@ A **stage-gated board** that builds your reel one approved step at a time —
   can't do); **Reference** — AI keeps the person's *likeness* across shots (🔴,
   consent-gated); **Scene** — a mood/look reference for a no-person shot (🟡). The
   badge and cost update live, and downstream stages reset so nothing stale ships.
+- **Generate Key Frames first (cheap), then Video.** Click **Generate** on the
+  *Key Frames* stage to render just the still images — review them, **↻ re-roll** any
+  weak one, edit prompts — *before* spending on the expensive video. When you Generate
+  the *Video* stage, it **reuses those approved stills** (no re-charge). This is the
+  fix for the competitor's "one click drains your wallet."
 - **Render the reel** with the **🎬 Render reel** button (top bar). Each shot's clip
   appears on its card as it finishes, then the full reel plays in a panel below the
   board with a download link. The render reuses the same proven pipeline as the other
