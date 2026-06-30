@@ -274,12 +274,48 @@ def api_studio_plan():
 # — it never re-implements cost, routing or rendering (the bright line). Canvas
 # state lives inside the run payload (run_store), so there is no parallel store.
 
+# Render threads are in-memory + daemon, so they DON'T survive a process restart.
+# A stage left at "generating" by a killed/orphaned thread would otherwise hang the
+# board forever (the UI shows a shimmer with no Generate button, polling /rendered
+# endlessly). We track the renders THIS process is actually running; on load, any
+# "generating" stage whose render isn't live here is treated as orphaned and reset to
+# "pending" so the operator can simply re-trigger (the content-hash cache reuses any
+# stills that DID finish, so re-generating only fills the gaps — no re-spend).
+_ACTIVE_RENDERS: set[str] = set()
+
+
+def _track_render(render_id: str, target, *args):
+    """Spawn a canvas render thread and mark it live for the duration (orphan recovery)."""
+    _ACTIVE_RENDERS.add(render_id)
+
+    def _runner():
+        try:
+            target(*args)
+        finally:
+            _ACTIVE_RENDERS.discard(render_id)
+
+    threading.Thread(target=_runner, daemon=True).start()
+
+
 def _canvas_load(run_id: str) -> dict | None:
     from agents import run_store
     stored = run_store.load(run_id)
     if not stored:
         return None
-    return (stored.get("payload") or {}).get("canvas")
+    state = (stored.get("payload") or {}).get("canvas")
+    if state:
+        rid = state.get("render_id")
+        if rid not in _ACTIVE_RENDERS:                       # not running in THIS process
+            recovered = False
+            for name, st in (state.get("stages") or {}).items():
+                if st.get("status") == "generating":
+                    st["status"] = "pending"                 # orphaned → re-triggerable
+                    recovered = True
+            if recovered:
+                print(f"[Canvas] {run_id}: reset orphaned 'generating' stage(s) "
+                      f"(render {rid} not live here) → re-triggerable")
+                _canvas_save(run_id, state)
+    return state
 
 
 def _canvas_save(run_id: str, state: dict) -> None:
@@ -582,7 +618,7 @@ def api_canvas_keyframes(run_id: str, operator: str):
         run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
     except Exception as e:
         print(f"[RunStore] canvas keyframes save skipped ({e})")
-    threading.Thread(target=_execute_preview, args=(render_id, data, run_dir), daemon=True).start()
+    _track_render(render_id, _execute_preview, render_id, data, run_dir)
     state["render_phase"] = "keyframes"
     state["stages"]["keyframes"].update(status="generating")
     _canvas_save(run_id, state)
@@ -905,7 +941,7 @@ def api_canvas_video(run_id: str, operator: str):
         run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
     except Exception as e:
         print(f"[RunStore] canvas video save skipped ({e})")
-    threading.Thread(target=_execute_pipeline, args=(render_id, data, run_dir), daemon=True).start()
+    _track_render(render_id, _execute_pipeline, render_id, data, run_dir)
     state["render_id"] = render_id
     state["render_phase"] = "video"
     state["stages"]["video"].update(status="generating")
@@ -972,7 +1008,7 @@ def api_canvas_render(run_id: str, operator: str):
         run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
     except Exception as e:
         print(f"[RunStore] canvas render save skipped ({e})")
-    threading.Thread(target=_canvas_render_thread, args=(render_id, data, run_dir), daemon=True).start()
+    _track_render(render_id, _canvas_render_thread, render_id, data, run_dir)
 
     for s in ("audio", "finalcut"):      # keyframes + video stay approved
         state["stages"][s].update(status="generating")
