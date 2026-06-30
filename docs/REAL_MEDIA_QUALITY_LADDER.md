@@ -85,13 +85,13 @@ synthetic output looks more *polished*. The Quality Ladder attacks exactly that 
 (makes our *real* reels cinematic); the Characters stage only matches a feature that
 doesn't change the axis. So moat-deepening out-ranks most parity work.
 
-| # | Item | Axis | Threatens moat? | Effort |
-|---|---|---|:--:|:--:|
-| **1** | **Restore** (ladder 1a) — denoise/stabilize/upscale/grade real footage | Moat | No | S |
-| **2** | **Upfront cost + balance** display (surface `pricing.estimate`) | Parity | No | S |
-| **3** | **Re-create "ambient"** (ladder 1b) — cinematic scene/B-roll *inspired from real*, no face | Moat | No | M |
-| **4** | **Characters/Assets stage** — real-identity from real photos, consent-gated (their stage 2, our way) | Parity | No | M |
-| **5** | **Re-create person** (1c) + **Fidelity selector + auto-suggest** (1d) | Moat | No (consent-gated) | M |
+| # | Item | Axis | Threatens moat? | Effort | Status |
+|---|---|---|:--:|:--:|:--:|
+| **1** | **Restore** (ladder 1a) — denoise/stabilize/upscale/grade real footage | Moat | No | S | ✅ shipped |
+| **2** | **Upfront cost + balance** display (surface `pricing.estimate`) | Parity | No | S | ✅ shipped |
+| **3** | **Re-create "ambient"** (ladder 1b) — cinematic scene/B-roll *inspired from real*, no face | Moat | No | M | ✅ shipped (opt-in, 3-guard identity safety) |
+| **4** | **Characters/Assets stage** — real-identity from real photos, consent-gated (their stage 2, our way) | Parity | No | M | ✅ shipped (cast detect → ref+consent → shot anchoring) |
+| **5** | **Re-create person** (1c) + **Fidelity selector + auto-suggest** (1d) | Moat | No (consent-gated) | M | next |
 | **6** | **Storyboard art** (pencil board) | Parity | No | M |
 | **7** | **Agent Room** (multi-agent discussion) | Parity | No | L — last |
 | — | **(ongoing)** continuity P2 motion-chaining; polish; cloud scale | — | No | — |

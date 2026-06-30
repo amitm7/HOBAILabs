@@ -504,6 +504,53 @@
     } catch (e) { err(e.message); btn.disabled = false; }
   });
 
+  // Characters stage: surface the real people in the story; anchor each to a real photo.
+  function renderCharacters(chars) {
+    const el = $("characters");
+    if (!chars || !chars.length) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<h4>👥 People in this story — anchor each to a real photo (consent needed for AI likeness)</h4>`
+      + chars.map((c) => `
+        <div class="cv-char" data-char="${c.id}">
+          <span class="nm">${escapeHtml(c.label || c.id)}</span>
+          ${c.ref_path ? `<img src="${mediaUrl(c.ref_path)}" alt="">` : `<span class="muted">no photo</span>`}
+          <label class="attach-btn">📎 Real photo<input type="file" accept="image/*" data-char="${c.id}" hidden></label>
+          <label><input type="checkbox" class="consent" data-char="${c.id}" ${c.consent ? "checked" : ""}> consent for AI likeness</label>
+        </div>`).join("");
+  }
+  $("chars-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/characters`, {});
+      renderCharacters((d.canvas && d.canvas.characters) || d.characters || []);
+    } catch (e) { err(e.message); }
+  });
+  $("characters").addEventListener("change", async (ev) => {
+    const file = ev.target.closest('input[type="file"][data-char]');
+    const consent = ev.target.closest("input.consent");
+    if (file && file.files[0]) {
+      const cid = file.getAttribute("data-char");
+      try {
+        const fd = new FormData();
+        fd.append("photo", file.files[0]); fd.append("session_id", runId); fd.append("frame_id", "char_" + cid);
+        const up = await fetch("/upload-photo", { method: "POST", body: fd }).then((r) => r.json());
+        if (up.tmp_path) {
+          const d = await api(`/api/canvas/${runId}/character`, { char_id: cid, ref_path: up.tmp_path });
+          renderCharacters(d.canvas.characters); render(d.canvas);
+        } else { err(up.error || "upload failed"); }
+      } catch (e) { err(e.message); }
+      return;
+    }
+    if (consent) {
+      const cid = consent.getAttribute("data-char");
+      try {
+        const d = await api(`/api/canvas/${runId}/character`, { char_id: cid, consent: consent.checked });
+        renderCharacters(d.canvas.characters); render(d.canvas);
+      } catch (e) { err(e.message); }
+    }
+  });
+
   // Character-level: attach a real photo of the person to every people-shot.
   $("char-photo").addEventListener("change", (ev) => {
     const file = ev.target.files[0];

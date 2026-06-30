@@ -273,6 +273,13 @@ A **stage-gated board** that builds your reel one approved step at a time —
   can't do); **Reference** — AI keeps the person's *likeness* across shots (🔴,
   consent-gated); **Scene** — a mood/look reference for a no-person shot (🟡). The
   badge and cost update live, and downstream stages reset so nothing stale ships.
+- **Cast your characters (real people, kept consistent).** Click **👥 Characters** — the
+  board reads the story and lists the *real people* in it (e.g. *Narrator*, *Father*).
+  For each, attach **one real reference photo** and tick **consent**; every shot where
+  that person speaks is then anchored to *their* face — so the same person looks like the
+  same person across the whole reel, from real footage you supplied (not an invented
+  lookalike). A character with no reference just stays generic. This is the moat for
+  multi-person stories: real identity, consent-gated, consistent.
 - **Approve each stage: Key Frames → Video → Final Cut.** Click **Generate** on the
   *Key Frames* stage to render just the still images — review them, **↻ re-roll** any
   weak one, edit prompts — *before* spending on the expensive video. When you Generate

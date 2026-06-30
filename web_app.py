@@ -700,6 +700,44 @@ def api_canvas_restore(run_id: str, operator: str):
                     "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/characters", methods=["POST"])
+@auth.require_operator()
+def api_canvas_characters(run_id: str, operator: str):
+    """Characters/Assets stage: surface the REAL people in the story (cast detection),
+    so the operator can anchor each to a real photo + consent. Our moat-respecting take
+    on galleri5's synthetic character sheets."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    chars = canvas_run.derive_characters(state)
+    _canvas_save(run_id, state)
+    return jsonify({"characters": chars, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/character", methods=["POST"])
+@auth.require_operator()
+def api_canvas_set_character(run_id: str, operator: str):
+    """Anchor a character to a real reference photo (+ consent) and link it to that
+    character's shots. The ref is uploaded via /upload-photo or a browseable path."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    char_id = body.get("char_id", "")
+    ref_path = (body.get("ref_path") or "").strip()
+    if ref_path and not _path_allowed(ref_path):
+        return jsonify({"error": "Reference path not allowed"}), 400
+    try:
+        state = canvas_run.set_character(state, char_id, ref_path=ref_path,
+                                         consent=body.get("consent"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/match-photos", methods=["POST"])
 @auth.require_operator()
 def api_canvas_match_photos(run_id: str, operator: str):

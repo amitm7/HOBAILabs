@@ -371,6 +371,51 @@ def invalidate_from(state: dict, stage: str) -> dict:
     return state
 
 
+def derive_characters(state: dict) -> list[dict]:
+    """Characters/Assets stage (our moat-respecting take on galleri5's stage 2): run
+    cast detection to surface the REAL people in the story, so the operator can anchor
+    each to their real photo + consent — instead of inventing synthetic character sheets.
+    Tags frames with speaker_id; merges any refs/consent already set."""
+    from agents import cast
+    try:
+        members = cast.detect_cast(state["frames"])     # also tags frames[].speaker_id
+    except Exception as e:
+        print(f"[Canvas] cast detection degraded ({e})")
+        members = [{"id": "narrator", "label": "Narrator", "gender": "", "age_bracket": ""}]
+    existing = {c["id"]: c for c in state.get("characters", [])}
+    chars = []
+    for m in members:
+        prev = existing.get(m["id"], {})
+        chars.append({**m, "ref_path": prev.get("ref_path", ""),
+                      "consent": bool(prev.get("consent", False))})
+    state["characters"] = chars
+    return chars
+
+
+def set_character(state: dict, char_id: str, *, ref_path: str = "",
+                  consent: bool | None = None) -> dict:
+    """Anchor a character to a real reference photo (+ consent) and link it to that
+    character's shots so their identity stays consistent — the real face, conditioned."""
+    char = next((c for c in state.get("characters", []) if c["id"] == char_id), None)
+    if char is None:
+        raise ValueError("unknown character")
+    if ref_path:
+        char["ref_path"] = ref_path
+    if consent is not None:
+        char["consent"] = bool(consent)
+    ref = char.get("ref_path", "")
+    if ref:
+        for f in state["frames"]:
+            if f.get("speaker_id") == char_id:
+                f["character_ref_path"] = ref
+                if not (f.get("photo_spec") or "").startswith("ai_") and not f.get("visual_path"):
+                    f["photo_spec"] = "ai_portrait"   # AI likeness, conditioned on the real face
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        invalidate_from(state, "keyframes")
+    state["board"] = board_cards(state["frames"])
+    return state
+
+
 def public_state(state: dict) -> dict:
     """The board view sent to the client — costs, stage statuses, board cards and
     the asset legend. (Frames carry internal keys; the board is the view model.)"""
@@ -393,6 +438,7 @@ def public_state(state: dict) -> dict:
         "restoring": bool(state.get("restoring", False)),
         "restore_done": state.get("restore_done", 0),
         "restore_total": state.get("restore_total", 0),
+        "characters": state.get("characters", []),
     }
 
 

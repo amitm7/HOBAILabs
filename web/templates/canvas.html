@@ -69,6 +69,12 @@
   .cv-audio select { font:inherit; font-size:13px; padding:6px 8px; border:1px solid #e5e7eb; border-radius:8px; }
   .cv-assets { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;
     padding:10px 12px; border:1px dashed #d1d5db; border-radius:10px; font-size:13px; background:#fff; }
+  .cv-chars { margin-bottom:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; }
+  .cv-chars h4 { margin:0 0 8px; font-size:13px; }
+  .cv-char { display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid #f3f4f6; font-size:13px; }
+  .cv-char .nm { font-weight:600; min-width:120px; }
+  .cv-char img { width:34px; height:34px; object-fit:cover; border-radius:6px; }
+  .cv-char label { font-size:12px; color:#6b7280; display:flex; align-items:center; gap:4px; }
   .cv-assets select, .cv-card .attach select { font:inherit; font-size:12px; padding:5px 7px;
     border:1px solid #e5e7eb; border-radius:7px; }
   .attach-btn { display:inline-block; cursor:pointer; font-size:12px; font-weight:600;
@@ -193,8 +199,11 @@
       style="flex:1;min-width:180px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:8px;font:inherit;font-size:12px">
     <button id="match-btn" class="attach-btn">🖼 Use my photos (auto-match)</button>
     <button id="restore-btn" class="attach-btn" title="Non-generative cleanup of your real footage — upscale, denoise, stabilize, grade. Keeps it 100% real.">✨ Enhance real footage</button>
+    <button id="chars-btn" class="attach-btn" title="Find the real people in the story and anchor each to their real photo + consent">👥 Characters</button>
     <span class="muted" id="match-hint"></span>
   </div>
+
+  <div id="characters" class="cv-chars" hidden></div>
 
   <div id="rail" class="cv-rail"></div>
 
