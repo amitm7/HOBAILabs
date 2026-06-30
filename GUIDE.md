@@ -258,6 +258,14 @@ A **stage-gated board** that builds your reel one approved step at a time —
   can't do); **Reference** — AI keeps the person's *likeness* across shots (🔴,
   consent-gated); **Scene** — a mood/look reference for a no-person shot (🟡). The
   badge and cost update live, and downstream stages reset so nothing stale ships.
+- **Render the reel** with the **🎬 Render reel** button (top bar). Each shot's clip
+  appears on its card as it finishes, then the full reel plays in a panel below the
+  board with a download link. The render reuses the same proven pipeline as the other
+  modes, so models, costs, and safety/spend gates are identical. Stage cards show a
+  rough **ETA** (~Nm) and a shimmer while generating.
+- **Re-roll a shot** — hover a card and click **↻** to regenerate just that one shot
+  (new still + clip) without re-rendering the whole reel — the quick fix for a single
+  off shot.
 - It runs on the **same engine** as Story/Studio/Brand — same models, same costs,
   same safety and spend gates — just surfaced as a board you drive stage by stage.
 

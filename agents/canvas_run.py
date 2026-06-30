@@ -121,6 +121,21 @@ def stage_costs(frames: list[dict], *, quality: str = "dev",
 
 # ── Board cards (storyboard view data) ─────────────────────────────────────────
 
+def stage_etas(frames: list[dict], *, quality: str = "dev") -> dict:
+    """Rough wall-clock estimate per stage (seconds) for the '~Nm' hint. Scales with
+    shot count + tier; deliberately coarse — it's a hint, not a promise."""
+    n = max(1, len(frames))
+    prod = quality != "dev"
+    return {
+        "script":     0,
+        "storyboard": n * 4,
+        "keyframes":  n * (16 if prod else 8),
+        "audio":      n * 3,
+        "video":      n * (70 if prod else 35),
+        "finalcut":   20,
+    }
+
+
 def board_cards(frames: list[dict]) -> list[dict]:
     """Per-shot board data the UI renders as storyboard cards: shot grammar, the
     motion arrow, the emotion/beat, the (editable) generation prompt, and the
@@ -345,13 +360,15 @@ def invalidate_from(state: dict, stage: str) -> dict:
 def public_state(state: dict) -> dict:
     """The board view sent to the client — costs, stage statuses, board cards and
     the asset legend. (Frames carry internal keys; the board is the view model.)"""
+    etas = stage_etas(state.get("frames", []), quality=state.get("quality", "dev"))
     return {
         "brief": state.get("brief", ""),
         "scope": state.get("scope", "general"),
         "quality": state.get("quality", "dev"),
         "stages": [
             {"id": s, **STAGE_META[s], **state["stages"][s],
-             "cost_usd": state.get("costs", {}).get(s, 0.0)}
+             "cost_usd": state.get("costs", {}).get(s, 0.0),
+             "eta_sec": etas.get(s, 0)}
             for s in STAGES
         ],
         "board": state.get("board", []),

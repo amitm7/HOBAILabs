@@ -646,6 +646,10 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/frame` | POST (operator) | Edit one shot's text/prompt from the board (`canvas_run.edit_frame`: caption/director_note/motion/negative/image_prompt); cascade-invalidates downstream |
 | `/api/canvas/<run_id>/chat` | POST (operator) | Natural-language command box (`canvas_run.chat`): refine + re-plan shots via `shot_planner` (reuses the brain); resets downstream |
 | `/api/canvas/<run_id>/asset` | POST (operator) | Attach an uploaded image to shot(s) (`canvas_run.attach_asset`): **real** (non-AI `photo_spec` → `model_router` PASSTHROUGH, the moat), **reference** (real face → AI likeness, kept `ai_portrait`+`character_ref_path`), or **scene**. `all_talent` applies to every people-shot. Path validated via `_path_allowed`; image first uploaded through `/upload-photo` |
+| `/api/canvas/<run_id>/render` | POST (operator) | Render the board into a reel by dispatching `_execute_pipeline` (the proven engine); same governance gates as `/run`. Progress on `/progress/<render_id>`; per-shot clips via `clip_ready` |
+| `/api/canvas/<run_id>/rendered` | POST (operator) | Per-shot rendered media read from the render dir (survives reloads) + reconciles paid stage statuses to the render's real status (so the rail can't stick on 'generating') |
+| `/api/canvas/<run_id>/reroll` | POST (operator) | Re-roll ONE shot: regenerate its still (`_generate_stills` force) + clip (`build_clips`), write into the render dir. Single-frame spend gate. Same path as `/redo-still`+`/redo-motion` |
+| `/api/canvas/list` | GET | Recent saved canvases (`run_store.list_canvases`) for the resume picker |
 | `/parse-script` | POST | `parse_frame_script` → frame cards + cast + suggestion chips |
 | `/suggest-frame` | POST | Vision-grounded per-frame suggestion (`suggest_from_image`) → best camera + director note; validates the still path, cached, no-op on failure |
 | `/preview` , `/preview-result/<run_id>` | POST/GET | Generate stills only (fast iteration); brand-safe critique if `is_brand` |
@@ -668,7 +672,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). |
 | `/login` , `/logout` , `/me` | POST / POST / GET | Operator auth (Gap #1): `authenticate()` → HS256 JWT in an httpOnly cookie; `/me` reports the current operator. Seed operators with `python -m agents.auth add-operator`. |
 
-**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, `/api/canvas/<id>/{advance,approve,frame,chat,asset}`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
+**Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, `/api/canvas/<id>/{advance,approve,frame,chat,asset,render,rendered,reroll}`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
 
 **Storage (Gap #2).** `agents/db.py` selects SQLite (default) or Postgres from `HOB_DB_URL`; new stores (`auth`) route through it dialect-neutrally. The legacy per-store SQLite bridges migrate onto it for the RDS cutover (SCALE_PLAN Phase 2).
 

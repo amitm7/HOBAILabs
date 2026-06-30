@@ -32,14 +32,22 @@
       <path class="arrow" d="${d}"/></svg>`;
   }
 
+  function fmtEta(sec) {
+    if (!sec || sec < 1) return "";
+    return sec < 90 ? `~${Math.round(sec)}s` : `~${Math.round(sec / 60)}m`;
+  }
+
   function renderRail(stages) {
     $("rail").innerHTML = stages.map((s) => {
       const free = !s.paid;
+      const eta = s.paid ? fmtEta(s.eta_sec) : "";
       const costLine = free
         ? `<div class="cost free">Free</div>`
-        : `<div class="cost">${usd(s.cost_usd)}</div>`;
+        : `<div class="cost">${usd(s.cost_usd)}${eta ? ` · <span class="eta">${eta}</span>` : ""}</div>`;
       let btn = "";
-      if (s.status === "done") {
+      if (s.status === "generating") {
+        btn = `<button disabled>Generating…</button>`;
+      } else if (s.status === "done") {
         btn = `<button class="appr" data-approve="${s.id}">Approve ✓</button>`;
       } else if (s.status === "approved") {
         btn = `<button disabled>Approved ✓</button>`;
@@ -49,7 +57,7 @@
       } else {
         btn = `<button disabled>Locked</button>`;
       }
-      return `<div class="cv-stage">
+      return `<div class="cv-stage${s.status === "generating" ? " shimmer" : ""}">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <h3>${s.label}</h3>
           <span class="cv-badge st-${s.status}">${s.status}</span>
@@ -94,6 +102,7 @@
           <span class="kindbadge kb-${c.asset_kind}">${
             c.asset_kind === "real" ? "REAL" : c.asset_kind === "ai_person" ? "AI FACE" : "AI"
           }</span>
+          <button class="reroll" data-frame="${fid}" title="Re-roll this shot (new still + clip)">↻</button>
           ${frameInner}
         </div>
         <div class="meta">
@@ -157,11 +166,42 @@
     renderRail(canvas.stages);
     renderBoard(canvas.board);
     $("render-btn").hidden = !canvas.board || canvas.board.length === 0;
-    // Reconnect to an in-flight / finished render on resume.
-    if (canvas.render_id && !renderStream) openRenderStream(canvas.render_id);
+    if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
   }
 
-  // ── Full render (dispatches the proven pipeline; streams per-shot clips) ──────
+  // ── Per-shot render reveal ───────────────────────────────────────────────────
+  function showClipOnCard(fid, src) {
+    const frame = document.querySelector(`.cv-card[data-frame="${fid}"] .frame`);
+    if (!frame) return;
+    frame.classList.add("has-img");
+    // Replace prior media/placeholder but KEEP the overlays (grammar, badge, re-roll).
+    frame.querySelectorAll("video.clip, img.thumb, svg, .refchip").forEach((el) => el.remove());
+    const v = document.createElement("video");
+    v.className = "clip"; v.src = src;
+    v.muted = true; v.autoplay = true; v.loop = true; v.playsInline = true;
+    frame.insertBefore(v, frame.firstChild);   // base layer; absolute overlays sit on top
+  }
+  function showFinalVideo(url, rid) {
+    $("render-panel").hidden = false;
+    const v = $("render-video"), dl = $("render-dl");
+    v.src = url; v.hidden = false;
+    dl.href = "/download/" + (rid || url.split("/").pop()); dl.hidden = false;
+    $("render-status").textContent = "done ✓";
+  }
+
+  // Rebuild the reveal from disk (survives reloads); reconnect SSE if still running.
+  async function syncRendered() {
+    if (!runId) return;
+    try {
+      const d = await api(`/api/canvas/${runId}/rendered`, {});   // POST: also syncs stage chips
+      if (d.canvas) renderRail(d.canvas.stages);                  // unstick 'generating'
+      Object.entries(d.frames || {}).forEach(([fid, path]) => showClipOnCard(fid, mediaUrl(path)));
+      if (d.output_url) showFinalVideo(d.output_url, d.render_id);
+      if (d.render_status === "running" && d.render_id && !renderStream) openRenderStream(d.render_id);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ── Live render stream (per-shot clips arrive as they finish) ────────────────
   let renderStream = null;
   function openRenderStream(rid) {
     $("render-panel").hidden = false;
@@ -171,21 +211,11 @@
     renderStream.onmessage = (ev) => {
       let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
       if (d.line) { log.textContent += d.line + "\n"; log.scrollTop = log.scrollHeight; }
-      if (d.type === "clip_ready" && d.frame_id && d.url) {
-        const frame = document.querySelector(`.cv-card[data-frame="${d.frame_id}"] .frame`);
-        if (frame) {
-          frame.classList.add("has-img");
-          frame.innerHTML = `<video class="clip" src="${d.url}" muted autoplay loop playsinline></video>`;
-        }
-      }
+      if (d.type === "clip_ready" && d.frame_id && d.url) showClipOnCard(d.frame_id, d.url);
       if (d.done) {
         renderStream.close(); renderStream = null;
-        $("render-status").textContent = d.status === "done" ? "done ✓" : "error";
-        if (d.status === "done") {
-          const v = $("render-video"), dl = $("render-dl");
-          v.src = `/output/${rid}`; v.hidden = false;
-          dl.href = `/download/${rid}`; dl.hidden = false;
-        }
+        if (d.status === "done") showFinalVideo(`/output/${rid}`, rid);
+        else $("render-status").textContent = "error";
       }
     };
     renderStream.onerror = () => { /* SSE auto-retries; ignore transient */ };
@@ -285,6 +315,29 @@
     const id = fromUrl || last;
     if (id) loadCanvas(id);
   })();
+
+  // Re-roll one shot — regenerate its still + clip (~1–2 min; reuses the pipeline).
+  async function rerollShot(fid, btn) {
+    if (!runId) return;
+    err("");
+    const frame = btn.closest(".frame");
+    if (frame) frame.classList.add("shimmer");
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const d = await api(`/api/canvas/${runId}/reroll`, { frame_id: fid });
+      if (d.clip_path) showClipOnCard(fid, mediaUrl(d.clip_path) + "&t=" + Date.now());
+    } catch (e) { err("Re-roll failed: " + e.message); }
+    finally {
+      if (frame) frame.classList.remove("shimmer");
+      btn.disabled = false; btn.textContent = "↻";
+    }
+  }
+
+  // Delegated re-roll click.
+  $("board").addEventListener("click", (ev) => {
+    const rb = ev.target.closest(".reroll");
+    if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); }
+  });
 
   // Delegated change handler: per-card image upload, or an edited text field.
   $("board").addEventListener("change", (ev) => {

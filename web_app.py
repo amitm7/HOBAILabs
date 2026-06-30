@@ -316,6 +316,45 @@ def api_canvas_list():
     return jsonify({"canvases": run_store.list_canvases()})
 
 
+@app.route("/api/canvas/<run_id>/rendered", methods=["POST"])
+@auth.require_operator()
+def api_canvas_rendered(run_id: str, operator: str):
+    """Per-shot rendered media for a canvas's render, read from disk so it survives
+    reloads (the live SSE clip_ready reveal only works during the render itself).
+    Also syncs the paid stage statuses to the render's ACTUAL status (running →
+    generating, done → done) so the rail can't get stuck on 'generating'."""
+    from agents import canvas_run, run_store
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    rid = state.get("render_id", "")
+    frames, output_url, status = {}, "", ""
+    if rid:
+        rdir = RUNS_DIR / rid
+        for f in state.get("frames", []):
+            fid = f.get("frame_id")
+            clip = rdir / f"clip_{fid}.mp4"
+            if clip.exists():
+                frames[fid] = str(clip)          # served via /media (path-confined)
+        meta = run_store.load(rid) or {}
+        status = meta.get("status", "")
+        op = meta.get("output_path", "")
+        if op and os.path.exists(op):
+            output_url = f"/output/{rid}"
+        # Reconcile the paid stage chips with the real render status.
+        new_status = {"running": "generating", "done": "done"}.get(status)
+        if new_status:
+            changed = False
+            for s in ("keyframes", "audio", "video", "finalcut"):
+                if state["stages"][s].get("status") != new_status:
+                    state["stages"][s]["status"] = new_status
+                    changed = True
+            if changed:
+                _canvas_save(run_id, state)
+    return jsonify({"render_id": rid, "frames": frames, "output_url": output_url,
+                    "render_status": status, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/state")
 def api_canvas_state(run_id: str):
     from agents import canvas_run
@@ -484,6 +523,81 @@ def api_canvas_render(run_id: str, operator: str):
     _canvas_save(run_id, state)
     return jsonify({"render_id": render_id, "quality": quality,
                     "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/reroll", methods=["POST"])
+@auth.require_operator()
+def api_canvas_reroll(run_id: str, operator: str):
+    """Re-roll ONE shot — regenerate its still + clip without re-running the whole
+    render. Reuses _generate_stills (force) + clip_builder.build_clips (same path as
+    /redo-still + /redo-motion), writing the new clip into the render dir so the
+    board reveal picks it up. Single-frame spend gate so it can't blow the cap."""
+    from agents import canvas_run, governance, model_router
+    from agents.clip_builder import build_clips
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    frame_payload = next((f for f in state.get("frames", []) if f.get("frame_id") == fid), None)
+    if not frame_payload:
+        return jsonify({"error": "Unknown shot"}), 400
+
+    rid = state.get("render_id") or str(uuid.uuid4())
+    state["render_id"] = rid
+    quality = state.get("quality", "prod")
+    max_frame_dur = 5.0 if quality == "dev" else 9.0
+    run_dir = RUNS_DIR / rid
+    run_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = str(run_dir / "assets")
+    one_data = {"mode": "story", "quality": quality, "frames": [frame_payload],
+                "orientation": "portrait", "video_model": "auto", "image_model": "auto",
+                "mood": state.get("mood", ""), "session_id": rid, "operator_id": operator,
+                "likeness_consent": {"face": True, "voice": True}}
+    spend_missing = governance.reserve_spend(one_data, _estimate_payload_cost(one_data), run_id=rid)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+
+    try:
+        # 1. Fresh still — clear visual_path for AI specs so it regenerates a NEW image.
+        _ps = (frame_payload.get("photo_spec") or "").strip()
+        clear_vp = _ps.startswith("ai_") or not _ps
+        fb = {**frame_payload, "visual_path": "" if clear_vp else frame_payload.get("visual_path", "")}
+        frames = _build_frames_from_payload({**one_data, "frames": [fb], "assets_dir": ""}, max_frame_dur)
+        frames = _generate_stills(frames, assets_dir, "", "", state.get("mood", ""),
+                                  cost_tier=("draft" if quality == "dev" else "premium"),
+                                  force_regen_ids={fid})
+        frame = frames[0]
+        # 2. Rebuild the clip from the new still (same as /redo-motion).
+        width, height = 1080, 1920
+        tier = model_router.cost_tier_from_quality(quality)
+        model_id = model_router.select_model("video", frame, tier,
+                                             override=frame.get("video_model_override", ""))
+        assignment = {"segment_id": frame["frame_id"], "actual_duration": frame["duration"],
+                      "media_path": frame["visual_path"], "text": frame.get("caption", ""),
+                      "motion_prompt": frame.get("motion_override") or frame.get("scene", {}).get("motion_prompt", ""),
+                      "video_start_sec": frame.get("video_start_sec", 0.0), "model_id": model_id}
+        clip_temp = tempfile.mkdtemp(prefix="hob_canvas_reroll_")
+        try:
+            clips = build_clips([assignment], clip_temp, width, height, 30,
+                                force_5s=(quality == "dev"),
+                                kling_mode="pro", provider="kling")
+            dst = str(run_dir / f"clip_{fid}.mp4")
+            shutil.copy2(clips[0]["clip_path"], dst)
+        finally:
+            shutil.rmtree(clip_temp, ignore_errors=True)
+        governance.release_reservation(one_data, run_id=rid, reason="canvas_reroll_done")
+        governance.record_cost_event(governance.project_key(one_data), item="canvas_reroll",
+                                     usd=_estimate_payload_cost(one_data), run_id=rid, event_type="estimate")
+        _canvas_save(run_id, state)
+        return jsonify({"frame_id": fid, "clip_path": dst})
+    except Exception as e:
+        try:
+            governance.release_reservation(one_data, run_id=rid, reason="canvas_reroll_failed")
+        except Exception:
+            pass
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/canvas/<run_id>/chat", methods=["POST"])

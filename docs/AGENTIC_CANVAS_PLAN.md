@@ -70,6 +70,36 @@ Final Cut) currently show server-truth cost + spend gate; **next:** wire their
 execution to the existing `_execute_pipeline` (reuse, never re-implement), add SSE
 `stage_done` events, per-stage spend reservation, and the storyboard art renderer.
 
+## 0.6 NEXT ACTIONS (sequenced — "move together", updated after render landed)
+
+**Closed this milestone:** finished render (was the #1 gap) — `/api/canvas/<id>/render`
+reuses `_execute_pipeline`; produced a verified 30s prod reel ($1.60, distinct shots,
+3-speaker VO). Output quality now on par. The two biggest competitor gaps are addressed.
+
+**Shipped (this session, on branch):** ✅ full render wiring (`/render` → `_execute_pipeline`,
+verified prod reel) · ✅ **#1 per-card live reveal** (`/rendered`: clips on cards, persists on
+reload, overlays kept, stage-status reconciled — no more stuck 'generating') · ✅ **#3 per-shot
+re-roll** (`/reroll`: new still+clip for one shot, verified replacing the phone-artifact with a
+better shot) · ✅ **#4 ETA per stage ("~Nm") + shimmer loaders** · ✅ save/resume + recents picker.
+
+**Remaining gaps → ordered plan (each row = one shippable step):**
+
+| # | Action | Closes | Reuse / approach | Effort |
+|---|---|---|---|---|
+| 1 | **Per-card live reveal + keyframe-on-card** — show each shot's still/clip on its card as it renders (replace the ref-chip placeholder with the real generated still/clip). Browser-validate the `clip_ready` SSE wiring already built. | Kills "same image" perception for good; matches galleri5's per-shot reveal | existing `/progress` `clip_ready` events + run_dir stills | S–M |
+| 2 | **Per-stage render granularity** — let Key Frames / Video / Final Cut each render + gate independently (not one whole-pipeline dispatch). | #8 finished-render → fully on par (per-stage like galleri5) | the hard P1 checkpoint primitive (AGENTIC_CANVAS_PLAN §5a); reuse stage fns | L |
+| 3 | **Per-asset re-roll** — regenerate ONE shot's still/clip without re-running the stage (fixes one-off artifacts like the frame-5 phone). | their nicest small touch | reuse `/redo-still` + `/redo-motion` | S |
+| 4 | **ETA per stage (~Nm) + styled loaders** | the "~3m" gap + polish | timing from pricing/model + CSS | S |
+| 5 | **Storyboard comic-art render (optional)** — the pencil board page. | their best visual wow | reuse `image_generator` w/ board prompt | M |
+| 6 | **Assets stage as first-class** — character DNA sheets from REAL refs surfaced as a canvas stage. | their stage-2; our moat version | reuse Studio talent/identity library | M |
+| 7 | **Reference-chaining UI + Model Garden view + render Gallery** | parity breadth | `model_router`/`/models`, `run_store` | M |
+| 8 | **Agent Room** (multi-agent creative discussion) | flashy, low operator ROI | reuse `llm.py` tiers | L — last |
+
+**Parallel track (do alongside):** P1 **beat-aware cutting** ([[reel-continuity-quality-roadmap]])
+— a prettier board exposes a slideshow assembly otherwise. Highest output-quality ROI, $0 render.
+
+**Recommended order:** 1 → 3 → 4 (quick, high-perception wins) → 2 (the big one) → 5/6 → 7 → 8.
+
 ## 1. OBSERVE
 
 ### 1a. What galleri5 does (verified by live walkthrough)
