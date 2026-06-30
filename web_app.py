@@ -710,6 +710,78 @@ def api_canvas_recreate(run_id: str, operator: str):
     return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/upscale", methods=["POST"])
+@auth.require_operator()
+def api_canvas_upscale(run_id: str, operator: str):
+    """Generative upscale of ONE shot's still — the final-render quality lift. Routed by
+    asset kind so the moat holds: a REAL shot uses a FAITHFUL super-res (aura_sr, no
+    invented detail → a real face stays the real face); an AI shot uses a CREATIVE
+    upscaler (clarity, adds detail). Spend-gated per shot; cached output; degrades to the
+    original on any failure. Real images only (videos are skipped upstream)."""
+    from agents import canvas_run, governance, pricing, upscaler
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    frame = next((f for f in state.get("frames", []) if f.get("frame_id") == fid), None)
+    if not frame:
+        return jsonify({"error": "Unknown shot"}), 400
+    src = frame.get("visual_path") or ""
+    if not src or not os.path.isfile(src):
+        ps = frame.get("photo_spec") or ""
+        src = ps if (ps and not ps.startswith("ai_") and os.path.isfile(ps)) else ""
+    if not src:
+        return jsonify({"error": "Nothing to upscale yet — generate Key Frames "
+                                 "(or match a photo) on this shot first."}), 400
+    if os.path.splitext(src)[1].lower() not in upscaler.IMAGE_EXTS:
+        return jsonify({"error": "Only a still image can be upscaled (this shot is a video clip)."}), 400
+
+    kind = canvas_run.asset_kind(frame)
+    creative = kind != canvas_run.ASSET_REAL   # real → faithful (protect identity); AI → creative
+    # Skip real photos that are already high-res for a 9:16 reel (faithful super-res caps
+    # input at 3072px anyway — a 4000px phone photo doesn't need upscaling, it needs
+    # downscaling). No spend, friendly message.
+    if not creative:
+        from agents import restore
+        w, h = restore._probe_resolution(src)
+        if w and h and max(w, h) > 3072:
+            return jsonify({"frame_id": fid, "skipped": True,
+                            "message": f"Already high-res ({w}×{h}) — no upscale needed for a 9:16 reel.",
+                            "canvas": canvas_run.public_state(state)})
+    usd = pricing.upscale_cost(creative)
+    one = {"mode": "story", "quality": state.get("quality", "dev"),
+           "frames": [frame], "session_id": run_id, "operator_id": operator}
+    spend_missing = governance.reserve_spend(one, usd, run_id=run_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    try:
+        out_dir = str(RUNS_DIR / run_id / "upscaled")
+        newp = upscaler.upscale_file(src, out_dir, creative=creative)
+        if not newp or newp == src:
+            governance.release_reservation(one, run_id=run_id, reason="canvas_upscale_noop")
+            return jsonify({"error": "Upscale failed (model/endpoint) — left the shot unchanged.",
+                            "canvas": canvas_run.public_state(state)}), 502
+        frame.setdefault("orig_visual", src)
+        frame["visual_path"] = newp
+        if not str(frame.get("photo_spec") or "").startswith("ai_"):
+            frame["photo_spec"] = newp        # real shot: keep spec pointing at the upscaled file
+        frame["upscaled"] = True
+        governance.release_reservation(one, run_id=run_id, reason="canvas_upscale_done")
+        governance.record_cost_event(governance.project_key(one), item="canvas_upscale",
+                                     usd=usd, run_id=run_id, event_type="estimate")
+    except Exception as e:
+        try:
+            governance.release_reservation(one, run_id=run_id, reason="canvas_upscale_failed")
+        except Exception:
+            pass
+        return jsonify({"error": str(e)}), 500
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        canvas_run.invalidate_from(state, "keyframes")
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "creative": creative, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/restore", methods=["POST"])
 @auth.require_operator()
 def api_canvas_restore(run_id: str, operator: str):

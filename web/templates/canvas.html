@@ -132,8 +132,16 @@
     cursor:pointer; opacity:0; transition:opacity .15s; }
   .cv-card:hover .frame .recreate { opacity:1; }
   .cv-card .frame .recreate:hover { background:#2563eb; }
+  /* Upscale (shots with a still) — third icon button in the frame overlay */
+  .cv-card .frame .upscale { position:absolute; top:8px; left:68px; z-index:3; width:24px; height:24px;
+    border:0; border-radius:50%; background:#111827cc; color:#fff; font-size:13px; line-height:1;
+    cursor:pointer; opacity:0; transition:opacity .15s; }
+  .cv-card:hover .frame .upscale { opacity:1; }
+  .cv-card .frame .upscale:hover { background:#7c3aed; }
   .cv-card .frame .fromreal { position:absolute; bottom:8px; right:8px; z-index:2; font-size:9px; font-weight:700;
     background:#d97706cc; color:#fff; padding:2px 6px; border-radius:6px; }
+  .cv-card .frame .upbadge { position:absolute; bottom:8px; left:8px; z-index:2; font-size:9px; font-weight:700;
+    background:#7c3aedcc; color:#fff; padding:2px 6px; border-radius:6px; }
   /* Per-shot Replace row: source swap (real / AI-from-face / AI-generic / revert) */
   .cv-card .source { display:flex; gap:5px; align-items:center; margin-top:7px; flex-wrap:wrap; }
   .cv-card .source .lbl { font-size:11px; color:#6b7280; font-weight:600; }

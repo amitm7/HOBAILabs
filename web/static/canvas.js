@@ -145,9 +145,11 @@
           }</span>
           <button class="reroll" data-frame="${fid}" title="Re-roll this shot (new still + clip)">↻</button>
           ${c.can_recreate ? `<button class="recreate" data-frame="${fid}" title="Re-create this scene cinematically, inspired from your real footage — no person faked (ambient only)">🎬</button>` : ""}
+          ${c.can_upscale ? `<button class="upscale" data-frame="${fid}" title="Upscale this shot (final-render quality lift) — real shots use a faithful super-res that keeps the face exact; AI shots get a creative detail pass">⬆</button>` : ""}
           ${c.recreated ? `<span class="fromreal">AI · from real</span>`
             : c.ai_likeness ? `<span class="fromreal">AI · likeness</span>`
             : c.forced_ai ? `<span class="fromreal">AI</span>` : ""}
+          ${c.upscaled ? `<span class="upbadge">⬆ upscaled</span>` : ""}
           ${frameInner}
         </div>
         <div class="meta">
@@ -273,6 +275,26 @@
       $("match-hint").textContent = "↩ back to your real photo 🟢";
     } catch (e) { err(e.message); }
   }
+  // Generative upscale — final-render quality lift. Routed server-side (real→faithful,
+  // AI→creative) so a real face is never altered. Per-shot, spend-gated, ~10-40s.
+  async function upscaleShot(fid, btn) {
+    if (!runId) return;
+    err("");
+    const fr = btn && btn.closest(".frame");
+    if (fr) fr.classList.add("shimmer");
+    if (btn) { btn.disabled = true; btn.textContent = "…"; }
+    try {
+      const d = await api(`/api/canvas/${runId}/upscale`, { frame_id: fid });
+      render(d.canvas);
+      $("match-hint").textContent = d.skipped
+        ? (d.message || "Already high-res — no upscale needed.")
+        : d.creative
+          ? "✓ upscaled (creative detail pass)"
+          : "✓ upscaled (faithful — identity preserved 🟢)";
+    } catch (e) { err("Upscale: " + e.message); }
+    finally { if (fr) fr.classList.remove("shimmer"); if (btn) { btn.disabled = false; btn.textContent = "⬆"; } }
+  }
+
   // Per-shot photo picker — auto-match is never perfect on abstract beats, so let the
   // operator swap a shot to the RIGHT photo from their own folder in two clicks. The
   // folder list is fetched once and reused across all cards.
@@ -590,6 +612,8 @@
       const g = card.querySelector(".picker"); if (g) g.remove();
       return;
     }
+    const up = ev.target.closest(".upscale");
+    if (up) { ev.preventDefault(); upscaleShot(up.getAttribute("data-frame"), up); return; }
     const ag = ev.target.closest(".ai-gen");
     if (ag) { ev.preventDefault(); aiGeneric(ag.getAttribute("data-frame"), ag); return; }
     const rr = ev.target.closest(".revert-real");

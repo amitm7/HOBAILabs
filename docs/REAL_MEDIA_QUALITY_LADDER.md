@@ -77,6 +77,18 @@ real (rungs 0-1); give the world the cinematic lift (rung 3).
 - Cost-aware: Restore is cheap; Re-create costs image/video gen — shown in the per-stage
   cost gate we already have. Suggest itself is read-only (no spend).
 
+## 4b. Generative upscale ✅ shipped — moat-routed
+Per-shot **⬆ Upscale** (final-render quality lift), fal.ai via `agents/upscaler.py`, routed by
+asset kind so the moat is enforced in the routing itself:
+- **Real shot → `aura_sr` (faithful)** — super-resolution that does NOT invent detail, so a real
+  person's face stays exactly theirs. The ONLY upscaler a real shot may use.
+- **AI shot → `clarity_upscaler` (creative)** — adds/hallucinates detail; fine for synthetic
+  stills, never pointed at real footage.
+- Real photos already larger than the reel needs (>3072px) are **skipped** (no spend — they need
+  downscaling, not upscaling). Spend-gated, cached, degrades to the original on failure.
+- The two upscale models deliberately have **no cross-vendor fallback** (a real→creative fallback
+  would hallucinate a real face); they degrade to the SOURCE image instead.
+
 ## 5. Consolidated roadmap (single source of truth)
 Reconciles the OODA round-3 **parity-gap** list (catch up to galleri5) with this
 **moat-deepening** quality ladder (pull ahead). Two axes:

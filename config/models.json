@@ -69,6 +69,20 @@
       "strengths": ["landscape", "motion-physics", "wide"],
       "max_concurrent": 4, "pricing_key": "hailuo.generation_5s_usd",
       "aspect": ["9:16", "16:9", "1:1"]
+    },
+    "aura_sr": {
+      "kind": "upscale", "backend": "fal", "fal_endpoint": "fal-ai/aura-sr",
+      "tier": "premium", "upscale_mode": "faithful",
+      "strengths": ["faithful", "real-footage", "no-hallucination"],
+      "max_concurrent": 4, "pricing_key": "upscale.aura_sr_usd",
+      "_use": "REAL person/footage — does NOT invent detail, so a real face stays the real face (moat-safe)."
+    },
+    "clarity_upscaler": {
+      "kind": "upscale", "backend": "fal", "fal_endpoint": "fal-ai/clarity-upscaler",
+      "tier": "premium", "upscale_mode": "creative",
+      "strengths": ["creative", "ai-stills", "detail-add"],
+      "max_concurrent": 4, "pricing_key": "upscale.clarity_usd",
+      "_use": "AI stills / ambient B-roll — adds detail (hallucinates), NEVER route a real person here."
     }
   },
 

@@ -267,6 +267,12 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **opt-in per shot**, never automatic. For safety it **refuses any footage with a person
   in it** — your subjects stay real (use Enhance for those). Re-created scenes are clearly
   labelled **AI · from real**.
+- **Upscale a shot (⬆, final-render quality).** Hover a shot with a still and click **⬆** to
+  generatively upscale it. It's **routed for safety**: a **real** shot uses a *faithful*
+  super-resolution that sharpens without inventing detail — your subject's face stays exactly
+  theirs (🟢); an **AI** shot gets a *creative* detail pass. Photos that are already high-res
+  (bigger than the reel needs) are skipped automatically, so you never pay to "upscale" a photo
+  that's already sharp. Best used on your **final** picks, not every dev iteration.
 - **Fidelity per shot + ⚡ auto-suggest.** Every real shot has a **Fidelity** dropdown:
   **Real (untouched)** · **Restore (clean)** · **Re-create (cinematic)** — the three rungs in
   one place, per shot. Click **⚡ Suggest fidelity** and it assesses each real shot's quality

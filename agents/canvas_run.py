@@ -181,6 +181,11 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "ai_likeness":     bool(f.get("ai_likeness")),
             "forced_ai":       bool(f.get("forced_ai")),
             "can_revert_real": bool(f.get("orig_visual")) and kind != ASSET_REAL,
+            # Generative upscale (final-render quality lift): offered once the shot has a
+            # still image (a real photo, or a rendered AI still). Routed real→faithful,
+            # AI→creative by the route. `upscaled` shows the badge + hides the button.
+            "can_upscale":     _is_image(f.get("visual_path") or real_path) and not f.get("upscaled"),
+            "upscaled":        bool(f.get("upscaled")),
             "duration":   f.get("duration"),
         })
     return cards
@@ -330,6 +335,13 @@ def attach_asset(state: dict, *, path: str, mode: str = "reference",
     state["board"] = board_cards(state["frames"])
     state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
     return state
+
+
+_IMG_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+
+
+def _is_image(path: str) -> bool:
+    return bool(path) and str(path).lower().endswith(_IMG_SUFFIXES)
 
 
 def _real_source(frame: dict) -> str:

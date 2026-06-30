@@ -17,6 +17,12 @@
     "_note": "Per image generated or edited. seedream = cheap draft/test model; nano_banana = premium photoreal (verify on fal.ai)."
   },
 
+  "upscale": {
+    "aura_sr_usd": 0.02,
+    "clarity_usd": 0.05,
+    "_note": "Per still upscaled (final-render quality lift). aura_sr = faithful (real footage, no hallucination); clarity = creative (AI stills, adds detail). VERIFY both on fal.ai before the first paid run — fal endpoints + pricing shift monthly."
+  },
+
   "scene_intelligence": {
     "gpt_per_frame_usd": 0.01,
     "_note": "GPT-4.1 scene design per captioned frame. Cached after first run (then $0)."

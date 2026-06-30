@@ -64,6 +64,7 @@ CLIP-based scoring — these are on the roadmap (§9).
                                                                                 │ Video: Kling │
    External services (all optional/degradable):                                 │ Higgsfield   │
    · Image: fal.ai (Flux, Seedream, Nano Banana), OpenAI gpt-image              │ fal Seedance │
+   · Upscale: fal.ai aura_sr (faithful/real), clarity (creative/AI)             │ fal Upscale  │
    · Video: Kling AI, Higgsfield, fal (Seedance/Veo/Hailuo)                    │ Veo / Hailuo │
    · Lip-sync: Hedra (photo), SyncLabs (video)                                 ├──────────────┤
    · Voice: ElevenLabs · Music: Suno · Safety: OpenAI Moderation               │ Voice/Music/ │

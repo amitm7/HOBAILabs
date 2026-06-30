@@ -44,6 +44,12 @@ def image_cost(kind: str = "flux") -> float:
     }.get(kind, 0.04)
 
 
+def upscale_cost(creative: bool = False) -> float:
+    """Cost to upscale one still. creative=clarity (AI stills), else aura_sr (real, faithful)."""
+    p = load().get("upscale", {})
+    return p.get("clarity_usd", 0.05) if creative else p.get("aura_sr_usd", 0.02)
+
+
 def music_cost() -> float:
     return load()["music"].get("suno_song_usd", 0.05)
 
