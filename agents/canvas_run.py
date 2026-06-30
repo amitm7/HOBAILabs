@@ -181,9 +181,6 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "ai_likeness":     bool(f.get("ai_likeness")),
             "forced_ai":       bool(f.get("forced_ai")),
             "can_revert_real": bool(f.get("orig_visual")) and kind != ASSET_REAL,
-            # A real PHOTO (not video) can be rotated — phone shots are often landscape
-            # while the reel is 9:16 portrait.
-            "can_rotate":      kind == ASSET_REAL and _is_image_path(real_path),
             "duration":   f.get("duration"),
         })
     return cards
@@ -333,14 +330,6 @@ def attach_asset(state: dict, *, path: str, mode: str = "reference",
     state["board"] = board_cards(state["frames"])
     state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
     return state
-
-
-_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
-
-
-def _is_image_path(path: str) -> bool:
-    import os
-    return bool(path) and os.path.splitext(path)[1].lower() in _IMAGE_EXTS
 
 
 def _real_source(frame: dict) -> str:

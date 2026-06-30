@@ -527,37 +527,6 @@ def api_canvas_ai_source(run_id: str, operator: str):
     return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
 
 
-@app.route("/api/canvas/<run_id>/rotate", methods=["POST"])
-@auth.require_operator()
-def api_canvas_rotate(run_id: str, operator: str):
-    """Rotate a real shot 90° clockwise (non-generative orientation fix — phone photos are
-    often landscape while the reel is 9:16 portrait). Real media only; keeps it 🟢 REAL.
-    The untouched original is preserved so 'Use real photo' still reverts to it."""
-    from agents import canvas_run, restore
-    state = _canvas_load(run_id)
-    if state is None:
-        return jsonify({"error": "Unknown canvas"}), 404
-    fid = (request.json or {}).get("frame_id", "")
-    f = next((x for x in state.get("frames", []) if x.get("frame_id") == fid), None)
-    if not f:
-        return jsonify({"error": "Unknown shot"}), 400
-    src = canvas_run._real_source(f)
-    if not src:
-        return jsonify({"error": "Only a real photo or clip can be rotated."}), 400
-    out_dir = str(RUNS_DIR / run_id / "rotated")
-    newp = restore.rotate_media(src, out_dir, quarters=1)
-    if not newp or newp == src:
-        return jsonify({"error": "Rotation failed (ffmpeg)."}), 500
-    f.setdefault("orig_visual", src)   # first rotate stashes the true original for undo
-    f["visual_path"] = newp
-    f["photo_spec"] = newp
-    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
-        canvas_run.invalidate_from(state, "keyframes")
-    state["board"] = canvas_run.board_cards(state["frames"])
-    _canvas_save(run_id, state)
-    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
-
-
 def _canvas_tempo_bpm(mood: str) -> int:
     """A sensible cut tempo from the mood, used as the beat grid when there's no
     music bed so cutting stays rhythmic (not uniform). Coarse on purpose."""
@@ -2273,7 +2242,12 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             "talent_id":       talent_id,
             "product_id":      product_id,
             "talent_ref_path": talent_ref_path,
-            "character_ref_path": (character_refs.get(_speaker_id) or "").strip(),
+            # Story/Brand supply a per-speaker character_refs dict; the Canvas sets the
+            # face reference directly on the frame (Replace → 🎭 AI face, Characters stage).
+            # Fall back to the frame's own ref so the uploaded face actually conditions the
+            # generation instead of being dropped.
+            "character_ref_path": (character_refs.get(_speaker_id)
+                                   or fd.get("character_ref_path") or "").strip(),
             "negative_prompt": (fd.get("negative_prompt") or "").strip(),
             "continuity_lock": (fd.get("continuity_lock") or "").strip(),
         })

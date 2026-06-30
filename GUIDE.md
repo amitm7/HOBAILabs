@@ -291,8 +291,6 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **🎭 AI face** (AI conditioned on a face you upload), or **🤖 AI** (a fully AI-generated
   image — the escape hatch when a real photo is wrong and Enhance can't fix it). Swapped to
   AI? An **↩ Real** button brings your untouched photo back.
-- **Rotate a landscape photo.** Phone shots are often landscape but the reel is 9:16. Hover a
-  real-photo card and click **🔁** to rotate it 90° — non-generative, stays 🟢 REAL.
 - **Cast your characters (real people, kept consistent).** Click **👥 Characters** — the
   board reads the story and lists the *real people* in it (e.g. *Narrator*, *Father*).
   For each, attach **one real reference photo** and tick **consent**; every shot where

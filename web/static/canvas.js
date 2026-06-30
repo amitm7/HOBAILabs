@@ -145,7 +145,6 @@
           }</span>
           <button class="reroll" data-frame="${fid}" title="Re-roll this shot (new still + clip)">↻</button>
           ${c.can_recreate ? `<button class="recreate" data-frame="${fid}" title="Re-create this scene cinematically, inspired from your real footage — no person faked (ambient only)">🎬</button>` : ""}
-          ${c.can_rotate ? `<button class="rotate" data-frame="${fid}" title="Rotate 90° — for landscape photos in a 9:16 reel">🔁</button>` : ""}
           ${c.recreated ? `<span class="fromreal">AI · from real</span>`
             : c.ai_likeness ? `<span class="fromreal">AI · likeness</span>`
             : c.forced_ai ? `<span class="fromreal">AI</span>` : ""}
@@ -274,16 +273,6 @@
       $("match-hint").textContent = "↩ back to your real photo 🟢";
     } catch (e) { err(e.message); }
   }
-  async function rotateShot(fid, btn) {
-    if (!runId) return;
-    err(""); if (btn) { btn.disabled = true; btn.textContent = "…"; }
-    try {
-      const d = await api(`/api/canvas/${runId}/rotate`, { frame_id: fid });
-      render(d.canvas);
-    } catch (e) { err(e.message); }
-    finally { if (btn) { btn.disabled = false; btn.textContent = "🔁"; } }
-  }
-
   // Per-shot photo picker — auto-match is never perfect on abstract beats, so let the
   // operator swap a shot to the RIGHT photo from their own folder in two clicks. The
   // folder list is fetched once and reused across all cards.
@@ -591,8 +580,6 @@
     if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); return; }
     const rc = ev.target.closest(".recreate");
     if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
-    const rot = ev.target.closest(".rotate");
-    if (rot) { ev.preventDefault(); rotateShot(rot.getAttribute("data-frame"), rot); return; }
     const pb = ev.target.closest(".pick-btn");
     if (pb) { ev.preventDefault(); openPicker(pb.getAttribute("data-frame")); return; }
     const pk = ev.target.closest(".pk");
