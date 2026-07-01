@@ -243,13 +243,16 @@
           <div class="source">
             <span class="lbl">Replace</span>
             <button class="src-btn pick-btn" data-frame="${fid}" title="Pick the right photo from your folder (fix a wrong auto-match)">🖼 Pick</button>
-            <button class="src-btn rematch-btn" data-frame="${fid}" title="Auto re-match this one shot against your folder (role-aware)">⟳ Re-match</button>
-            <label class="src-btn" title="Upload a different real photo, untouched (🟢 the moat)">📎 Real
-              <input type="file" accept="image/*" data-frame="${fid}" data-mode="real" hidden></label>
-            <label class="src-btn" title="AI image conditioned on a face you upload — labeled AI · likeness">🎭 AI face
-              <input type="file" accept="image/*" data-frame="${fid}" data-mode="reference" hidden></label>
-            <button class="src-btn ai-gen" data-frame="${fid}" title="Replace with a fully AI-generated image (no real footage, no identity)">🤖 AI</button>
-            ${c.can_revert_real ? `<button class="src-btn revert-real" data-frame="${fid}" title="Discard the AI version and go back to your real photo">↩ Real</button>` : ""}
+            <button class="src-btn more-btn" data-frame="${fid}" title="More replace options">⋯</button>
+            <div class="src-more" data-frame="${fid}" hidden>
+              <button class="src-btn rematch-btn" data-frame="${fid}" title="Auto re-match this one shot against your folder (role-aware)">⟳ Re-match</button>
+              <label class="src-btn" title="Upload a different real photo, untouched (🟢 the moat)">📎 Real photo
+                <input type="file" accept="image/*" data-frame="${fid}" data-mode="real" hidden></label>
+              <label class="src-btn" title="AI image conditioned on a face you upload — labeled AI · likeness">🎭 AI from face
+                <input type="file" accept="image/*" data-frame="${fid}" data-mode="reference" hidden></label>
+              <button class="src-btn ai-gen" data-frame="${fid}" title="Replace with a fully AI-generated image (no real footage, no identity)">🤖 AI generic</button>
+              ${c.can_revert_real ? `<button class="src-btn revert-real" data-frame="${fid}" title="Discard the AI version and go back to your real photo">↩ Back to real</button>` : ""}
+            </div>
           </div>
         </div>
       </div>`;
@@ -698,6 +701,14 @@
     if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); return; }
     const rc = ev.target.closest(".recreate");
     if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
+    const mb = ev.target.closest(".more-btn");
+    if (mb) {
+      ev.preventDefault();
+      const more = mb.closest(".source").querySelector(".src-more");
+      document.querySelectorAll(".src-more").forEach((m) => { if (m !== more) m.hidden = true; });
+      if (more) more.hidden = !more.hidden;
+      return;
+    }
     const pb = ev.target.closest(".pick-btn");
     if (pb) { ev.preventDefault(); openPicker(pb.getAttribute("data-frame")); return; }
     const rm = ev.target.closest(".rematch-btn");
