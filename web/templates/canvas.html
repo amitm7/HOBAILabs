@@ -81,9 +81,8 @@
   .char-save { font-size:11px; font-weight:600; padding:5px 12px; border:0; border-radius:7px; background:#111827; color:#fff; cursor:pointer; }
   .char-save:hover { background:#374151; }
   /* AI story mode: hide the real-media (folder-based) tools; everything is generated. */
-  body.story-ai #match-btn, body.story-ai #restore-btn, body.story-ai #assets-folder,
-  body.story-ai #fidelity-btn, body.story-ai #check-btn, body.story-ai .cv-card .pick-btn,
-  body.story-ai .cv-card .rematch-btn { display:none !important; }
+  body.story-ai #match-btn, body.story-ai #assets-folder, body.story-ai #review-btn,
+  body.story-ai .cv-card .pick-btn, body.story-ai .cv-card .rematch-btn { display:none !important; }
   .cv-card .frame .flag { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:3;
     font-size:10px; font-weight:700; background:#dc2626; color:#fff; padding:2px 7px; border-radius:6px; cursor:help; }
   body.story-ai .ai-note { display:inline !important; }
@@ -117,7 +116,6 @@
   .cv-card textarea.edit { min-height:46px; resize:vertical; font-size:11px; color:#374151; }
   .cv-card .edit-row { display:flex; gap:6px; }
   .cv-card .edit-row .edit { flex:1; }
-  .cv-card .cam-move { font:inherit; font-size:11px; padding:4px 5px; border:1px solid #e5e7eb; border-radius:7px; color:#6b7280; }
   .cv-card .sub .dur-in { width:48px; font:inherit; font-size:11px; padding:2px 5px; border:1px solid #e5e7eb; border-radius:6px; }
   .cv-card .lbl { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; margin-top:7px; }
   /* Chat command bar — a floating bar pinned to the viewport bottom (not sticky-in-flow,
@@ -257,11 +255,6 @@
     <span class="muted">·</span>
     <strong>Format:</strong>
     <select id="orientation" title="Reel aspect ratio — set before generating"><option value="portrait">9:16 Portrait</option><option value="landscape">16:9 Landscape</option><option value="square">1:1 Square</option></select>
-    <span class="muted">·</span>
-    <label title="Rescale every shot's duration to hit this total length">⏱ Rebalance to <input id="rebalance-sec" type="number" min="5" max="600" step="5" value="60" style="width:60px;padding:5px 7px;border:1px solid #e5e7eb;border-radius:8px;font:inherit;font-size:12px">s</label>
-    <button id="rebalance-btn" class="attach-btn">Apply</button>
-    <span class="muted">·</span>
-    <select id="transition" title="How shots cut together"><option value="crossfade">Crossfade</option><option value="cut">Hard cut</option><option value="dissolve">Dissolve</option><option value="fade">Fade</option></select>
     <select id="ip" title="HOB IP / property watermark on the whole reel"><option value="">No watermark</option></select>
     <span class="muted" id="settings-hint"></span>
   </div>
@@ -276,22 +269,13 @@
 
   <div class="cv-assets" id="assets" hidden>
     <strong>Your media:</strong>
-    <label class="attach-btn">📎 Add a real photo of the person
-      <input id="char-photo" type="file" accept="image/*" hidden></label>
-    <select id="char-mode">
-      <option value="reference">Reference — AI keeps the likeness</option>
-      <option value="real">Real — use the photo untouched (our edge)</option>
-    </select>
-    <span class="muted">·</span>
     <input id="assets-folder" type="text" placeholder="/path/to/your/photos folder"
       style="flex:1;min-width:180px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:8px;font:inherit;font-size:12px">
     <button id="match-btn" class="attach-btn">🖼 Use my photos (auto-match)</button>
-    <button id="restore-btn" class="attach-btn" title="Non-generative cleanup of your real footage — upscale, denoise, stabilize, grade. Keeps it 100% real.">✨ Enhance real footage</button>
-    <button id="chars-btn" class="attach-btn" title="Find the real people in the story and anchor each to their real photo + consent">👥 Characters</button>
-    <button id="fidelity-btn" class="attach-btn" title="Assess each real shot's quality and suggest a Fidelity rung — keep real, Restore (clean), or Re-create (ambient B-roll)">⚡ Suggest fidelity</button>
-    <button id="check-btn" class="attach-btn" title="Vision-check every matched photo against its beat — flags any that may not fit (⚠️) for review">🔎 Check matches</button>
-    <span class="muted ai-note" hidden>🎭 AI story — scenes &amp; characters are generated. Define your cast in <b>👥 Characters</b>.</span>
+    <button id="chars-btn" class="attach-btn" title="Define the people in the story — attributes + a real photo (+consent) so they stay consistent">👥 Characters</button>
+    <button id="review-btn" class="attach-btn" title="Review every matched shot — quality (suggest keep/restore/re-create) + content-fit (flags photos that may not fit the beat, ⚠️)">🔎 Review shots</button>
     <button id="storyboard-btn" class="attach-btn" title="Pencil-sketch storyboard view — a hand-drawn comic-board panel per shot (planning sketches, not the final render)">✏️ Storyboard</button>
+    <span class="muted ai-note" hidden>🎭 AI story — scenes &amp; characters are generated. Define your cast in <b>👥 Characters</b>.</span>
     <span class="muted" id="match-hint"></span>
   </div>
 

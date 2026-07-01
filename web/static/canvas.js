@@ -18,10 +18,6 @@
     return data;
   }
 
-  // Optional structured camera-move vocabulary (fills the free-text move field).
-  const CAMERA_MOVES = ["static", "slow push in", "slow pull out", "pan left", "pan right",
-    "tilt up", "tilt down", "dolly in", "crane up", "orbit", "handheld follow"];
-
   // Arrow geometry per motion token — structured, not a decorative scribble.
   const ARROWS = {
     in:    "M60,150 L60,95",  out:  "M60,95 L60,150",
@@ -88,7 +84,6 @@
     if (cs.color) $("cap-color").value = cs.color;
     if (cs.max_lines !== undefined) $("cap-lines").value = String(cs.max_lines);
     if (canvas.orientation) $("orientation").value = canvas.orientation;
-    if (canvas.transition) $("transition").value = canvas.transition;
     if ($("ip") && canvas.ip !== undefined) $("ip").value = canvas.ip;
     // Story-type mode: AI (fiction) hides the real-media tools (folder match / enhance /
     // pick / re-match) since there's no real folder — everything is generated.
@@ -100,18 +95,6 @@
     if ($("world-setting") && document.activeElement !== $("world-setting")) $("world-setting").value = w.setting || "";
     _settingsReady = true;
   }
-  $("rebalance-btn") && $("rebalance-btn").addEventListener("click", async () => {
-    if (!runId) { err("Plan a story first."); return; }
-    err(""); const btn = $("rebalance-btn"); btn.disabled = true;
-    try {
-      const d = await api(`/api/canvas/${runId}/redistribute`,
-        { target_seconds: parseFloat($("rebalance-sec").value) || 60 });
-      $("settings-hint").textContent = "✓ durations rebalanced";
-      setTimeout(() => { $("settings-hint").textContent = ""; }, 1600);
-      render(d.canvas);
-    } catch (e) { err(e.message); }
-    finally { btn.disabled = false; }
-  });
   $("world-save") && $("world-save").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     err(""); const btn = $("world-save"); btn.disabled = true;
@@ -136,15 +119,14 @@
     };
     try {
       const d = await api(`/api/canvas/${runId}/settings`,
-        { caption_style, orientation: $("orientation").value,
-          transition: $("transition").value, ip: $("ip").value });
+        { caption_style, orientation: $("orientation").value, ip: $("ip").value });
       $("settings-hint").textContent = "✓ saved";
       setTimeout(() => { $("settings-hint").textContent = ""; }, 1500);
       if (d.canvas) { lastCanvas = d.canvas; renderRail(d.canvas.stages); }  // orientation may re-lock stages
     } catch (e) { err(e.message); }
   }
   ["cap-enabled", "cap-position", "cap-font", "cap-size", "cap-color", "cap-lines",
-   "orientation", "transition", "ip"]
+   "orientation", "ip"]
     .forEach((id) => { const el = $(id); if (el) el.addEventListener("change", saveSettings); });
   // Populate the IP/watermark dropdown from the server (HOB properties).
   (async function loadIPs() {
@@ -253,19 +235,8 @@
         <div class="meta">
           <input class="edit cap" data-frame="${fid}" data-field="caption"
             value="${escapeHtml(c.caption || "")}" placeholder="caption / line">
-          <div class="edit-row">
-            <input class="edit" data-frame="${fid}" data-field="motion_override"
-              value="${escapeHtml(c.motion || "")}" placeholder="camera move">
-            <select class="cam-move" data-frame="${fid}" title="Pick a camera move (optional)">
-              <option value="">move ▾</option>${CAMERA_MOVES.map((m) => `<option value="${m}">${m}</option>`).join("")}
-            </select>
-          </div>
-          <div class="edit-row">
-            <input class="edit" data-frame="${fid}" data-field="emotion"
-              value="${escapeHtml(c.emotion || "")}" placeholder="emotion" title="Emotional tone of this shot">
-            <input class="edit" data-frame="${fid}" data-field="camera_angle"
-              value="${escapeHtml(c.camera || "")}" placeholder="camera angle" title="Shot angle (e.g. low angle, close-up)">
-          </div>
+          <input class="edit" data-frame="${fid}" data-field="motion_override"
+            value="${escapeHtml(c.motion || "")}" placeholder="camera move">
           ${promptBox}
           <div class="sub">⏱ <input class="edit dur-in" data-frame="${fid}" data-field="duration" type="number" min="1" max="15" step="0.5" value="${c.duration || ""}" title="Shot duration (seconds)">s</div>
           ${fidelityRow(c)}
@@ -751,14 +722,6 @@
 
   // Delegated change handler: Fidelity selector, per-card image upload (Replace row), text.
   $("board").addEventListener("change", (ev) => {
-    const cam = ev.target.closest(".cam-move");
-    if (cam && cam.value) {
-      const fid = cam.getAttribute("data-frame");
-      const inp = document.querySelector(`input[data-frame="${fid}"][data-field="motion_override"]`);
-      if (inp) { inp.value = cam.value; saveField(inp); }
-      cam.value = "";
-      return;
-    }
     const fidSel = ev.target.closest(".fid-sel");
     if (fidSel) { setFidelity(fidSel.getAttribute("data-frame"), fidSel.value, fidSel); return; }
     const fileInput = ev.target.closest('input[type="file"][data-mode]');
@@ -812,48 +775,28 @@
       } catch (e) { /* keep polling */ }
     }, 2500);
   }
-  $("restore-btn").addEventListener("click", async () => {
-    if (!runId) { err("Plan a story first."); return; }
-    err(""); const btn = $("restore-btn");
-    btn.disabled = true;
-    try {
-      const d = await api(`/api/canvas/${runId}/restore`, {});
-      render(d.canvas);
-      $("match-hint").textContent = `enhancing 0/${d.total}…`;
-      pollRestore(() => { btn.disabled = false; });
-    } catch (e) { err(e.message); btn.disabled = false; }
-  });
-
-  // ⚡ Auto-suggest a Fidelity rung for every real shot (quality assessment, no spend).
-  $("fidelity-btn") && $("fidelity-btn").addEventListener("click", async () => {
-    if (!runId) { err("Plan a story first."); return; }
-    err(""); const btn = $("fidelity-btn");
-    btn.disabled = true; $("match-hint").textContent = "assessing shot quality…";
-    try {
-      const d = await api(`/api/canvas/${runId}/fidelity-suggest`, {});
-      const n = (d.suggestions || []).length;
-      const flagged = (d.suggestions || []).filter((s) => s.suggested && s.suggested !== "passthrough").length;
-      $("match-hint").textContent = `⚡ assessed ${n} real shot${n === 1 ? "" : "s"} — ${flagged} could improve`;
-      render(d.canvas);
-    } catch (e) { err(e.message); $("match-hint").textContent = ""; }
-    finally { btn.disabled = false; }
-  });
-
-  // 🔎 Check matches — vision content-fit pass; flags weak matches (⚠️) for review.
+  // 🔎 Review shots — one pass: quality suggestions (⚡ Fidelity chips) + content-fit
+  // flags (⚠️). Merges the old "Suggest fidelity" + "Check matches". (Per-shot Restore
+  // lives in each card's Fidelity dropdown — no separate bulk Enhance button.)
   let checkPoll = null;
-  $("check-btn") && $("check-btn").addEventListener("click", async () => {
+  $("review-btn") && $("review-btn").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
-    err(""); const btn = $("check-btn"); btn.disabled = true;
+    err(""); const btn = $("review-btn"); btn.disabled = true;
+    $("match-hint").textContent = "🔎 reviewing shots…";
     try {
-      const d = await api(`/api/canvas/${runId}/check-matches`, {});
-      $("match-hint").textContent = `🔎 checking 0/${d.total}…`;
+      const d = await api(`/api/canvas/${runId}/fidelity-suggest`, {});   // quality (fast)
+      render(d.canvas);
+      try { await api(`/api/canvas/${runId}/check-matches`, {}); }         // content-fit (threaded)
+      catch (e) { btn.disabled = false; $("match-hint").textContent = "🔎 quality reviewed"; return; }
       if (checkPoll) clearInterval(checkPoll);
       checkPoll = setInterval(async () => {
         try {
           const c = (await api(`/api/canvas/${runId}/state`)).canvas;
+          const flagged = (c.board || []).filter((x) => x.match_flag).length;
+          const improve = (c.board || []).filter((x) => x.fidelity_suggested && x.fidelity_suggested !== "passthrough").length;
           $("match-hint").textContent = c.checking
-            ? `🔎 checking ${c.check_done}/${c.check_total}…`
-            : `🔎 checked ${c.check_total} — ${(c.board || []).filter((x) => x.match_flag).length} flagged ⚠️`;
+            ? `🔎 reviewing ${c.check_done}/${c.check_total}…`
+            : `🔎 reviewed — ${flagged} may not fit ⚠️, ${improve} could improve ⚡`;
           if (!c.checking) { clearInterval(checkPoll); checkPoll = null; btn.disabled = false; render(c); }
         } catch (e) { /* keep polling */ }
       }, 2500);
@@ -992,13 +935,6 @@
   });
 
   // Character-level: attach a real photo of the person to every people-shot.
-  $("char-photo").addEventListener("change", (ev) => {
-    const file = ev.target.files[0];
-    if (!file) return;
-    const mode = $("char-mode").value;
-    uploadAndAttach(file, { all_talent: true, mode });
-    ev.target.value = "";
-  });
   $("board").addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && ev.target.matches("input.edit")) ev.target.blur();
   });
