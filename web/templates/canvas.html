@@ -164,6 +164,7 @@
   .cv-card .src-more { position:absolute; z-index:6; top:100%; left:0; margin-top:5px; padding:7px;
     display:flex; flex-wrap:wrap; gap:5px; max-width:260px;
     background:#fff; border:1px solid #e5e7eb; border-radius:9px; box-shadow:0 6px 18px #0002; }
+  .cv-card .src-more[hidden] { display:none; }   /* [hidden] must win over the display:flex above */
   .src-btn { display:inline-flex; align-items:center; cursor:pointer; font-size:11px; font-weight:600;
     background:#f3f4f6; color:#111827; border:1px solid #e5e7eb; padding:4px 8px; border-radius:7px; }
   .src-btn:hover { background:#e5e7eb; }
