@@ -191,6 +191,15 @@ def _file_hash(path: str) -> str:
     return h.hexdigest()[:8]
 
 
+def _inject_world(frame: dict, prompt: str) -> str:
+    """Prepend the story's World/Context clause (art direction + setting) so every shot
+    shares one look and world. Part of the prompt → part of the cache hash. P2 Worlds."""
+    world = (frame.get("world_style") or "").strip()
+    if world and world.lower() not in prompt.lower():
+        return f"{world}. {prompt}"
+    return prompt
+
+
 def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
                               reference_path: str = "") -> str:
     """
@@ -229,6 +238,7 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
     appearance = (frame.get("character_appearance") or "").strip()
     if appearance and appearance.lower() not in prompt.lower():
         prompt = f"The person on screen is {appearance}. " + prompt
+    prompt = _inject_world(frame, prompt)   # P2: global art-direction / world
 
     use_ref = bool(reference_path) and os.path.exists(reference_path)
     chosen  = "gpt_image_ref" if use_ref else (model_id or "flux")
@@ -310,6 +320,7 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
             "shallow depth of field, photorealistic, 9:16 vertical, no text, no watermarks."
         )
 
+    prompt = _inject_world(frame, prompt)   # P2: global art-direction / world
     chosen = model_id or "gpt_image"
     # _redo_seed is injected by redo-still so even the same prompt produces a new file.
     seed = frame.get("scene", {}).get("_redo_seed", "")

@@ -669,6 +669,22 @@ def api_canvas_settings(run_id: str, operator: str):
     return jsonify({"canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/world", methods=["POST"])
+@auth.require_operator()
+def api_canvas_world(run_id: str, operator: str):
+    """Set the story's World/Context (P2): a global art-direction `style` + `setting` that
+    is stamped onto every shot and injected into generation, so the whole reel shares one
+    look and world (same palace/forest, one art style). Cascade-invalidates keyframes."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    canvas_run.set_world(state, style=body.get("style", ""), setting=body.get("setting", ""))
+    _canvas_save(run_id, state)
+    return jsonify({"canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/keyframes", methods=["POST"])
 @auth.require_operator()
 def api_canvas_keyframes(run_id: str, operator: str):

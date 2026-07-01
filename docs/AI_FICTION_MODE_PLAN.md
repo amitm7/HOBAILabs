@@ -78,8 +78,11 @@ removes the single-vendor risk. Low effort, high payoff — I'd do this first.
 - **P1 — Character-sheet-first (medium).** In AI mode, generate a **canonical character**
   (front + 2–3 expressions) once, then use it as the reference for every shot (reuses the
   Phase-4 character sheet + the new ref model). This is what makes Rama *look like Rama*.
-- **P2 — Worlds/Contexts (medium).** A persistent environment/style reference reused across
-  shots (same palace/forest/art-direction). Our build, on the character-sheet seam.
+- **P2 — Worlds/Contexts — ✅ SHIPPED (v1, descriptor-based).** `set_world(style, setting)`
+  (`/api/canvas/<id>/world` + a 🌍 World bar) stamps a global art-direction + setting onto
+  every frame (`world_style`), injected into generation so the whole reel shares one look
+  and world. *Next (future): a reference-IMAGE world (a locked establishing image
+  conditioning shots) beyond the text descriptor.*
 - **P3 — LoRA-per-character + ControlNet (larger).** Train a per-character (and per-style)
   LoRA for epic-grade recurrence; add ControlNet pose control for action beats. The gold
   standard — build when the P0–P2 quality bar isn't enough.

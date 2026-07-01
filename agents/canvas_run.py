@@ -490,6 +490,38 @@ def new_canvas(brief: str, *, scope: str = "general", mood: str = "",
     return state
 
 
+def _world_clause(world: dict) -> str:
+    """A compact art-direction + setting clause injected into EVERY shot so the reel's
+    look and world stay consistent (same palace/forest, one art style) — P2 Worlds."""
+    parts = []
+    style = str(world.get("style") or "").strip()
+    setting = str(world.get("setting") or "").strip()
+    if style:
+        parts.append(f"Art direction (keep consistent across every shot): {style}")
+    if setting:
+        parts.append(f"Same world/setting throughout: {setting}")
+    return ". ".join(parts)
+
+
+def set_world(state: dict, *, style: str = "", setting: str = "") -> dict:
+    """Set the story's World/Context — a global art-direction + setting stamped onto every
+    frame (`frame["world_style"]`) and injected into generation, so the whole reel shares
+    one look and world. The consistency layer fiction needs (same Ayodhya, one style)."""
+    w = state.setdefault("world", {})
+    w["style"] = str(style or "").strip()
+    w["setting"] = str(setting or "").strip()
+    clause = _world_clause(w)
+    for f in state["frames"]:
+        if clause:
+            f["world_style"] = clause
+        else:
+            f.pop("world_style", None)
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        invalidate_from(state, "keyframes")
+    state["board"] = board_cards(state["frames"])
+    return state
+
+
 def run_stage(state: dict, stage: str) -> dict:
     """Execute a non-paid stage in-process (reusing agents). Paid stages are gated
     here and dispatched to the existing pipeline by the caller — never rendered in
@@ -668,6 +700,7 @@ def public_state(state: dict) -> dict:
         "caption_style": state.get("caption_style") or {},   # operator caption settings
         "orientation": state.get("orientation") or "portrait",
         "story_type": state.get("story_type") or "real",     # 'real' (HOB) | 'ai' (fiction)
+        "world": state.get("world") or {},                    # P2: global art-direction/setting
     }
 
 

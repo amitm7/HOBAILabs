@@ -89,8 +89,23 @@
     const ai = (canvas.story_type || "real") === "ai";
     document.body.classList.toggle("story-ai", ai);
     if ($("story-type") && canvas.story_type) $("story-type").value = canvas.story_type;
+    const w = canvas.world || {};
+    if ($("world-style") && document.activeElement !== $("world-style")) $("world-style").value = w.style || "";
+    if ($("world-setting") && document.activeElement !== $("world-setting")) $("world-setting").value = w.setting || "";
     _settingsReady = true;
   }
+  $("world-save") && $("world-save").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err(""); const btn = $("world-save"); btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/world`,
+        { style: $("world-style").value, setting: $("world-setting").value });
+      $("world-hint").textContent = "✓ world applied to every shot";
+      setTimeout(() => { $("world-hint").textContent = ""; }, 1800);
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+    finally { btn.disabled = false; }
+  });
   async function saveSettings() {
     if (!runId || !_settingsReady) return;
     const caption_style = {

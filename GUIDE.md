@@ -252,6 +252,10 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Command box** at the bottom: refine in plain English ("make it darker, add a
   rain shot") and the shot list re-plans — the same idea as a chat assistant, wired
   to our planner.
+- **Set the World (one look for the whole reel).** The **🌍 World** bar takes an **art style**
+  (e.g. *epic Indian miniature painting*, *anime*, *3D Pixar*) and a **setting** (e.g. *ancient
+  Ayodhya palace + forest*) — click **Apply world** and it's woven into *every* shot so the
+  reel looks unified and the world stays consistent. Especially important for AI/fiction.
 - **Real story or AI story?** At the top, pick **📷 Real story** (your real photos/video —
   the HOB authentic path) or **🎭 AI story (fiction)** for a fully-generated tale (mythology,
   a parable, any invented characters — e.g. Ramayana). In AI story mode the real-media tools
