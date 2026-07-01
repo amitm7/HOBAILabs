@@ -652,7 +652,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/products/<id>` | DELETE | Delete a product |
 | `/api/studio/plan` | POST | `shot_planner.plan(brief, scope, talent, product)` → editable `frames[]` |
 | `/canvas` | GET | Director Canvas board page (`canvas.html` + `canvas.js`) |
-| `/api/canvas/plan` | POST | `canvas_run.new_canvas(brief)` → new canvas (runs free Script stage); returns `run_id` + `public_state`. State persisted in the run payload via `run_store` |
+| `/api/canvas/plan` | POST | `canvas_run.new_canvas(brief, …, story_type)` → new canvas (runs free Script stage); returns `run_id` + `public_state`. **`story_type`** = `real` (HOB — match/passthrough real media) \| `ai` (fiction — everything generated; UI hides the real-media folder tools, characters defined on the sheet). A mode flag into the shared engine (no fork); invalid → `real`. |
 | `/api/canvas/<run_id>/state` | GET | Current board state (`canvas_run.public_state`) |
 | `/api/canvas/<run_id>/advance` | POST (operator) | Run a stage. Free stages execute in-process; **paid stages return a per-stage cost + `check_spend_cap` result *before* any spend** (the anti-wallet-drain), then dispatch to the render pipeline. 409 if the stage is locked |
 | `/api/canvas/<run_id>/approve` | POST (operator) | Approve a finished stage → unlocks the next stage's Generate |

@@ -371,7 +371,8 @@ def api_canvas_plan():
     state = canvas_run.new_canvas(brief, scope=data.get("scope", "general"),
                                   mood=data.get("mood", ""),
                                   quality=data.get("quality", "dev"),
-                                  target_seconds=target_seconds)
+                                  target_seconds=target_seconds,
+                                  story_type=data.get("story_type", "real"))
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 

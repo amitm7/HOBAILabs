@@ -80,6 +80,11 @@
   .cv-char .cattr { font:inherit; font-size:12px; padding:4px 6px; border:1px solid #e5e7eb; border-radius:6px; width:130px; }
   .char-save { font-size:11px; font-weight:600; padding:5px 12px; border:0; border-radius:7px; background:#111827; color:#fff; cursor:pointer; }
   .char-save:hover { background:#374151; }
+  /* AI story mode: hide the real-media (folder-based) tools; everything is generated. */
+  body.story-ai #match-btn, body.story-ai #restore-btn, body.story-ai #assets-folder,
+  body.story-ai #fidelity-btn, body.story-ai .cv-card .pick-btn,
+  body.story-ai .cv-card .rematch-btn { display:none !important; }
+  body.story-ai .ai-note { display:inline !important; }
   .cv-assets select, .cv-card .attach select { font:inherit; font-size:12px; padding:5px 7px;
     border:1px solid #e5e7eb; border-radius:7px; }
   .attach-btn { display:inline-block; cursor:pointer; font-size:12px; font-weight:600;
@@ -204,6 +209,10 @@
 
   <div class="cv-brief">
     <textarea id="brief" placeholder="A 30-second Humans of Bombay story: a Mumbai chai seller who funded his daughter's medical degree…"></textarea>
+    <select id="story-type" title="Real story = your real photos/video (HOB authentic). AI story = fully generated (fiction / mythology — e.g. Ramayana).">
+      <option value="real">📷 Real story</option>
+      <option value="ai">🎭 AI story (fiction)</option>
+    </select>
     <select id="scope"><option value="general">Story</option><option value="commerce">Commerce</option></select>
     <select id="length" title="Reel length — Auto lets the story decide (can be minutes)">
       <option value="0">Auto length</option>
@@ -262,6 +271,7 @@
     <button id="restore-btn" class="attach-btn" title="Non-generative cleanup of your real footage — upscale, denoise, stabilize, grade. Keeps it 100% real.">✨ Enhance real footage</button>
     <button id="chars-btn" class="attach-btn" title="Find the real people in the story and anchor each to their real photo + consent">👥 Characters</button>
     <button id="fidelity-btn" class="attach-btn" title="Assess each real shot's quality and suggest a Fidelity rung — keep real, Restore (clean), or Re-create (ambient B-roll)">⚡ Suggest fidelity</button>
+    <span class="muted ai-note" hidden>🎭 AI story — scenes &amp; characters are generated. Define your cast in <b>👥 Characters</b>.</span>
     <button id="storyboard-btn" class="attach-btn" title="Pencil-sketch storyboard view — a hand-drawn comic-board panel per shot (planning sketches, not the final render)">✏️ Storyboard</button>
     <span class="muted" id="match-hint"></span>
   </div>

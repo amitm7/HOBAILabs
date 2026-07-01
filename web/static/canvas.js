@@ -84,6 +84,11 @@
     if (cs.color) $("cap-color").value = cs.color;
     if (cs.max_lines !== undefined) $("cap-lines").value = String(cs.max_lines);
     if (canvas.orientation) $("orientation").value = canvas.orientation;
+    // Story-type mode: AI (fiction) hides the real-media tools (folder match / enhance /
+    // pick / re-match) since there's no real folder — everything is generated.
+    const ai = (canvas.story_type || "real") === "ai";
+    document.body.classList.toggle("story-ai", ai);
+    if ($("story-type") && canvas.story_type) $("story-type").value = canvas.story_type;
     _settingsReady = true;
   }
   async function saveSettings() {
@@ -580,6 +585,7 @@
       const d = await api("/api/canvas/plan", {
         brief, scope: $("scope").value, quality: $("quality").value,
         target_seconds: parseInt($("length").value, 10) || 0,
+        story_type: $("story-type").value,
       });
       setRun(d.run_id);
       render(d.canvas);

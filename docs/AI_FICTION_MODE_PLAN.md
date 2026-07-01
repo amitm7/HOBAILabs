@@ -68,10 +68,13 @@ This single change lifts character consistency in **both** modes (real refs + fi
 removes the single-vendor risk. Low effort, high payoff — I'd do this first.
 
 ## 4. Phased plan (MVP → full) — no code yet
-- **P0 — Intake switch + identity upgrade (small).** Add `story_type` (real|ai) at plan time;
-  in AI mode skip real-media matching/restore and relax the (real-person) consent prompts.
-  Make the identity path pluggable → default Nano Banana / Flux Kontext. *Immediately better
-  characters, both modes.*
+- **P0 — Intake switch + identity upgrade — ✅ SHIPPED.** `story_type` (real|ai) at plan
+  time (`new_canvas` + `/api/canvas/plan`, exposed in `public_state`); a **📷 Real / 🎭 AI
+  story** selector on the canvas; AI mode hides the real-media folder tools (match/enhance/
+  pick/re-match) — everything generates, characters defined on the 👥 sheet. Identity path
+  made pluggable, defaulting to **Nano Banana** (live-verified) → gpt-image-1 fallback.
+  Consent still keys on real-person, so it rarely fires for invented characters. *(Engine
+  needed no change — "no real media matched" already generates.)*
 - **P1 — Character-sheet-first (medium).** In AI mode, generate a **canonical character**
   (front + 2–3 expressions) once, then use it as the reference for every shot (reuses the
   Phase-4 character sheet + the new ref model). This is what makes Rama *look like Rama*.

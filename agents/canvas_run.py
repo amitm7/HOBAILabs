@@ -459,13 +459,21 @@ def _fresh_stages() -> dict:
     return st
 
 
+STORY_TYPES = {"real", "ai"}
+
+
 def new_canvas(brief: str, *, scope: str = "general", mood: str = "",
                talent: dict | None = None, product: dict | None = None,
-               quality: str = "dev", target_seconds: int = 0) -> dict:
+               quality: str = "dev", target_seconds: int = 0,
+               story_type: str = "real") -> dict:
     """Create a canvas and run the (free) script stage. Reuses shot_planner, which
     already degrades to a sentence split offline — so this is network-safe.
-    target_seconds: 0 = auto (length follows the story; rich stories run minutes)."""
+    target_seconds: 0 = auto (length follows the story; rich stories run minutes).
+    story_type: 'real' (HOB authentic — match/passthrough real media) or 'ai' (fiction —
+    everything generated; the real-media tools are hidden, characters are defined on the
+    sheet). It's a MODE FLAG into the shared engine, not a fork."""
     from agents import shot_planner
+    story_type = story_type if story_type in STORY_TYPES else "real"
     frames = shot_planner.plan(brief, scope=scope, talent=talent,
                                product=product, mood=mood, target_seconds=target_seconds)
     stages = _fresh_stages()
@@ -473,7 +481,7 @@ def new_canvas(brief: str, *, scope: str = "general", mood: str = "",
     stages["storyboard"].update(ready=True)
     state = {
         "brief": brief, "scope": scope, "mood": mood, "quality": quality,
-        "target_seconds": target_seconds,
+        "target_seconds": target_seconds, "story_type": story_type,
         "frames": frames,
         "stages": stages,
         "costs": stage_costs(frames, quality=quality),
@@ -659,6 +667,7 @@ def public_state(state: dict) -> dict:
         "characters": state.get("characters", []),
         "caption_style": state.get("caption_style") or {},   # operator caption settings
         "orientation": state.get("orientation") or "portrait",
+        "story_type": state.get("story_type") or "real",     # 'real' (HOB) | 'ai' (fiction)
     }
 
 
