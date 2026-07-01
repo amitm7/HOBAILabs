@@ -214,6 +214,7 @@
           <div class="source">
             <span class="lbl">Replace</span>
             <button class="src-btn pick-btn" data-frame="${fid}" title="Pick the right photo from your folder (fix a wrong auto-match)">🖼 Pick</button>
+            <button class="src-btn rematch-btn" data-frame="${fid}" title="Auto re-match this one shot against your folder (role-aware)">⟳ Re-match</button>
             <label class="src-btn" title="Upload a different real photo, untouched (🟢 the moat)">📎 Real
               <input type="file" accept="image/*" data-frame="${fid}" data-mode="real" hidden></label>
             <label class="src-btn" title="AI image conditioned on a face you upload — labeled AI · likeness">🎭 AI face
@@ -344,6 +345,18 @@
           : "✓ upscaled (faithful — identity preserved 🟢)";
     } catch (e) { err("Upscale: " + e.message); }
     finally { if (fr) fr.classList.remove("shimmer"); if (btn) { btn.disabled = false; btn.textContent = "⬆"; } }
+  }
+
+  // Per-shot re-match (C6): auto-pick the best-fitting photo for just this beat (role-aware).
+  async function rematchShot(fid, btn) {
+    if (!runId) return;
+    err(""); if (btn) { btn.disabled = true; btn.textContent = "…"; }
+    try {
+      const d = await api(`/api/canvas/${runId}/rematch`, { frame_id: fid });
+      render(d.canvas);
+      $("match-hint").textContent = "✓ re-matched this shot";
+    } catch (e) { err(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = "⟳ Re-match"; } }
   }
 
   // Per-shot photo picker — auto-match is never perfect on abstract beats, so let the
@@ -657,6 +670,8 @@
     if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
     const pb = ev.target.closest(".pick-btn");
     if (pb) { ev.preventDefault(); openPicker(pb.getAttribute("data-frame")); return; }
+    const rm = ev.target.closest(".rematch-btn");
+    if (rm) { ev.preventDefault(); rematchShot(rm.getAttribute("data-frame"), rm); return; }
     const pk = ev.target.closest(".pk");
     if (pk) {
       ev.preventDefault();
@@ -794,20 +809,53 @@
     }
   });
 
-  // Characters stage: surface the real people in the story; anchor each to a real photo.
+  // Characters stage → story-level Character Sheet. Each person: a real photo (+consent
+  // for AI likeness) AND appearance attributes (role/name/gender/age/skin/hair/clothing)
+  // that carry to every shot they're in, so they stay the same person across the reel.
+  function _cattr(cid, attr, val, ph) {
+    return `<input class="cattr" data-char="${cid}" data-attr="${attr}" placeholder="${ph}" value="${escapeHtml(val || "")}">`;
+  }
   function renderCharacters(chars) {
     const el = $("characters");
     if (!chars || !chars.length) { el.hidden = true; return; }
     el.hidden = false;
-    el.innerHTML = `<h4>👥 People in this story — anchor each to a real photo (consent needed for AI likeness)</h4>`
+    el.innerHTML = `<h4>👥 Character sheet — attributes carry to every shot; a real photo keeps the face exact (consent needed for AI likeness)</h4>`
       + chars.map((c) => `
         <div class="cv-char" data-char="${c.id}">
-          <span class="nm">${escapeHtml(c.label || c.id)}</span>
-          ${c.ref_path ? `<img src="${mediaUrl(c.ref_path)}" alt="">` : `<span class="muted">no photo</span>`}
-          <label class="attach-btn">📎 Real photo<input type="file" accept="image/*" data-char="${c.id}" hidden></label>
-          <label><input type="checkbox" class="consent" data-char="${c.id}" ${c.consent ? "checked" : ""}> consent for AI likeness</label>
+          <div class="char-head">
+            <span class="nm">${escapeHtml(c.role || c.name || c.label || c.id)}</span>
+            ${c.ref_path ? `<img src="${mediaUrl(c.ref_path)}" alt="">` : `<span class="muted">no photo</span>`}
+            <label class="attach-btn">📎 Real photo<input type="file" accept="image/*" data-char="${c.id}" hidden></label>
+            <label><input type="checkbox" class="consent" data-char="${c.id}" ${c.consent ? "checked" : ""}> consent</label>
+          </div>
+          <div class="char-attrs">
+            ${_cattr(c.id, "role", c.role, "role (father/friend…)")}
+            ${_cattr(c.id, "name", c.name, "name")}
+            ${_cattr(c.id, "gender", c.gender, "gender")}
+            ${_cattr(c.id, "age", c.age, "age (child/adult/elderly)")}
+            ${_cattr(c.id, "skin_tone", c.skin_tone, "skin tone")}
+            ${_cattr(c.id, "hair", c.hair, "hair")}
+            ${_cattr(c.id, "clothing", c.clothing, "clothing style")}
+            <button class="char-save" data-char="${c.id}">Save</button>
+          </div>
         </div>`).join("");
   }
+  // Save a character's attributes (delegated click on its Save button).
+  $("characters").addEventListener("click", async (ev) => {
+    const save = ev.target.closest(".char-save");
+    if (!save) return;
+    const cid = save.getAttribute("data-char");
+    const attrs = {};
+    document.querySelectorAll(`.cattr[data-char="${cid}"]`).forEach((i) => {
+      attrs[i.getAttribute("data-attr")] = i.value;
+    });
+    save.disabled = true; err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/character`, { char_id: cid, attrs });
+      renderCharacters(d.canvas.characters); render(d.canvas);
+      $("match-hint").textContent = "✓ character saved — applies to their shots";
+    } catch (e) { err(e.message); save.disabled = false; }
+  });
   $("chars-btn").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     err("");

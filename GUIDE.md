@@ -304,13 +304,16 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **🎭 AI face** (AI conditioned on a face you upload), or **🤖 AI** (a fully AI-generated
   image — the escape hatch when a real photo is wrong and Enhance can't fix it). Swapped to
   AI? An **↩ Real** button brings your untouched photo back.
-- **Cast your characters (real people, kept consistent).** Click **👥 Characters** — the
-  board reads the story and lists the *real people* in it (e.g. *Narrator*, *Father*).
-  For each, attach **one real reference photo** and tick **consent**; every shot where
-  that person speaks is then anchored to *their* face — so the same person looks like the
-  same person across the whole reel, from real footage you supplied (not an invented
-  lookalike). A character with no reference just stays generic. This is the moat for
-  multi-person stories: real identity, consent-gated, consistent.
+- **Character sheet (people kept consistent).** Click **👥 Characters** — the board reads
+  the story and lists the people in it (e.g. *Narrator*, *Father*). For each you can set a
+  **role, name, gender, age, skin tone, hair, clothing** *and* attach **one real reference
+  photo + consent**. Those attributes + face carry to **every shot that person is in**, so
+  they look like the same person across the whole reel — the appearance from your sheet,
+  the exact face from your photo (or a consistent AI face if no photo). Per-shot edits still
+  override the sheet. This is the moat for multi-person stories: real identity, consent-gated.
+- **Wrong photo on one beat?** Hover a card → **⟳ Re-match** auto-picks the best-fitting
+  photo for just that shot (now role-aware — a "brother" beat looks for a young man, not any
+  family photo), or **🖼 Pick** to choose by hand.
 - **Approve each stage: Key Frames → Video → Final Cut.** Click **Generate** on the
   *Key Frames* stage to render just the still images — review them, **↻ re-roll** any
   weak one, edit prompts — *before* spending on the expensive video. When you Generate

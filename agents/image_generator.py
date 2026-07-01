@@ -222,6 +222,14 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
             "9:16 vertical, no text, no watermarks, shallow depth of field, 85mm lens."
         )
 
+    # Story-level character appearance (A2 resolver): keep a character's look — age/
+    # gender/skin/hair/wardrobe — consistent across ALL their shots. Injected into the
+    # prompt (so it's part of the cache hash → a change regenerates). Frame's own
+    # image_prompt still leads; this augments it.
+    appearance = (frame.get("character_appearance") or "").strip()
+    if appearance and appearance.lower() not in prompt.lower():
+        prompt = f"The person on screen is {appearance}. " + prompt
+
     use_ref = bool(reference_path) and os.path.exists(reference_path)
     chosen  = "gpt_image_ref" if use_ref else (model_id or "flux")
     seed = frame.get("scene", {}).get("_redo_seed", "")

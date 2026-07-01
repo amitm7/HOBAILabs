@@ -1052,9 +1052,10 @@ def api_canvas_set_character(run_id: str, operator: str):
     ref_path = (body.get("ref_path") or "").strip()
     if ref_path and not _path_allowed(ref_path):
         return jsonify({"error": "Reference path not allowed"}), 400
+    attrs = body.get("attrs") if isinstance(body.get("attrs"), dict) else None
     try:
         state = canvas_run.set_character(state, char_id, ref_path=ref_path,
-                                         consent=body.get("consent"))
+                                         consent=body.get("consent"), attrs=attrs)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     _canvas_save(run_id, state)
@@ -1096,6 +1097,36 @@ def api_canvas_match_photos(run_id: str, operator: str):
     real = sum(1 for c in state["board"] if c["asset_kind"] == "real")
     return jsonify({"matched": bool(matched), "real_shots": real,
                     "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/rematch", methods=["POST"])
+@auth.require_operator()
+def api_canvas_rematch(run_id: str, operator: str):
+    """Re-match ONE shot against the operator's folder (C6) — the role-aware matcher
+    auto-picks the best-fitting photo for just this beat (vs manual 🖼 Pick). Clears the
+    shot's current media so smart_match re-assigns only it."""
+    from agents import canvas_run, image_matcher
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    folder = state.get("assets_dir", "")
+    if not folder or not os.path.isdir(folder):
+        return jsonify({"error": "Match a photo folder first."}), 400
+    fid = (request.json or {}).get("frame_id", "")
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == fid), None)
+    if not f:
+        return jsonify({"error": "Unknown shot"}), 400
+    f["photo_spec"] = ""                     # clear THIS shot only → smart_match re-fills it
+    f.pop("visual_path", None)
+    try:
+        image_matcher.smart_match(state["frames"], folder, lambda fn: True)
+    except Exception as e:
+        print(f"[Canvas] rematch failed ({e})")
+    if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+        canvas_run.invalidate_from(state, "keyframes")
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/assets", methods=["GET"])

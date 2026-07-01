@@ -561,16 +561,47 @@ def derive_characters(state: dict) -> list[dict]:
     chars = []
     for m in members:
         prev = existing.get(m["id"], {})
-        chars.append({**m, "ref_path": prev.get("ref_path", ""),
-                      "consent": bool(prev.get("consent", False))})
+        chars.append({
+            **m,
+            "ref_path": prev.get("ref_path", ""),
+            "consent": bool(prev.get("consent", False)),
+            # Story-level sheet attributes — seed from cast (gender/age), operator fills rest.
+            "role":      prev.get("role", ""),
+            "name":      prev.get("name", m.get("label", "")),
+            "gender":    prev.get("gender", m.get("gender", "")),
+            "age":       prev.get("age", m.get("age_bracket", "")),
+            "skin_tone": prev.get("skin_tone", ""),
+            "hair":      prev.get("hair", ""),
+            "clothing":  prev.get("clothing", ""),
+            "source":    prev.get("source", ""),
+        })
     state["characters"] = chars
     return chars
 
 
+# Story-level character sheet attributes (A1). Frame overrides still win (the resolver
+# only fills a character's shots that don't set their own).
+CHARACTER_ATTRS = ("role", "name", "gender", "age", "skin_tone", "hair", "clothing", "source")
+
+
+def _character_appearance(char: dict) -> str:
+    """Compact appearance clause from a character's attributes, injected into that
+    character's shots so their look (age/gender/skin/hair/wardrobe) stays consistent."""
+    look = " ".join(str(char.get(k) or "").strip()
+                    for k in ("age", "gender", "skin_tone", "hair") if char.get(k)).strip()
+    who = look or (char.get("name") or char.get("label") or "").strip()
+    clothing = str(char.get("clothing") or "").strip()
+    parts = [p for p in (who, ("wearing " + clothing) if clothing else "") if p]
+    return ", ".join(parts)
+
+
 def set_character(state: dict, char_id: str, *, ref_path: str = "",
-                  consent: bool | None = None) -> dict:
-    """Anchor a character to a real reference photo (+ consent) and link it to that
-    character's shots so their identity stays consistent — the real face, conditioned."""
+                  consent: bool | None = None, attrs: dict | None = None) -> dict:
+    """Update a story-level character: its real reference photo (+ consent) AND its
+    appearance attributes (role/name/gender/age/skin/hair/clothing/source). The values
+    propagate to every shot the character speaks in — the face reference for identity,
+    and an appearance clause for a consistent look — so they stay the same person across
+    the reel without editing each frame. (Per-frame overrides still take precedence.)"""
     char = next((c for c in state.get("characters", []) if c["id"] == char_id), None)
     if char is None:
         raise ValueError("unknown character")
@@ -578,13 +609,22 @@ def set_character(state: dict, char_id: str, *, ref_path: str = "",
         char["ref_path"] = ref_path
     if consent is not None:
         char["consent"] = bool(consent)
+    if attrs:
+        for k in CHARACTER_ATTRS:
+            if k in attrs:
+                char[k] = str(attrs[k]).strip()
+
     ref = char.get("ref_path", "")
-    if ref:
-        for f in state["frames"]:
-            if f.get("speaker_id") == char_id:
-                f["character_ref_path"] = ref
-                if not (f.get("photo_spec") or "").startswith("ai_") and not f.get("visual_path"):
-                    f["photo_spec"] = "ai_portrait"   # AI likeness, conditioned on the real face
+    appearance = _character_appearance(char)
+    for f in state["frames"]:
+        if f.get("speaker_id") != char_id:
+            continue
+        if ref:
+            f["character_ref_path"] = ref
+            if not (f.get("photo_spec") or "").startswith("ai_") and not f.get("visual_path"):
+                f["photo_spec"] = "ai_portrait"   # AI likeness, conditioned on the real face
+        if appearance:
+            f["character_appearance"] = appearance   # consistent look for this character's shots
     if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
         invalidate_from(state, "keyframes")
     state["board"] = board_cards(state["frames"])
