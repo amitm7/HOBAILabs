@@ -37,11 +37,13 @@ Most infra ambition here is résumé-driven; match rigor to stakes.
 | **Circuit breaker** | Stop hammering a **down/slow** vendor: trip after N consecutive failures/timeouts, fail *fast* to the fallback for a cooldown, auto-recover | Cheapest, highest near-term value, and the **one thing SCALE_PLAN misses**. Directly targets pain #2 (a hung vendor call blocking a thread for 180s). We already have *reactive* fallback per-call; a breaker adds *proactive* fail-fast + cooldown so we don't pay the timeout on every request while a vendor is down. **In-process, no new infra** (a dict of per-provider state); Redis-backed only when multi-worker. | **YES — now** (lightweight, in-process) |
 
 ## 3. The sequenced recommendation (Act)
-1. **Now — Resilience hardening (days, no new infra).** Per-vendor **circuit breaker** +
-   tight **timeouts** + **retry-with-jittered-backoff**, wrapping the existing client
-   calls (`fal_client`, `llm`, `clip_builder`, `music_generator`, `upscaler`, lip-sync).
-   Trip after K consecutive failures/timeouts → skip straight to the fallback for a
-   cooldown window. Pairs with — doesn't replace — the fallback chains. **Highest ROI.**
+1. **✅ SHIPPED — Resilience hardening (no new infra).** Per-endpoint **circuit breaker**
+   (`agents/circuit.py`) wraps `fal_client.run_sync`/`submit` — after 3 consecutive
+   failures on an endpoint it opens for 60s and fails FAST (`CircuitOpen`) so the caller's
+   existing fallback chain runs instead of hanging on the timeout each time. Keyed per
+   endpoint (one down model doesn't stall the others); in-process, thread-safe. Existing
+   fallbacks catch it (they catch `Exception`) — no caller changes. *Next: extend the same
+   `circuit.call` to `llm.chat` + lip-sync if those start hanging; add jittered retry.*
 2. **Phase 1 trigger (2nd worker OR client reliability SLA) — Redis.** Web/worker split
    with a **durable queue** (Postgres-backed or RQ) + **Redis per-provider semaphore**
    (SCALE_PLAN T1.4). This is what *properly* fixes the orphaned-render problem (durable

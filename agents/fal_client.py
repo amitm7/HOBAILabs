@@ -54,16 +54,24 @@ def file_to_data_uri(path: str) -> str:
 # ── Synchronous call (images) ───────────────────────────────────────────────
 
 def run_sync(endpoint: str, arguments: dict, timeout: int = 180) -> dict:
-    """POST to fal.run/<endpoint> and return the parsed JSON result."""
-    resp = requests.post(
-        f"{FAL_RUN_BASE}/{endpoint}",
-        headers=_headers(),
-        json=arguments,
-        timeout=timeout,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"fal {endpoint} failed {resp.status_code}: {resp.text[:300]}")
-    return resp.json()
+    """POST to fal.run/<endpoint> and return the parsed JSON result. Wrapped in a
+    per-endpoint circuit breaker: after repeated failures/timeouts on an endpoint, it
+    fails fast (CircuitOpen) so the caller's fallback runs instead of hanging for the full
+    timeout each time — one down model doesn't stall the others."""
+    from agents import circuit
+
+    def _do():
+        resp = requests.post(
+            f"{FAL_RUN_BASE}/{endpoint}",
+            headers=_headers(),
+            json=arguments,
+            timeout=timeout,
+        )
+        if not resp.ok:
+            raise RuntimeError(f"fal {endpoint} failed {resp.status_code}: {resp.text[:300]}")
+        return resp.json()
+
+    return circuit.call(f"fal:{endpoint}", _do)
 
 
 # ── Queue call (slow video) ─────────────────────────────────────────────────
@@ -73,15 +81,20 @@ def submit(endpoint: str, arguments: dict) -> dict:
     Submit a job to the fal queue. Returns a handle dict with request_id and the
     status/response URLs fal hands back (used by poll_result).
     """
-    resp = requests.post(
-        f"{FAL_QUEUE_BASE}/{endpoint}",
-        headers=_headers(),
-        json=arguments,
-        timeout=60,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"fal submit {endpoint} failed {resp.status_code}: {resp.text[:300]}")
-    body = resp.json()
+    from agents import circuit
+
+    def _do():
+        resp = requests.post(
+            f"{FAL_QUEUE_BASE}/{endpoint}",
+            headers=_headers(),
+            json=arguments,
+            timeout=60,
+        )
+        if not resp.ok:
+            raise RuntimeError(f"fal submit {endpoint} failed {resp.status_code}: {resp.text[:300]}")
+        return resp.json()
+
+    body = circuit.call(f"fal:{endpoint}", _do)
     return {
         "endpoint":     endpoint,
         "request_id":   body.get("request_id"),
