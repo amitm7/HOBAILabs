@@ -643,6 +643,14 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
     }
 
 
+@app.route("/api/canvas/<run_id>/delete", methods=["POST"])
+@auth.require_operator()
+def api_canvas_delete(run_id: str, operator: str):
+    """Delete a saved canvas — the resume picker's 🗑 (clean up old/duplicate sessions)."""
+    from agents import run_store
+    return jsonify({"deleted": bool(run_store.delete_canvas(run_id))})
+
+
 @app.route("/api/canvas/<run_id>/settings", methods=["POST"])
 @auth.require_operator()
 def api_canvas_settings(run_id: str, operator: str):

@@ -571,12 +571,14 @@
     try { localStorage.setItem("hob_canvas_run", id); } catch (e) { /* ignore */ }
     history.replaceState({}, "", "/canvas?run=" + id);
     $("saved").hidden = false;
+    if ($("del-btn")) $("del-btn").hidden = false;
   }
   function clearRun() {
     runId = null;
     try { localStorage.removeItem("hob_canvas_run"); } catch (e) { /* ignore */ }
     history.replaceState({}, "", "/canvas");
     $("saved").hidden = true;
+    if ($("del-btn")) $("del-btn").hidden = true;
   }
   function applyCanvas(canvas) {
     if (canvas.brief !== undefined) $("brief").value = canvas.brief || "";
@@ -593,14 +595,36 @@
       applyCanvas(d.canvas);
     } catch (e) { err("Couldn't resume that canvas — it may have been cleared."); clearRun(); }
   }
+  function _ago(ts) {
+    if (!ts) return "";
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    return Math.floor(s / 86400) + "d ago";
+  }
   async function loadRecents() {
     try {
       const d = await api("/api/canvas/list");
+      // Distinguishable labels — same brief across sessions is disambiguated by
+      // time + shot count + mode (they're separate runs, not real duplicates).
       $("resume").innerHTML = '<option value="">Resume…</option>' +
-        (d.canvases || []).map((c) =>
-          `<option value="${c.run_id}">${escapeHtml(c.title)}</option>`).join("");
+        (d.canvases || []).map((c) => {
+          const meta = [_ago(c.updated_at), c.shots ? c.shots + " shots" : "",
+            c.story_type === "ai" ? "🎭" : ""].filter(Boolean).join(" · ");
+          return `<option value="${c.run_id}">${escapeHtml(c.title)}${meta ? "  — " + meta : ""}</option>`;
+        }).join("");
     } catch (e) { /* non-fatal */ }
   }
+  // Delete the open canvas (clean up old/duplicate sessions).
+  $("del-btn") && $("del-btn").addEventListener("click", async () => {
+    if (!runId) return;
+    if (!confirm("Delete this canvas? This can't be undone.")) return;
+    try {
+      await api(`/api/canvas/${runId}/delete`, {});
+      try { localStorage.removeItem("hob_canvas_run"); } catch (e) { /* ignore */ }
+      location.href = "/canvas";   // clear the board + reload the (now-pruned) picker
+    } catch (e) { err(e.message); }
+  });
 
   // ── Events ─────────────────────────────────────────────────────────────────
   $("plan-btn").addEventListener("click", async () => {

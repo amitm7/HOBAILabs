@@ -236,8 +236,20 @@ def list_canvases(limit: int = 25) -> list[dict]:
             "run_id": r["run_id"],
             "title": (brief[:60] or "Untitled canvas"),
             "updated_at": r["updated_at"],
+            "shots": len(canvas.get("frames") or canvas.get("board") or []),
+            "story_type": canvas.get("story_type") or "real",
         })
     return out
+
+
+def delete_canvas(run_id: str) -> bool:
+    """Delete a saved canvas (its run row + logs) — powers the resume picker's 🗑.
+    Returns True if a row was removed."""
+    con = _conn()
+    cur = con.execute("DELETE FROM runs WHERE run_id=? AND status='canvas'", (run_id,))
+    con.execute("DELETE FROM run_logs WHERE run_id=?", (run_id,))
+    con.commit()
+    return cur.rowcount > 0
 
 
 def append_log(run_id: str, line: str) -> None:
