@@ -122,16 +122,23 @@ def stage_costs(frames: list[dict], *, quality: str = "dev",
 # ── Board cards (storyboard view data) ─────────────────────────────────────────
 
 def stage_etas(frames: list[dict], *, quality: str = "dev") -> dict:
-    """Rough wall-clock estimate per stage (seconds) for the '~Nm' hint. Scales with
-    shot count + tier; deliberately coarse — it's a hint, not a promise."""
+    """Rough wall-clock estimate per stage (seconds) for the '~Nm' hint. Deliberately
+    coarse — a hint, not a promise. Stills and clips generate in PARALLEL (each model has
+    a concurrency cap), so the wall-clock is BATCHES × per-item, not n × per-item — a 32-
+    shot Video render is ~8 batches of ~70s (~9 min), NOT 32×70s (~37 min). Estimating it
+    sequentially made the number needlessly scary."""
+    import math
     n = max(1, len(frames))
     prod = quality != "dev"
+    IMG_PAR, VID_PAR = 4, 4                       # rough concurrent-generation caps
+    img_batches = math.ceil(n / IMG_PAR)
+    vid_batches = math.ceil(n / VID_PAR)
     return {
         "script":     0,
         "storyboard": n * 4,
-        "keyframes":  n * (16 if prod else 8),
+        "keyframes":  img_batches * (16 if prod else 8),
         "audio":      n * 3,
-        "video":      n * (70 if prod else 35),
+        "video":      vid_batches * (70 if prod else 35),
         "finalcut":   20,
     }
 
