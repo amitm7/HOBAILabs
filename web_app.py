@@ -606,6 +606,17 @@ def _canvas_tempo_bpm(mood: str) -> int:
     return 92   # default documentary pacing
 
 
+_CANVAS_CAPTION_DEFAULT = {"enabled": True, "font": "Montserrat", "size": 24,
+                           "position": "bottom", "color": "white", "max_lines": 3}
+_CANVAS_ORIENTATIONS = {"portrait", "landscape", "square"}   # 9:16 / 16:9 / 1:1
+
+
+def _orient_wh(orientation: str) -> tuple[int, int]:
+    """Output frame size for the reel by orientation. 9:16 portrait is the default."""
+    return {"portrait": (1080, 1920), "landscape": (1920, 1080),
+            "square": (1080, 1080)}.get(orientation or "portrait", (1080, 1920))
+
+
 def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
     """Shared payload for the canvas's stills/video render (one builder, two callers)."""
     return {
@@ -615,15 +626,46 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
         "frames": state["frames"], "mood": state.get("mood", ""),
         "subject_name": "", "subject_description": "",
         "video_model": "auto", "image_model": "auto", "music_type": "none",
-        "caption_style": {"enabled": True, "font": "Montserrat", "size": 24,
-                          "position": "bottom", "max_lines": 3},
-        "orientation": "portrait", "session_id": render_id, "operator_id": operator,
+        # Operator-set caption style + orientation (persisted on the canvas state), with the
+        # house defaults when unset. The render engine already burns caption_style + honors
+        # orientation, so this is pure surfacing.
+        "caption_style": {**_CANVAS_CAPTION_DEFAULT, **(state.get("caption_style") or {})},
+        "orientation": state.get("orientation") or "portrait",
+        "session_id": render_id, "operator_id": operator,
         "likeness_consent": {"face": True, "voice": True}, "canvas_run_id": "",
         # D1: auto per-speaker face reuse ON by default — every un-anchored shot of a
         # speaker reuses that speaker's FIRST generated portrait, so the same person keeps
         # the same face across the whole reel without anchoring every frame by hand.
         "face_ref": True,
     }
+
+
+@app.route("/api/canvas/<run_id>/settings", methods=["POST"])
+@auth.require_operator()
+def api_canvas_settings(run_id: str, operator: str):
+    """Persist render settings on the canvas: caption style (on/off, font, size, color,
+    position, max-lines = 1/2-line) and orientation (9:16 / 16:9 / 1:1). The engine already
+    burns caption_style + honors orientation — this just stores the operator's choice.
+    Changing ORIENTATION invalidates rendered stills (they're generated at that aspect)."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    if isinstance(body.get("caption_style"), dict):
+        cur = {**_CANVAS_CAPTION_DEFAULT, **(state.get("caption_style") or {})}
+        for k in ("enabled", "font", "size", "position", "color", "max_lines"):
+            if k in body["caption_style"]:
+                cur[k] = body["caption_style"][k]
+        state["caption_style"] = cur
+    if body.get("orientation") in _CANVAS_ORIENTATIONS:
+        if state.get("orientation") != body["orientation"]:
+            state["orientation"] = body["orientation"]
+            # Stills/clips are generated at the chosen aspect → a change makes them stale.
+            if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
+                canvas_run.invalidate_from(state, "keyframes")
+    _canvas_save(run_id, state)
+    return jsonify({"canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/keyframes", methods=["POST"])
@@ -2291,7 +2333,7 @@ def redo_motion():
     run_dir.mkdir(parents=True, exist_ok=True)
     quality = data.get("quality", "dev")
     max_frame_dur = 5.0 if quality == "dev" else 9.0
-    width, height = (1080, 1920) if data.get("orientation", "portrait") == "portrait" else (1920, 1080)
+    width, height = _orient_wh(data.get("orientation"))   # 9:16 / 16:9 / 1:1
     fps = int(data.get("fps", 30))
 
     try:

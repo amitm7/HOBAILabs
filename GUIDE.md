@@ -319,6 +319,13 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Pick your audio** (same options as Story mode): **🎵 Music — auto** (generated
   score), **⬆ Upload a song** (your own track), **🎙 Voiceover** (ElevenLabs narrates
   the captions — choose a voice), or **🔇 None**.
+- **Captions & format bar.** Set the burned-in captions — **on/off**, **position**
+  (top/middle/bottom), **font**, **size**, **color**, and **1-line / 2-line** (or no limit).
+  Pick the reel **format**: **9:16** (portrait), **16:9** (landscape), or **1:1** (square) —
+  set this *before* generating, since shots are made at that aspect. Settings save as you
+  change them. *(Font list shows installed fonts — Montserrat today; more are a deploy step.)*
+- **Edit any shot inline:** each card lets you tweak the **caption, camera move, emotion,
+  camera angle,** and the image prompt — changes cascade so nothing stale ships.
 - **Render the reel** with the **🎬 Render reel** button (top bar). With a music bed it
   **cuts on the beat** (hard cut on a beat, soft dissolve off it) instead of a uniform
   crossfade — so it reads as a film, not a slideshow. Even with no music, cuts follow a

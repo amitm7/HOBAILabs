@@ -394,7 +394,9 @@ def set_ai_generic(state: dict, frame_id: str) -> dict:
 # Fields the operator may edit per shot from the board (the editable prompt box).
 EDITABLE_FRAME_FIELDS = {
     "caption", "director_note", "motion_override", "negative_prompt", "image_prompt",
+    "emotion", "camera_angle",   # nested under scene (B1)
 }
+_SCENE_FIELDS = {"image_prompt", "emotion", "camera_angle"}
 
 
 def edit_frame(state: dict, frame_id: str, fields: dict) -> dict:
@@ -406,8 +408,8 @@ def edit_frame(state: dict, frame_id: str, fields: dict) -> dict:
             for k, v in (fields or {}).items():
                 if k not in EDITABLE_FRAME_FIELDS:
                     continue
-                if k == "image_prompt":
-                    f.setdefault("scene", {})["image_prompt"] = str(v)
+                if k in _SCENE_FIELDS:
+                    f.setdefault("scene", {})[k] = str(v)
                 else:
                     f[k] = str(v)
             break
@@ -615,6 +617,8 @@ def public_state(state: dict) -> dict:
         "sketch_done": state.get("sketch_done", 0),
         "sketch_total": state.get("sketch_total", 0),
         "characters": state.get("characters", []),
+        "caption_style": state.get("caption_style") or {},   # operator caption settings
+        "orientation": state.get("orientation") or "portrait",
     }
 
 

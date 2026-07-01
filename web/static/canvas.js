@@ -73,6 +73,40 @@
 
   function mediaUrl(p) { return "/media?path=" + encodeURIComponent(p); }
 
+  // ── Captions & format settings (persisted on the canvas via /settings) ──────
+  let _settingsReady = false;
+  function syncSettings(canvas) {
+    const cs = canvas.caption_style || {};
+    if ("enabled" in cs) $("cap-enabled").checked = cs.enabled !== false;
+    if (cs.position) $("cap-position").value = cs.position;
+    if (cs.font) $("cap-font").value = cs.font;
+    if (cs.size) $("cap-size").value = cs.size;
+    if (cs.color) $("cap-color").value = cs.color;
+    if (cs.max_lines !== undefined) $("cap-lines").value = String(cs.max_lines);
+    if (canvas.orientation) $("orientation").value = canvas.orientation;
+    _settingsReady = true;
+  }
+  async function saveSettings() {
+    if (!runId || !_settingsReady) return;
+    const caption_style = {
+      enabled: $("cap-enabled").checked,
+      position: $("cap-position").value,
+      font: $("cap-font").value,
+      size: parseInt($("cap-size").value, 10) || 24,
+      color: $("cap-color").value,
+      max_lines: parseInt($("cap-lines").value, 10),
+    };
+    try {
+      const d = await api(`/api/canvas/${runId}/settings`,
+        { caption_style, orientation: $("orientation").value });
+      $("settings-hint").textContent = "✓ saved";
+      setTimeout(() => { $("settings-hint").textContent = ""; }, 1500);
+      if (d.canvas) { lastCanvas = d.canvas; renderRail(d.canvas.stages); }  // orientation may re-lock stages
+    } catch (e) { err(e.message); }
+  }
+  ["cap-enabled", "cap-position", "cap-font", "cap-size", "cap-color", "cap-lines", "orientation"]
+    .forEach((id) => { const el = $(id); if (el) el.addEventListener("change", saveSettings); });
+
   // Storyboard (pencil-sketch) view toggle + last-rendered canvas (for re-render on toggle).
   let storyboardView = false;
   let lastCanvas = null;
@@ -168,8 +202,14 @@
             value="${escapeHtml(c.caption || "")}" placeholder="caption / line">
           <input class="edit" data-frame="${fid}" data-field="motion_override"
             value="${escapeHtml(c.motion || "")}" placeholder="camera move">
+          <div class="edit-row">
+            <input class="edit" data-frame="${fid}" data-field="emotion"
+              value="${escapeHtml(c.emotion || "")}" placeholder="emotion" title="Emotional tone of this shot">
+            <input class="edit" data-frame="${fid}" data-field="camera_angle"
+              value="${escapeHtml(c.camera || "")}" placeholder="camera angle" title="Shot angle (e.g. low angle, close-up)">
+          </div>
           ${promptBox}
-          <div class="sub">${escapeHtml(c.emotion || "")}${c.duration ? " · " + c.duration + "s" : ""}</div>
+          <div class="sub">${c.duration ? c.duration + "s" : ""}</div>
           ${fidelityRow(c)}
           <div class="source">
             <span class="lbl">Replace</span>
@@ -373,6 +413,7 @@
 
   function render(canvas) {
     lastCanvas = canvas;
+    syncSettings(canvas);
     renderRail(canvas.stages);
     renderBoard(canvas.board);
     const hasBoard = canvas.board && canvas.board.length > 0;
