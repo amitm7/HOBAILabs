@@ -115,6 +115,8 @@
   .cv-card textarea.edit { min-height:46px; resize:vertical; font-size:11px; color:#374151; }
   .cv-card .edit-row { display:flex; gap:6px; }
   .cv-card .edit-row .edit { flex:1; }
+  .cv-card .cam-move { font:inherit; font-size:11px; padding:4px 5px; border:1px solid #e5e7eb; border-radius:7px; color:#6b7280; }
+  .cv-card .sub .dur-in { width:48px; font:inherit; font-size:11px; padding:2px 5px; border:1px solid #e5e7eb; border-radius:6px; }
   .cv-card .lbl { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; margin-top:7px; }
   /* Chat command bar — a floating bar pinned to the viewport bottom (not sticky-in-flow,
      which overlapped the tall board). */
@@ -253,6 +255,9 @@
     <span class="muted">·</span>
     <strong>Format:</strong>
     <select id="orientation" title="Reel aspect ratio — set before generating"><option value="portrait">9:16 Portrait</option><option value="landscape">16:9 Landscape</option><option value="square">1:1 Square</option></select>
+    <span class="muted">·</span>
+    <label title="Rescale every shot's duration to hit this total length">⏱ Rebalance to <input id="rebalance-sec" type="number" min="5" max="600" step="5" value="60" style="width:60px;padding:5px 7px;border:1px solid #e5e7eb;border-radius:8px;font:inherit;font-size:12px">s</label>
+    <button id="rebalance-btn" class="attach-btn">Apply</button>
     <span class="muted" id="settings-hint"></span>
   </div>
 

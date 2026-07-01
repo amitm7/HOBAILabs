@@ -400,27 +400,51 @@ _SCENE_FIELDS = {"image_prompt", "emotion", "camera_angle"}
 
 
 def edit_frame(state: dict, frame_id: str, fields: dict) -> dict:
-    """Edit one shot's text/prompt from the board. Editing a shot makes every
-    downstream stage stale (reference-chaining), so we cascade-invalidate from the
-    storyboard — a re-approve regenerates only what changed."""
+    """Edit one shot's text/prompt from the board. A visual edit makes downstream stages
+    stale (cascade from storyboard). A DURATION-only edit leaves the still unchanged, so it
+    only invalidates from Video (timing/clip length) — no wasteful still regen."""
+    visual_changed = False
     for f in state["frames"]:
         if f.get("frame_id") == frame_id:
             for k, v in (fields or {}).items():
+                if k == "duration":
+                    try:
+                        f["duration"] = max(1.0, min(15.0, round(float(v), 1)))
+                    except (TypeError, ValueError):
+                        pass
+                    continue
                 if k not in EDITABLE_FRAME_FIELDS:
                     continue
                 if k in _SCENE_FIELDS:
                     f.setdefault("scene", {})[k] = str(v)
                 else:
                     f[k] = str(v)
+                visual_changed = True
             break
     else:
         raise ValueError(f"unknown frame {frame_id!r}")
-    # Only reset downstream if the storyboard had already run; if we're still at the
-    # script stage there is nothing downstream to invalidate.
-    if state["stages"]["storyboard"]["status"] in ("done", "approved"):
+    if visual_changed and state["stages"]["storyboard"]["status"] in ("done", "approved"):
         invalidate_from(state, "storyboard")
+    elif not visual_changed and state["stages"]["video"].get("status") in ("done", "approved", "generating"):
+        invalidate_from(state, "video")   # duration-only → just re-time the clips
     state["board"] = board_cards(state["frames"])
     state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
+    return state
+
+
+def redistribute_durations(state: dict, target_seconds: float) -> dict:
+    """Rescale all shot durations proportionally to hit a target total (clamped 1–15s per
+    shot). Only re-times — invalidates from Video, not the stills."""
+    frames = state.get("frames", [])
+    if not frames or target_seconds <= 0:
+        return state
+    cur = sum(float(f.get("duration") or 4) for f in frames) or 1.0
+    scale = target_seconds / cur
+    for f in frames:
+        f["duration"] = max(1.0, min(15.0, round(float(f.get("duration") or 4) * scale, 1)))
+    if state["stages"]["video"].get("status") in ("done", "approved", "generating"):
+        invalidate_from(state, "video")
+    state["board"] = board_cards(frames)
     return state
 
 

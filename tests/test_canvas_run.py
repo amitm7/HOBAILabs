@@ -127,7 +127,8 @@ def test_edit_frame_rejects_unknown_field(monkeypatch):
     state = canvas_run.new_canvas("brief")
     canvas_run.edit_frame(state, "f01", {"frame_id": "hacked", "duration": 999})
     f = next(f for f in state["frames"] if f["frame_id"] == "f01")
-    assert f["frame_id"] == "f01" and f["duration"] == 5.0  # non-editable ignored
+    # frame_id is protected (ignored); duration IS editable now → clamped to the 1-15s range.
+    assert f["frame_id"] == "f01" and f["duration"] == 15.0
 
 
 def test_chat_replans_and_resets(monkeypatch):

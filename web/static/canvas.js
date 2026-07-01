@@ -18,6 +18,10 @@
     return data;
   }
 
+  // Optional structured camera-move vocabulary (fills the free-text move field).
+  const CAMERA_MOVES = ["static", "slow push in", "slow pull out", "pan left", "pan right",
+    "tilt up", "tilt down", "dolly in", "crane up", "orbit", "handheld follow"];
+
   // Arrow geometry per motion token — structured, not a decorative scribble.
   const ARROWS = {
     in:    "M60,150 L60,95",  out:  "M60,95 L60,150",
@@ -94,6 +98,18 @@
     if ($("world-setting") && document.activeElement !== $("world-setting")) $("world-setting").value = w.setting || "";
     _settingsReady = true;
   }
+  $("rebalance-btn") && $("rebalance-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err(""); const btn = $("rebalance-btn"); btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/redistribute`,
+        { target_seconds: parseFloat($("rebalance-sec").value) || 60 });
+      $("settings-hint").textContent = "✓ durations rebalanced";
+      setTimeout(() => { $("settings-hint").textContent = ""; }, 1600);
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+    finally { btn.disabled = false; }
+  });
   $("world-save") && $("world-save").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     err(""); const btn = $("world-save"); btn.disabled = true;
@@ -220,8 +236,13 @@
         <div class="meta">
           <input class="edit cap" data-frame="${fid}" data-field="caption"
             value="${escapeHtml(c.caption || "")}" placeholder="caption / line">
-          <input class="edit" data-frame="${fid}" data-field="motion_override"
-            value="${escapeHtml(c.motion || "")}" placeholder="camera move">
+          <div class="edit-row">
+            <input class="edit" data-frame="${fid}" data-field="motion_override"
+              value="${escapeHtml(c.motion || "")}" placeholder="camera move">
+            <select class="cam-move" data-frame="${fid}" title="Pick a camera move (optional)">
+              <option value="">move ▾</option>${CAMERA_MOVES.map((m) => `<option value="${m}">${m}</option>`).join("")}
+            </select>
+          </div>
           <div class="edit-row">
             <input class="edit" data-frame="${fid}" data-field="emotion"
               value="${escapeHtml(c.emotion || "")}" placeholder="emotion" title="Emotional tone of this shot">
@@ -229,7 +250,7 @@
               value="${escapeHtml(c.camera || "")}" placeholder="camera angle" title="Shot angle (e.g. low angle, close-up)">
           </div>
           ${promptBox}
-          <div class="sub">${c.duration ? c.duration + "s" : ""}</div>
+          <div class="sub">⏱ <input class="edit dur-in" data-frame="${fid}" data-field="duration" type="number" min="1" max="15" step="0.5" value="${c.duration || ""}" title="Shot duration (seconds)">s</div>
           ${fidelityRow(c)}
           <div class="source">
             <span class="lbl">Replace</span>
@@ -713,6 +734,14 @@
 
   // Delegated change handler: Fidelity selector, per-card image upload (Replace row), text.
   $("board").addEventListener("change", (ev) => {
+    const cam = ev.target.closest(".cam-move");
+    if (cam && cam.value) {
+      const fid = cam.getAttribute("data-frame");
+      const inp = document.querySelector(`input[data-frame="${fid}"][data-field="motion_override"]`);
+      if (inp) { inp.value = cam.value; saveField(inp); }
+      cam.value = "";
+      return;
+    }
     const fidSel = ev.target.closest(".fid-sel");
     if (fidSel) { setFidelity(fidSel.getAttribute("data-frame"), fidSel.value, fidSel); return; }
     const fileInput = ev.target.closest('input[type="file"][data-mode]');

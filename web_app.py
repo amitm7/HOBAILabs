@@ -714,6 +714,24 @@ def api_canvas_character_portrait(run_id: str, operator: str):
                     "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/redistribute", methods=["POST"])
+@auth.require_operator()
+def api_canvas_redistribute(run_id: str, operator: str):
+    """Rescale all shot durations proportionally to hit a target total length (per-shot
+    duration edits happen via /frame). Only re-times — invalidates from Video."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    try:
+        target = float((request.json or {}).get("target_seconds") or 0)
+    except (TypeError, ValueError):
+        target = 0
+    canvas_run.redistribute_durations(state, target)
+    _canvas_save(run_id, state)
+    return jsonify({"canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/world", methods=["POST"])
 @auth.require_operator()
 def api_canvas_world(run_id: str, operator: str):
