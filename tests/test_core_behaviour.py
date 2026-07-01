@@ -439,13 +439,14 @@ Full social caption.
 
     def test_vendor_fallback_chain(self):
         cat = model_router.catalog()
-        # Every GENERATION model has a configured cross-vendor fallback chain. Upscale
-        # models are excluded: they must NOT cross-fall-back (routing a real-faithful
-        # upscaler to a creative one would hallucinate a real face — a moat violation);
-        # they degrade to the SOURCE image in agents/upscaler.py instead.
+        # Every GENERATION model has a configured cross-vendor fallback chain. Excluded:
+        # 'upscale' (must NOT cross-fall-back — real→creative would hallucinate a real face;
+        # degrades to the source image instead) and 'edit' (identity models fail over via
+        # routing.identity in agents/image_editor, not the per-model fallbacks map).
         self.assertEqual(
             [m for m, meta in cat["models"].items()
-             if meta.get("kind") != "upscale" and not cat.get("fallbacks", {}).get(m)],
+             if meta.get("kind") not in ("upscale", "edit")
+             and not cat.get("fallbacks", {}).get(m)],
             [])
         # a simulated outage degrades to the next vendor
         tried = []

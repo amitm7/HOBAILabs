@@ -26,7 +26,7 @@ agents/
                           invalidate_from/public_state; PaidStageDispatch signals render reuse.
   model_router.py         shot → model id (pure logic over config/models.json)
   image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends); prompt-hash cache
-  image_editor.py         [edit:] pass on a still (gpt-image)
+  image_editor.py         reference-conditioned identity edit — PLUGGABLE (config routing.identity): nano_banana_edit (fal, default) -> gpt_image_edit fallback; env IDENTITY_MODEL; per-endpoint circuit-broken
   safety.py               Gate A (moderation) + Gate B (face sanity) + Gate B2 (vision critique)
   cast.py                 multi-speaker detection + voice resolution per frame
   brand.py                brief extraction, mandatories gate, PIL CTA card, disclosure

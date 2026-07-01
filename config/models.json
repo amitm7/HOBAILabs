@@ -83,6 +83,26 @@
       "strengths": ["creative", "ai-stills", "detail-add"],
       "max_concurrent": 4, "pricing_key": "upscale.clarity_usd",
       "_use": "AI stills / ambient B-roll — adds detail (hallucinates), NEVER route a real person here."
+    },
+    "nano_banana_edit": {
+      "kind": "edit", "backend": "fal", "fal_endpoint": "fal-ai/nano-banana/edit",
+      "tier": "premium", "ref_input": "image_urls",
+      "strengths": ["face", "identity", "reference", "same-character-new-scene"],
+      "max_concurrent": 4, "pricing_key": "image_gen.nano_banana_usd",
+      "_use": "Reference-conditioned generation — keeps a supplied face/character across a NEW scene. The strong identity path (real face-refs AND fiction characters). VERIFY the fal endpoint before a big run."
+    },
+    "flux_kontext": {
+      "kind": "edit", "backend": "fal", "fal_endpoint": "fal-ai/flux-pro/kontext",
+      "tier": "premium", "ref_input": "image_url",
+      "strengths": ["identity", "in-context-edit", "consistency"],
+      "max_concurrent": 4, "pricing_key": "image_gen.flux_portrait_usd",
+      "_use": "In-context edit — holds a subject across scenes. Alternative identity model to nano_banana."
+    },
+    "gpt_image_edit": {
+      "kind": "edit", "backend": "openai",
+      "tier": "standard", "strengths": ["edit", "text-in-image"],
+      "max_concurrent": 4, "pricing_key": "image_gen.openai_edit_usd",
+      "_use": "OpenAI gpt-image-1 edit — the original identity/edit path, now the FALLBACK."
     }
   },
 
@@ -98,6 +118,10 @@
       "landscape": { "draft": ["kling_std"], "premium": ["hailuo", "seedance"] },
       "hero":      { "draft": ["kling_std"], "premium": ["seedance", "veo"] },
       "dialogue":  { "draft": ["kling_std"], "premium": ["veo", "kling_pro"] }
+    },
+    "identity": {
+      "_note": "Reference-conditioned generation (keep a supplied face/character in a new scene). Ordered failover — the edit path (agents/image_editor.edit_image) tries these in order. Override the primary with env IDENTITY_MODEL.",
+      "default": ["nano_banana_edit", "gpt_image_edit"]
     }
   },
 
