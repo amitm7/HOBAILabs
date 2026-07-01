@@ -195,6 +195,8 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "upscaled":        bool(f.get("upscaled")),
             # Pencil-sketch storyboard panel (planning view) — path if rendered, else ''
             "storyboard_art":  f.get("storyboard_art") or "",
+            # Content-fit flag (C4): a reason string if the matched photo may not fit the beat
+            "match_flag":      f.get("match_flag") or "",
             "duration":   f.get("duration"),
         })
     return cards
@@ -720,6 +722,9 @@ def public_state(state: dict) -> dict:
         "sketching": bool(state.get("sketching", False)),
         "sketch_done": state.get("sketch_done", 0),
         "sketch_total": state.get("sketch_total", 0),
+        "checking": bool(state.get("checking", False)),
+        "check_done": state.get("check_done", 0),
+        "check_total": state.get("check_total", 0),
         "characters": state.get("characters", []),
         "caption_style": state.get("caption_style") or {},   # operator caption settings
         "orientation": state.get("orientation") or "portrait",

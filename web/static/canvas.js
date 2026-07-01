@@ -231,6 +231,7 @@
             : c.ai_likeness ? `<span class="fromreal">AI · likeness</span>`
             : c.forced_ai ? `<span class="fromreal">AI</span>` : ""}
           ${c.upscaled ? `<span class="upbadge">⬆ upscaled</span>` : ""}
+          ${c.match_flag ? `<span class="flag" title="${escapeHtml(c.match_flag)}">⚠️ check</span>` : ""}
           ${frameInner}
         </div>
         <div class="meta">
@@ -820,6 +821,27 @@
       render(d.canvas);
     } catch (e) { err(e.message); $("match-hint").textContent = ""; }
     finally { btn.disabled = false; }
+  });
+
+  // 🔎 Check matches — vision content-fit pass; flags weak matches (⚠️) for review.
+  let checkPoll = null;
+  $("check-btn") && $("check-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err(""); const btn = $("check-btn"); btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/check-matches`, {});
+      $("match-hint").textContent = `🔎 checking 0/${d.total}…`;
+      if (checkPoll) clearInterval(checkPoll);
+      checkPoll = setInterval(async () => {
+        try {
+          const c = (await api(`/api/canvas/${runId}/state`)).canvas;
+          $("match-hint").textContent = c.checking
+            ? `🔎 checking ${c.check_done}/${c.check_total}…`
+            : `🔎 checked ${c.check_total} — ${(c.board || []).filter((x) => x.match_flag).length} flagged ⚠️`;
+          if (!c.checking) { clearInterval(checkPoll); checkPoll = null; btn.disabled = false; render(c); }
+        } catch (e) { /* keep polling */ }
+      }, 2500);
+    } catch (e) { err(e.message); btn.disabled = false; }
   });
 
   // ✏️ Storyboard view — toggle the board between photo/placeholder and pencil-sketch

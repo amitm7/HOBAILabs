@@ -1078,6 +1078,67 @@ def api_canvas_fidelity_suggest(run_id: str, operator: str):
     return jsonify({"suggestions": suggestions, "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/check-matches", methods=["POST"])
+@auth.require_operator()
+def api_canvas_check_matches(run_id: str, operator: str):
+    """Content-fit confidence check (C4): a cheap vision pass per real-matched shot asking
+    'does this photo fit this beat?' → flags low-confidence matches (`frame["match_flag"]`)
+    for review. Read-only (no spend on generation). Threaded + parallel; progress on
+    public_state.checking/check_done/check_total. Complements Phase-1 role-aware matching."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    targets = [f for f in state.get("frames", [])
+               if canvas_run.asset_kind(f) == canvas_run.ASSET_REAL
+               and (f.get("visual_path") or "")]
+    if not targets:
+        return jsonify({"error": "No matched real shots to check yet."}), 400
+    state["checking"] = True
+    state["check_total"] = len(targets)
+    state["check_done"] = 0
+    _canvas_save(run_id, state)
+
+    def _job(st):
+        from agents import llm
+        from concurrent.futures import ThreadPoolExecutor
+        lock = threading.Lock()
+        prog = {"n": 0}
+
+        def _check(f):
+            src = f.get("visual_path") or ""
+            beat = (f.get("caption") or "").strip()
+            who = f.get("speaker_label") or ""
+            try:
+                if os.path.splitext(src)[1].lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+                    res = llm.chat([{"role": "user", "content": [
+                        {"type": "text", "text": (
+                            f"Story beat: \"{beat}\"" + (f" (about: {who})" if who and who != 'Narrator' else "") +
+                            ". Does THIS photo reasonably fit that beat — the right kind of person/"
+                            "scene/mood? Reply JSON {\"fits\": true|false, \"reason\": \"short\"}.")},
+                        {"type": "image", "path": src},
+                    ]}], json_mode=True, max_tokens=120, model_tier="fast")
+                    data = llm.json_loads_lenient(res) or {}
+                    f["match_flag"] = "" if data.get("fits", True) else (data.get("reason") or "may not fit this beat")
+            except Exception as e:
+                print(f"[MatchCheck] {f.get('frame_id')} ({e})")
+            with lock:
+                prog["n"] += 1
+                st["check_done"] = prog["n"]
+                st["board"] = canvas_run.board_cards(st["frames"])
+                _canvas_save(run_id, st)
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            list(ex.map(_check, targets))
+        st["checking"] = False
+        st["board"] = canvas_run.board_cards(st["frames"])
+        _canvas_save(run_id, st)
+
+    _track_job(run_id, _job, state)
+    return jsonify({"checking": True, "total": len(targets),
+                    "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/fidelity", methods=["POST"])
 @auth.require_operator()
 def api_canvas_fidelity(run_id: str, operator: str):
