@@ -619,6 +619,10 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
                           "position": "bottom", "max_lines": 3},
         "orientation": "portrait", "session_id": render_id, "operator_id": operator,
         "likeness_consent": {"face": True, "voice": True}, "canvas_run_id": "",
+        # D1: auto per-speaker face reuse ON by default — every un-anchored shot of a
+        # speaker reuses that speaker's FIRST generated portrait, so the same person keeps
+        # the same face across the whole reel without anchoring every frame by hand.
+        "face_ref": True,
     }
 
 
@@ -2593,6 +2597,12 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
         elif char_ref and os.path.exists(char_ref):
             ref = char_ref  # every portrait of this speaker reference-edits to the supplied face
         else:
+            # D2: a set-but-missing ref would otherwise be dropped SILENTLY (random face).
+            # Surface it in the render log so the operator knows to re-attach the photo.
+            if talent_ref or char_ref:
+                fallback = "reusing the speaker's first portrait" if first_portrait_by_speaker.get(sid) else "generating a fresh face"
+                print(f"[Identity] {f.get('frame_id')}: face reference not found on disk "
+                      f"({os.path.basename(talent_ref or char_ref)}) — {fallback}")
             ref = first_portrait_by_speaker.get(sid, "") if face_ref else ""
         if ps == "ai_portrait":
             f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid,
