@@ -838,6 +838,44 @@
     } catch (e) { err(e.message); btn.disabled = false; }
   });
 
+  // 📄 Script view — read/edit the story as narration prose BEFORE generating anything.
+  // Review-first: the captions ARE the script; edits save straight to the shots.
+  let scriptView = false;
+  function _autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+  function renderScript(board) {
+    $("script-panel").innerHTML =
+      `<div class="hdr">📄 Your story, shot by shot — read it top to bottom and edit any line.
+        This is free; nothing generates until you Generate a stage.</div>`
+      + (board || []).map((c, i) => `
+        <div class="ln">
+          <span class="n">${i + 1}</span>
+          <span class="meta">${escapeHtml(c.shot_size || "")}</span>
+          <textarea class="script-line" data-frame="${c.frame_id}" data-field="caption" rows="1"
+            placeholder="(no line — visual-only beat)">${escapeHtml(c.caption || "")}</textarea>
+        </div>`).join("");
+    $("script-panel").querySelectorAll("textarea").forEach(_autosize);
+  }
+  $("script-btn") && $("script-btn").addEventListener("click", () => {
+    if (!runId || !lastCanvas) { err("Plan a story first."); return; }
+    scriptView = !scriptView;
+    $("script-btn").classList.toggle("on", scriptView);
+    $("script-btn").textContent = scriptView ? "📄 Back to board" : "📄 Script";
+    if (scriptView) {
+      if (storyboardView) { storyboardView = false; $("storyboard-btn").classList.remove("on"); $("storyboard-btn").textContent = "✏️ Storyboard"; }
+      renderScript(lastCanvas.board || []);
+      $("script-panel").hidden = false; $("board").hidden = true; $("legend").hidden = true;
+    } else {
+      $("script-panel").hidden = true; $("board").hidden = false;
+      if (lastCanvas) render(lastCanvas);
+    }
+  });
+  $("script-panel").addEventListener("input", (ev) => {
+    const t = ev.target.closest(".script-line"); if (t) _autosize(t);
+  });
+  $("script-panel").addEventListener("change", (ev) => {
+    const t = ev.target.closest(".script-line"); if (t) saveField(t);   // → /frame {caption}
+  });
+
   // ✏️ Storyboard view — toggle the board between photo/placeholder and pencil-sketch
   // panels. First enable renders the panels (cheap draft model, one per shot); after that
   // it's just a view toggle (panels are cached).
@@ -860,6 +898,10 @@
   $("storyboard-btn") && $("storyboard-btn").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     err("");
+    if (scriptView) {   // leaving the Script view
+      scriptView = false; $("script-btn").classList.remove("on"); $("script-btn").textContent = "📄 Script";
+      $("script-panel").hidden = true; $("board").hidden = false;
+    }
     storyboardView = !storyboardView;
     $("storyboard-btn").classList.toggle("on", storyboardView);
     $("storyboard-btn").textContent = storyboardView ? "✏️ Exit storyboard" : "✏️ Storyboard";

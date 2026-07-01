@@ -256,6 +256,10 @@ A **stage-gated board** that builds your reel one approved step at a time —
   (e.g. *epic Indian miniature painting*, *anime*, *3D Pixar*) and a **setting** (e.g. *ancient
   Ayodhya palace + forest*) — click **Apply world** and it's woven into *every* shot so the
   reel looks unified and the world stays consistent. Especially important for AI/fiction.
+- **📄 Script — review your story first (free).** After planning, click **📄 Script** to read
+  the whole story as narration, shot by shot, and **edit any line inline** — the cheap review
+  step before you spend anything on matching or generation. **📄 Back to board** returns to the
+  shot cards. (The captions *are* the script, so edits here update the shots directly.)
 - **Real story or AI story?** At the top, pick **📷 Real story** (your real photos/video —
   the HOB authentic path) or **🎭 AI story (fiction)** for a fully-generated tale (mythology,
   a parable, any invented characters — e.g. Ramayana). In AI story mode the real-media tools
