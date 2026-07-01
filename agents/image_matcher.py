@@ -140,10 +140,17 @@ def _describe_video(path: str) -> str:
 
 # ── Stage 1: describe each image once (cached) ────────────────────────────────
 
+# Bump when _DESCRIBE_PROMPT changes so cached descriptions regenerate with the new schema.
+_DESC_VERSION = "v2"
+
 _DESCRIBE_PROMPT = (
-    "Describe this photo in 1-2 sentences for a video editor choosing shots. "
-    "Include: who or what is shown, ANY text, names, or captions visible in the "
-    "image (quote them), the setting, and the mood/emotion. Be concrete."
+    "Describe this photo in 1-2 sentences for a video editor choosing shots. Be concrete "
+    "about the PEOPLE: how many, and for EACH person their apparent GENDER and AGE "
+    "(e.g. 'elderly man', 'adult woman', 'young girl', 'boy around 10'). State any "
+    "RELATIONSHIP that's visually implied — e.g. 'a mother and her daughter', 'a father "
+    "and son', 'two brothers', 'a married couple', 'a teacher with students'. Quote ANY "
+    "visible text or names. Note the setting and mood. If there are no people, say plainly "
+    "what object or place it is."
 )
 
 
@@ -155,7 +162,7 @@ def describe_images(paths: list[str]) -> dict:
 
     for p in paths:
         try:
-            key = _img_hash(p)
+            key = _DESC_VERSION + ":" + _img_hash(p)   # version prefix → new schema regenerates
         except Exception:
             continue
         hit = store.get(key)
@@ -203,11 +210,20 @@ def assign_images(frames: list[dict], descriptions: dict) -> dict:
     )
 
     def _frline(f):
-        # Richer signal than the bare caption: the storyboard's description of what the
-        # shot DEPICTS (who/what is on screen) + its emotional tone. An abstract caption
-        # like "But we never felt 'less'" matches far better with "depicts: a modest 1RK
-        # room, mother and daughter" attached.
+        # Signal for the ranker: WHO the shot is about (speaker role + gender + age — the
+        # key to matching 'brother' to a young male, not a mother+daughter photo), the
+        # storyboard's DEPICTS line, and mood. An abstract caption still matches on content.
         bits = [(f.get("caption") or "").strip() or "(no caption)"]
+        who = []
+        sp = (f.get("speaker") or "").strip()
+        if sp and sp.lower() != "narrator":
+            who.append(sp)                       # e.g. 'brother', 'father', 'teacher'
+        if f.get("gender"):
+            who.append(str(f["gender"]))
+        if f.get("age"):
+            who.append(str(f["age"]))
+        if who:
+            bits.append("person: " + " ".join(who))
         depicts = (f.get("depicts") or "").strip()
         if depicts:
             bits.append("depicts: " + depicts[:200])
@@ -219,17 +235,19 @@ def assign_images(frames: list[dict], descriptions: dict) -> dict:
     prompt = (
         "You are a film editor placing real photos onto the beats of a story.\n\n"
         f"IMAGES (number, [filename], description):\n{img_list}\n\n"
-        f"STORY FRAMES (id: caption | depicts | mood):\n{frm_list}\n\n"
+        f"STORY FRAMES (id: caption | person | depicts | mood):\n{frm_list}\n\n"
         "For each frame choose the IMAGE NUMBER that best matches it. Priority order:\n"
-        "  1. Named people/text visible in an image vs named in the frame (strongest).\n"
-        "  2. The 'depicts' line — match who/what is literally on screen (a person vs an "
-        "object vs a place; the SAME person across beats about that person).\n"
-        "  3. Emotional tone and setting.\n"
-        "Do NOT match on loose word overlap with the caption alone — a beat whose caption "
-        "is abstract should still go to the image whose CONTENT fits the 'depicts' line. "
-        "Items marked '(real video clip)' are REAL FOOTAGE — prefer them when they fit a "
-        "beat about as well, since real footage beats an animated still. Avoid reusing an "
-        "item unless there are fewer items than frames.\n"
+        "  1. PERSON match (STRONGEST): if a frame's 'person' names a role or gender/age, "
+        "pick an image that clearly CONTAINS a person of that gender and age. A 'brother' "
+        "(young male) beat must NOT get a photo of only women; a 'father' beat needs a man; "
+        "a 'mother' beat needs a woman. REJECT gender/age mismatches even if the mood fits.\n"
+        "  2. Named people/text visible in an image vs named in the frame.\n"
+        "  3. The 'depicts' line — who/what is literally on screen (person vs object vs "
+        "place; the SAME person across beats about that person).\n"
+        "  4. Emotional tone and setting.\n"
+        "Do NOT match on loose word overlap with the caption alone. Items marked '(real "
+        "video clip)' are REAL FOOTAGE — prefer them when they fit about as well. Avoid "
+        "reusing an item unless there are fewer items than frames.\n"
         'Reply ONLY as JSON mapping each frame id to an item number, e.g. '
         '{"f01": 3, "f02": 7}.'
     )
@@ -292,6 +310,15 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
     if not candidates:
         return False
 
+    # C1 — the matcher is role-BLIND without speaker/gender/role. Ensure cast is detected
+    # BEFORE matching (only if not already tagged, so callers that pre-detect aren't reset).
+    if not any(f.get("speaker_id") for f in need):
+        try:
+            from agents import cast as _cast
+            _cast.detect_cast(frames)
+        except Exception as e:
+            print(f"[Matcher] cast-before-match degraded ({e}) — matching without roles")
+
     try:
         print(f"[Matcher] Smart-matching {len(need)} frames against "
               f"{len(candidates)} images via {llm._provider()}…")
@@ -302,9 +329,13 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
             return {
                 "frame_id": f["frame_id"],
                 "caption": f.get("caption", ""),
-                # what the shot literally shows (storyboard) — the key matching signal
+                # what the shot literally shows (storyboard) — a key matching signal
                 "depicts": sc.get("scene_description") or sc.get("image_prompt") or "",
                 "emotion": sc.get("emotion") or "",
+                # WHO the shot is about — the role/gender/age fix for "brother"→women photos
+                "speaker": f.get("speaker_label") or f.get("speaker_id") or "",
+                "gender": f.get("speaker_gender") or "",
+                "age": f.get("speaker_age_bracket") or "",
             }
 
         mapping = assign_images([_match_view(f) for f in need], descriptions)

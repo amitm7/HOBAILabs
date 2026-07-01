@@ -83,11 +83,19 @@ def detect_cast(frames: list[dict], narrator_name: str = "",
     Tag each frame with its speaker. Returns the cast list. On any failure every
     frame is assigned to the narrator (current single-subject behaviour).
     """
+    # Idempotency: if this frame set was already detected this run (e.g. smart_match ran
+    # cast-before-match), don't re-LLM — rebuild the cast list from the existing tags.
+    # (The matcher C1 fix + run_caption both call this; the second call is now a no-op.)
+    if frames and frames[0].get("_cast_detected"):
+        return _cast_from_frames(frames)
+
     narrator = _narrator_member(narrator_name, narrator_description)
     _apply(frames, narrator)   # default everyone to narrator first
 
     captioned = [f for f in frames if (f.get("caption") or "").strip()]
     if len(captioned) < 1:
+        for f in frames:
+            f["_cast_detected"] = True
         return [narrator]
 
     beat_list = "\n".join(f"{f['frame_id']}: {f.get('caption','').strip()}"
@@ -158,7 +166,21 @@ def detect_cast(frames: list[dict], narrator_name: str = "",
             if f.get("speaker_id") != NARRATOR_ID:
                 print(f"  {f['frame_id']} → {f['speaker_label']} "
                       f"({f['speaker_gender']}/{f['speaker_age_bracket']})")
+    for f in frames:
+        f["_cast_detected"] = True
     return list(cast.values())
+
+
+def _cast_from_frames(frames: list[dict]) -> list[dict]:
+    """Rebuild the cast list from already-tagged frames (idempotent detect_cast path)."""
+    seen: dict[str, dict] = {}
+    for f in frames:
+        sid = f.get("speaker_id")
+        if sid and sid not in seen:
+            seen[sid] = {"id": sid, "label": f.get("speaker_label", sid),
+                         "gender": f.get("speaker_gender", "female"),
+                         "age_bracket": f.get("speaker_age_bracket", "adult")}
+    return list(seen.values()) or [_narrator_member("", "")]
 
 
 def apply_cast(frames: list[dict], cast: list[dict],
@@ -178,6 +200,7 @@ def apply_cast(frames: list[dict], cast: list[dict],
         f["speaker_label"]       = member.get("label", "")
         f["speaker_gender"]      = member.get("gender", "female")
         f["speaker_age_bracket"] = member.get("age_bracket", "adult")
+        f["_cast_detected"]      = True   # operator-applied cast → detect_cast won't override
 
 
 # ── Voice resolution ──────────────────────────────────────────────────────────

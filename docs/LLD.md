@@ -127,15 +127,17 @@ Two LLM stages, both cached, both safe (return `False`/positional on any failure
    **Videos** are sampled into up to 3 keyframes (`ffmpeg` at 15/50/85%) and described
    as `(real video clip) …` ([:82](../agents/image_matcher.py#L82)).
 2. **`assign_images(frames, descriptions)`** ([:175](../agents/image_matcher.py#L175))
-   — one reasoning call returning `{frame_id: image_number}`. Each frame line carries
-   **caption + `depicts` (the storyboard `scene_description`/`image_prompt` — who/what is
-   literally on screen) + `emotion`**, not the bare caption: an abstract caption ("we
-   never felt less") matches far better with "depicts: a modest 1RK room, mother +
-   daughter" attached. Priority: visible names/text → the depicted subject (same person
-   across that person's beats) → tone/setting; **prefers real video clips over stills**
-   for equal fit. (`smart_match` builds the `depicts`/`emotion` view from each frame's
-   `scene`.) Auto-match is still imperfect on abstract beats → the canvas adds a per-shot
-   **photo picker** (`/api/canvas/<id>/assets`) so the operator corrects any match by hand.
+   — one reasoning call returning `{frame_id: image_number}`. **Relationship/role-aware
+   (fixes "brother"→mother+daughter):** each frame line carries **`person` (speaker role +
+   gender + age, e.g. "brother male adult")** + `depicts` (storyboard scene_description) +
+   `emotion` + caption. Priority: **① PERSON match (strongest — reject gender/age
+   mismatches)** → ② visible names/text → ③ depicted subject → ④ tone. This needs the cast:
+   **`smart_match` runs `cast.detect_cast` BEFORE matching** ([C1](../agents/image_matcher.py))
+   if frames aren't tagged (`detect_cast` is now idempotent via a `_cast_detected` marker so
+   it's not re-run). Image descriptions are **relationship-aware** (`_DESCRIBE_PROMPT` asks
+   for per-person gender/age + implied relationship; cache-key prefixed `_DESC_VERSION` so a
+   schema bump regenerates). Still imperfect on abstract beats → per-shot **photo picker**
+   (`/api/canvas/<id>/assets`) + planned per-shot re-match.
 
 Only fills frames with no `photo_spec`, no `ai_*`, excludes pinned files; never
 touches the animation stage.
