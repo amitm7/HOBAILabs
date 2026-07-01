@@ -730,6 +730,8 @@ def public_state(state: dict) -> dict:
         "orientation": state.get("orientation") or "portrait",
         "story_type": state.get("story_type") or "real",     # 'real' (HOB) | 'ai' (fiction)
         "world": state.get("world") or {},                    # P2: global art-direction/setting
+        "ip": state.get("ip", ""),                            # watermark IP id
+        "transition": state.get("transition") or "crossfade",
     }
 
 

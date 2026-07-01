@@ -632,6 +632,8 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
         # orientation, so this is pure surfacing.
         "caption_style": {**_CANVAS_CAPTION_DEFAULT, **(state.get("caption_style") or {})},
         "orientation": state.get("orientation") or "portrait",
+        "ip": state.get("ip", ""),                              # HOB IP watermark (both modes)
+        "transition": state.get("transition") or "crossfade",   # crossfade | cut | …
         "session_id": render_id, "operator_id": operator,
         "likeness_consent": {"face": True, "voice": True}, "canvas_run_id": "",
         # D1: auto per-speaker face reuse ON by default — every un-anchored shot of a
@@ -665,6 +667,10 @@ def api_canvas_settings(run_id: str, operator: str):
             # Stills/clips are generated at the chosen aspect → a change makes them stale.
             if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
                 canvas_run.invalidate_from(state, "keyframes")
+    if "ip" in body:
+        state["ip"] = str(body.get("ip") or "")               # watermark IP (applied at Final Cut)
+    if body.get("transition") in ("crossfade", "cut", "fade", "dissolve"):
+        state["transition"] = body["transition"]
     _canvas_save(run_id, state)
     return jsonify({"canvas": canvas_run.public_state(state)})
 

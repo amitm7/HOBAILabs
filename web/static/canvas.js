@@ -88,6 +88,8 @@
     if (cs.color) $("cap-color").value = cs.color;
     if (cs.max_lines !== undefined) $("cap-lines").value = String(cs.max_lines);
     if (canvas.orientation) $("orientation").value = canvas.orientation;
+    if (canvas.transition) $("transition").value = canvas.transition;
+    if ($("ip") && canvas.ip !== undefined) $("ip").value = canvas.ip;
     // Story-type mode: AI (fiction) hides the real-media tools (folder match / enhance /
     // pick / re-match) since there's no real folder — everything is generated.
     const ai = (canvas.story_type || "real") === "ai";
@@ -134,14 +136,28 @@
     };
     try {
       const d = await api(`/api/canvas/${runId}/settings`,
-        { caption_style, orientation: $("orientation").value });
+        { caption_style, orientation: $("orientation").value,
+          transition: $("transition").value, ip: $("ip").value });
       $("settings-hint").textContent = "✓ saved";
       setTimeout(() => { $("settings-hint").textContent = ""; }, 1500);
       if (d.canvas) { lastCanvas = d.canvas; renderRail(d.canvas.stages); }  // orientation may re-lock stages
     } catch (e) { err(e.message); }
   }
-  ["cap-enabled", "cap-position", "cap-font", "cap-size", "cap-color", "cap-lines", "orientation"]
+  ["cap-enabled", "cap-position", "cap-font", "cap-size", "cap-color", "cap-lines",
+   "orientation", "transition", "ip"]
     .forEach((id) => { const el = $(id); if (el) el.addEventListener("change", saveSettings); });
+  // Populate the IP/watermark dropdown from the server (HOB properties).
+  (async function loadIPs() {
+    try {
+      const d = await fetch("/ips").then((r) => r.json());
+      const sel = $("ip"); if (!sel || !d.ips) return;
+      d.ips.forEach((ip) => {
+        const o = document.createElement("option");
+        o.value = ip.id || ip.name || ip; o.textContent = (ip.name || ip.id || ip) + (ip.has_png === false ? " (no logo)" : "");
+        sel.appendChild(o);
+      });
+    } catch (e) { /* no IPs configured — dropdown stays "No watermark" */ }
+  })();
 
   // Storyboard (pencil-sketch) view toggle + last-rendered canvas (for re-render on toggle).
   let storyboardView = false;
