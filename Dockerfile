@@ -12,9 +12,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Caption fonts: install the bundled TTFs (Montserrat OFL; drop a licensed
-# Satoshi TTF into deploy/fonts to enable it) so libass can render them by
-# family name. fc-cache registers them with fontconfig.
+# Caption fonts: install the bundled TTFs (Montserrat OFL + Satoshi by Indian Type
+# Foundry / Fontshare, free for commercial use) so libass can render them by family
+# name. fc-cache registers them with fontconfig. Add another font = drop its TTF here.
 COPY deploy/fonts/ /usr/share/fonts/truetype/hob/
 RUN fc-cache -f
 
