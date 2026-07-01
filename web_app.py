@@ -441,7 +441,14 @@ def api_canvas_rendered(run_id: str, operator: str):
         def _set(stage_ids, val):
             nonlocal changed
             for s in stage_ids:
-                if state["stages"][s].get("status") != val:
+                cur = state["stages"][s].get("status")
+                # NEVER downgrade an operator approval. This reconcile only exists to
+                # unstick 'generating' → 'done'; if the operator already approved the
+                # stage, a late /rendered poll must not reset it to 'done' (that would
+                # silently un-approve Key Frames and make the Video stage 409 forever).
+                if cur == "approved":
+                    continue
+                if cur != val:
                     state["stages"][s]["status"] = val
                     changed = True
         val = {"running": "generating", "done": "done"}.get(status)
