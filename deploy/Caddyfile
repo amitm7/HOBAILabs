@@ -2,17 +2,15 @@
 # DNS: point an A record for creative.kevat.ai → the EC2 Elastic IP.
 # Caddy fetches + renews a Let's Encrypt cert automatically.
 creative.kevat.ai {
-    # Static team guide at /guide (mounted from the host at /srv/guide in the
-    # caddy container). The app itself is served for every other path.
-    @guide path /guide /guide/
-    handle @guide {
-        root * /srv/guide
-        rewrite * /OPERATOR_GUIDE.html
-        file_server
-    }
-    handle {
-        reverse_proxy localhost:7860
-    }
+    # Everything — including /guide — is served by the app. The /guide route
+    # (web_app.py) serves docs/OPERATOR_GUIDE.html, which the Docker build bakes
+    # into the image via `COPY . .`, so the live guide always matches the deploy.
+    #
+    # DO NOT re-add a `handle @guide { root * /srv/guide ... }` block. That serves
+    # a hand-mounted host copy that no deploy step re-syncs, so the guide silently
+    # goes stale on every release. This has bitten us twice — keep one source of
+    # truth (the image).
+    reverse_proxy localhost:7860
 }
 
 # No domain yet? Comment the block above and use this to serve plain HTTP on :80
