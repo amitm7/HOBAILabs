@@ -350,6 +350,28 @@ STORYBOARD_STYLE = (
 )
 
 
+def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: str = "",
+                                char_id: str = "char", model_id: str = "") -> str:
+    """Generate a CANONICAL character reference portrait from the sheet attributes (P1
+    character-sheet-first). Used once per character in AI/fiction mode; the result becomes
+    that character's reference so every shot conditions on the SAME face (via the pluggable
+    identity path). Front-facing, neutral background — a clean face lock."""
+    prompt = (
+        "Character reference portrait — ONE person, front-facing, head and shoulders, "
+        "neutral studio background, soft even lighting, clear unobstructed face, looking at "
+        f"camera. {appearance}. {world_clause}. Consistent character design, highly detailed "
+        "face, no text, no watermark, vertical 9:16."
+    )
+    chosen = model_id or "flux"           # face-strong model for a clean canonical portrait
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"charref_{char_id}_{_prompt_hash(chosen, prompt, char_id)}.jpg")
+    if _image_cached(out_path):
+        return out_path
+    print(f"[ImageGen] Canonical character portrait ({char_id}) via {chosen}…")
+    _generate_image_checked(chosen, prompt, out_path, "gpt_image", char_id)
+    return out_path
+
+
 def generate_storyboard_panel(frame: dict, assets_dir: str, model_id: str = "") -> str:
     """Render a pencil-sketch STORYBOARD panel for a shot — a planning artifact (framing +
     blocking + camera move), NOT the final render and NOT a photoreal likeness. Uses a

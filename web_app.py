@@ -669,6 +669,51 @@ def api_canvas_settings(run_id: str, operator: str):
     return jsonify({"canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/character-portrait", methods=["POST"])
+@auth.require_operator()
+def api_canvas_character_portrait(run_id: str, operator: str):
+    """P1 character-sheet-first: generate a CANONICAL portrait for one character from its
+    sheet attributes (+ the world style), set it as that character's reference, and link it
+    to the character's shots — so every shot conditions on the SAME face (via the pluggable
+    identity path). For AI/fiction characters (no real person → no consent gate)."""
+    from agents import canvas_run, governance, pricing, image_generator
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    char_id = (request.json or {}).get("char_id", "")
+    char = next((c for c in state.get("characters", []) if c.get("id") == char_id), None)
+    if not char:
+        return jsonify({"error": "Unknown character"}), 400
+    appearance = canvas_run._character_appearance(char) or (char.get("name") or char.get("label") or "a person")
+    world_clause = canvas_run._world_clause(state.get("world") or {})
+    usd = pricing.image_cost("flux")
+    one = {"mode": "story", "quality": state.get("quality", "dev"),
+           "frames": [{"frame_id": f"char_{char_id}"}], "session_id": run_id, "operator_id": operator}
+    spend_missing = governance.reserve_spend(one, usd, run_id=run_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    out_dir = str(RUNS_DIR / run_id / "characters")
+    try:
+        portrait = image_generator.generate_character_portrait(
+            appearance, out_dir, world_clause=world_clause, char_id=char_id)
+        governance.release_reservation(one, run_id=run_id, reason="canvas_char_portrait_done")
+        governance.record_cost_event(governance.project_key(one), item="canvas_char_portrait",
+                                     usd=usd, run_id=run_id, event_type="estimate")
+    except Exception as e:
+        try:
+            governance.release_reservation(one, run_id=run_id, reason="canvas_char_portrait_failed")
+        except Exception:
+            pass
+        return jsonify({"error": str(e)}), 500
+    char["source"] = "ai"
+    # Anchor the generated portrait as this character's reference (+ auto-consent: it's a
+    # generated character, not a real person). set_character links it to their shots.
+    state = canvas_run.set_character(state, char_id, ref_path=portrait, consent=True)
+    _canvas_save(run_id, state)
+    return jsonify({"char_id": char_id, "portrait": f"/media?path={portrait}",
+                    "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/world", methods=["POST"])
 @auth.require_operator()
 def api_canvas_world(run_id: str, operator: str):

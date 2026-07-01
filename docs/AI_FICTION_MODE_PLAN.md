@@ -75,9 +75,12 @@ removes the single-vendor risk. Low effort, high payoff — I'd do this first.
   made pluggable, defaulting to **Nano Banana** (live-verified) → gpt-image-1 fallback.
   Consent still keys on real-person, so it rarely fires for invented characters. *(Engine
   needed no change — "no real media matched" already generates.)*
-- **P1 — Character-sheet-first (medium).** In AI mode, generate a **canonical character**
-  (front + 2–3 expressions) once, then use it as the reference for every shot (reuses the
-  Phase-4 character sheet + the new ref model). This is what makes Rama *look like Rama*.
+- **P1 — Character-sheet-first — ✅ SHIPPED (v1).** A 🎨 **Generate** button per character
+  (`/api/canvas/<id>/character-portrait`) renders a **canonical portrait** from the sheet
+  attributes + the world style (`image_generator.generate_character_portrait`), sets it as
+  that character's reference, and links it to their shots — so every shot conditions on the
+  SAME face via the pluggable identity path. Live-verified (a hero portrait from attrs+world).
+  *Next (future): multi-pose/expression sheet beyond a single front portrait.*
 - **P2 — Worlds/Contexts — ✅ SHIPPED (v1, descriptor-based).** `set_world(style, setting)`
   (`/api/canvas/<id>/world` + a 🌍 World bar) stamps a global art-direction + setting onto
   every frame (`world_style`), injected into generation so the whole reel shares one look

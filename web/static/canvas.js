@@ -846,6 +846,7 @@
           <div class="char-head">
             <span class="nm">${escapeHtml(c.role || c.name || c.label || c.id)}</span>
             ${c.ref_path ? `<img src="${mediaUrl(c.ref_path)}" alt="">` : `<span class="muted">no photo</span>`}
+            <button class="char-gen" data-char="${c.id}" title="Generate a canonical face for this character from the attributes below — then every shot uses the same face">🎨 Generate</button>
             <label class="attach-btn">📎 Real photo<input type="file" accept="image/*" data-char="${c.id}" hidden></label>
             <label><input type="checkbox" class="consent" data-char="${c.id}" ${c.consent ? "checked" : ""}> consent</label>
           </div>
@@ -861,6 +862,19 @@
           </div>
         </div>`).join("");
   }
+  // Generate a canonical face for a character from its attributes (P1).
+  $("characters").addEventListener("click", async (ev) => {
+    const gen = ev.target.closest(".char-gen");
+    if (!gen) return;
+    const cid = gen.getAttribute("data-char");
+    err(""); gen.disabled = true; gen.textContent = "…";
+    try {
+      const d = await api(`/api/canvas/${runId}/character-portrait`, { char_id: cid });
+      renderCharacters(d.canvas.characters); render(d.canvas);
+      $("match-hint").textContent = "✓ character face generated — reused across their shots";
+    } catch (e) { err("Generate: " + e.message); }
+    finally { gen.disabled = false; gen.textContent = "🎨 Generate"; }
+  });
   // Save a character's attributes (delegated click on its Save button).
   $("characters").addEventListener("click", async (ev) => {
     const save = ev.target.closest(".char-save");

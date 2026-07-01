@@ -320,6 +320,10 @@ A **stage-gated board** that builds your reel one approved step at a time —
   they look like the same person across the whole reel — the appearance from your sheet,
   the exact face from your photo (or a consistent AI face if no photo). Per-shot edits still
   override the sheet. This is the moat for multi-person stories: real identity, consent-gated.
+- **Generate a face for an invented character (AI stories).** Fill a character's attributes
+  and click **🎨 Generate** — it creates one **canonical portrait** (in your chosen World
+  style), and every shot of that character then reuses that exact face. This is how you keep
+  *Rama looking like Rama* across a whole mythological reel.
 - **Wrong photo on one beat?** Hover a card → **⟳ Re-match** auto-picks the best-fitting
   photo for just that shot (now role-aware — a "brother" beat looks for a young man, not any
   family photo), or **🖼 Pick** to choose by hand.
