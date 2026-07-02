@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOBAILabs — Director Canvas (Redesign Concept)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a12;
+  --bg-soft:#0f0f1a;
+  --panel:rgba(255,255,255,.035);
+  --panel-strong:rgba(255,255,255,.06);
+  --border:rgba(255,255,255,.08);
+  --border-strong:rgba(255,255,255,.14);
+  --txt:#f2f2f7;
+  --txt-2:#9a9aad;
+  --txt-3:#5c5c70;
+  --grad:linear-gradient(100deg,#ff7a18 0%,#ff2d78 48%,#8b5cf6 100%);
+  --grad-soft:linear-gradient(100deg,rgba(255,122,24,.16),rgba(255,45,120,.16),rgba(139,92,246,.16));
+  --accent:#ff5c3d;
+  --green:#34d399;--orange:#fbbf24;--red:#f87171;
+  --r:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:
+    radial-gradient(900px 500px at 75% -10%, rgba(139,92,246,.13), transparent 60%),
+    radial-gradient(800px 500px at 15% 110%, rgba(255,122,24,.10), transparent 60%),
+    var(--bg);
+  color:var(--txt);
+  overflow:hidden;
+  font-size:13px;
+}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+
+/* ---------- TOP BAR ---------- */
+.topbar{
+  height:56px;display:flex;align-items:center;gap:20px;padding:0 20px;
+  border-bottom:1px solid var(--border);
+  background:rgba(10,10,18,.7);backdrop-filter:blur(20px);
+  position:relative;z-index:20;
+}
+.logo{font-family:'Space Grotesk';font-weight:700;font-size:16px;letter-spacing:.3px;display:flex;align-items:center;gap:9px}
+.logo .orb{width:20px;height:20px;border-radius:7px;background:var(--grad);box-shadow:0 0 18px rgba(255,45,120,.5)}
+.logo b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.nav{display:flex;gap:2px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:3px}
+.nav a{padding:6px 16px;border-radius:8px;color:var(--txt-2);text-decoration:none;font-weight:500;transition:.18s}
+.nav a:hover{color:var(--txt)}
+.nav a.active{background:var(--panel-strong);color:var(--txt);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.project-pill{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:6px 12px;color:var(--txt-2);cursor:pointer}
+.project-pill:hover{border-color:var(--border-strong);color:var(--txt)}
+.credits{display:flex;align-items:center;gap:6px;color:var(--txt-2);font-weight:500}
+.credits .dot{width:7px;height:7px;border-radius:50%;background:var(--grad)}
+.btn-new{
+  background:var(--grad);border:none;color:#fff;font-weight:600;font-size:13px;
+  padding:8px 16px;border-radius:10px;cursor:pointer;font-family:inherit;
+  box-shadow:0 4px 20px rgba(255,45,120,.35);transition:.18s;
+}
+.btn-new:hover{transform:translateY(-1px);box-shadow:0 6px 26px rgba(255,45,120,.5)}
+.avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#ff2d78);display:grid;place-items:center;font-weight:600;font-size:12px;cursor:pointer}
+
+/* ---------- LAYOUT ---------- */
+.app{display:grid;grid-template-columns:56px 1fr 340px;height:calc(100vh - 56px)}
+
+/* ---------- LEFT RAIL ---------- */
+.rail{border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px}
+.rail button{
+  width:40px;height:40px;border-radius:11px;border:1px solid transparent;background:transparent;
+  color:var(--txt-2);cursor:pointer;display:grid;place-items:center;transition:.15s;position:relative;
+}
+.rail button:hover{background:var(--panel-strong);color:var(--txt)}
+.rail button.on{background:var(--grad-soft);color:var(--txt);border-color:var(--border-strong)}
+.rail button svg{width:18px;height:18px}
+.rail .tip{
+  position:absolute;left:50px;top:50%;transform:translateY(-50%);white-space:nowrap;
+  background:#1c1c2b;border:1px solid var(--border-strong);padding:5px 10px;border-radius:8px;
+  font-size:12px;opacity:0;pointer-events:none;transition:.15s;z-index:50;
+}
+.rail button:hover .tip{opacity:1}
+.rail .sep{width:22px;height:1px;background:var(--border);margin:8px 0}
+
+/* ---------- CENTER STAGE ---------- */
+.stage{display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+/* prompt bar */
+.promptbar{padding:16px 24px 8px;display:flex;flex-direction:column;gap:10px}
+.prompt-shell{
+  display:flex;align-items:center;gap:10px;background:var(--panel);
+  border:1px solid var(--border);border-radius:16px;padding:6px 6px 6px 18px;
+  transition:.2s;position:relative;
+}
+.prompt-shell:focus-within{border-color:rgba(255,45,120,.45);box-shadow:0 0 0 3px rgba(255,45,120,.12),0 0 40px rgba(139,92,246,.10)}
+.prompt-shell input{
+  flex:1;background:none;border:none;outline:none;color:var(--txt);font:inherit;font-size:14px;padding:10px 0;
+}
+.prompt-shell input::placeholder{color:var(--txt-3)}
+.btn-plan{
+  background:var(--grad);border:none;color:#fff;font-weight:600;font-size:13.5px;font-family:inherit;
+  padding:11px 22px;border-radius:12px;cursor:pointer;display:flex;align-items:center;gap:7px;
+  box-shadow:0 4px 18px rgba(255,45,120,.35);transition:.18s;white-space:nowrap;
+}
+.btn-plan:hover{transform:translateY(-1px)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip-group{display:flex;background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px}
+.chip{
+  border:none;background:transparent;color:var(--txt-2);font:inherit;font-size:12px;font-weight:500;
+  padding:5px 12px;border-radius:7px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.chip:hover{color:var(--txt)}
+.chip.on{background:var(--panel-strong);color:var(--txt);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.chip.on.hot{background:var(--grad-soft);box-shadow:inset 0 0 0 1px rgba(255,45,120,.35)}
+
+/* preview area */
+.preview-wrap{flex:1;display:flex;align-items:center;justify-content:center;gap:28px;padding:8px 24px;min-height:0}
+.phone{
+  height:min(100%,480px);aspect-ratio:9/16;border-radius:22px;position:relative;
+  border:1px solid var(--border-strong);overflow:hidden;flex-shrink:0;
+  box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 60px rgba(139,92,246,.10);
+  background:#000;
+}
+.phone .art{position:absolute;inset:0;transition:opacity .35s}
+.phone .caption{
+  position:absolute;left:10%;right:10%;bottom:12%;text-align:center;
+  font-family:'Montserrat','Inter',sans-serif;font-weight:700;font-size:13px;color:#fff;
+  text-shadow:0 2px 10px rgba(0,0,0,.8);
+}
+.phone .badge{
+  position:absolute;top:12px;left:12px;font-size:10px;font-weight:600;letter-spacing:.4px;
+  padding:4px 9px;border-radius:20px;backdrop-filter:blur(8px);
+}
+.badge.real{background:rgba(52,211,153,.18);color:var(--green);border:1px solid rgba(52,211,153,.4)}
+.badge.ai{background:rgba(251,191,36,.16);color:var(--orange);border:1px solid rgba(251,191,36,.4)}
+.badge.lik{background:rgba(248,113,113,.16);color:var(--red);border:1px solid rgba(248,113,113,.4)}
+.phone .play{
+  position:absolute;inset:0;display:grid;place-items:center;cursor:pointer;transition:.2s;opacity:0;
+}
+.phone:hover .play{opacity:1}
+.phone .play span{
+  width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,.25);display:grid;place-items:center;font-size:18px;color:#fff;
+}
+.preview-meta{display:flex;flex-direction:column;gap:14px;max-width:230px}
+.preview-meta h3{font-family:'Space Grotesk';font-size:15px;font-weight:600}
+.preview-meta p{color:var(--txt-2);line-height:1.55;font-size:12.5px}
+.meta-row{display:flex;gap:8px;flex-wrap:wrap}
+.meta-tag{font-size:11px;color:var(--txt-2);border:1px solid var(--border);border-radius:7px;padding:4px 9px;background:var(--panel)}
+.legend{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+.legend div{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--txt-2)}
+.legend i{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* storyboard timeline */
+.timeline{
+  padding:14px 24px 18px;border-top:1px solid var(--border);
+  background:rgba(255,255,255,.015);
+}
+.tl-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.tl-head h4{font-family:'Space Grotesk';font-size:13px;font-weight:600;letter-spacing:.2px}
+.tl-head .dur{color:var(--txt-3);font-size:12px}
+.tl-actions{margin-left:auto;display:flex;gap:8px}
+.btn-ghost{
+  background:var(--panel);border:1px solid var(--border);color:var(--txt-2);font:inherit;font-size:12px;
+  font-weight:500;padding:6px 13px;border-radius:9px;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:6px;
+}
+.btn-ghost:hover{color:var(--txt);border-color:var(--border-strong)}
+.frames{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.frame{
+  width:86px;flex-shrink:0;cursor:pointer;border-radius:12px;overflow:hidden;position:relative;
+  aspect-ratio:9/14;border:1.5px solid var(--border);transition:.18s;
+}
+.frame:hover{transform:translateY(-3px)}
+.frame.sel{border-color:transparent;box-shadow:0 0 0 2px #ff2d78,0 6px 20px rgba(255,45,120,.35)}
+.frame .n{position:absolute;top:6px;left:7px;font-size:10px;font-weight:600;color:rgba(255,255,255,.85);text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.frame .d{position:absolute;bottom:6px;right:7px;font-size:9.5px;font-weight:600;color:rgba(255,255,255,.75);background:rgba(0,0,0,.45);padding:2px 6px;border-radius:6px;backdrop-filter:blur(4px)}
+.frame .src{position:absolute;bottom:7px;left:7px;width:7px;height:7px;border-radius:50%}
+.frame-add{
+  width:86px;flex-shrink:0;aspect-ratio:9/14;border-radius:12px;border:1.5px dashed var(--border-strong);
+  background:transparent;color:var(--txt-3);font-size:20px;cursor:pointer;transition:.15s;
+}
+.frame-add:hover{color:var(--txt);border-color:rgba(255,45,120,.5);background:var(--grad-soft)}
+
+/* scene art gradients */
+.art-1{background:linear-gradient(160deg,#3d1d0a 0%,#7a3b12 45%,#c96a1e 80%,#f5a952 100%)}
+.art-1::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 70% 25%,rgba(255,200,100,.5),transparent 45%)}
+.art-2{background:linear-gradient(175deg,#0d1b2e 0%,#1e3a5f 55%,#3a6ea5 100%)}
+.art-2::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 70%,rgba(120,180,255,.35),transparent 50%)}
+.art-3{background:linear-gradient(160deg,#241033 0%,#4a1d5e 50%,#8b3a8f 100%)}
+.art-3::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 55% 30%,rgba(255,130,200,.35),transparent 55%)}
+.art-4{background:linear-gradient(170deg,#08221c 0%,#14503f 55%,#2a8a63 100%)}
+.art-4::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 60% 60%,rgba(120,255,190,.28),transparent 50%)}
+.art-5{background:linear-gradient(165deg,#33240a 0%,#6e4c12 50%,#c98f1e 100%)}
+.art-5::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 40% 30%,rgba(255,220,120,.4),transparent 50%)}
+
+/* ---------- RIGHT PANEL ---------- */
+.panel{
+  border-left:1px solid var(--border);overflow-y:auto;padding:16px 16px 120px;
+  background:rgba(255,255,255,.012);display:flex;flex-direction:column;gap:10px;
+}
+.sec{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.sec-head{
+  display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;user-select:none;
+}
+.sec-head:hover{background:rgba(255,255,255,.02)}
+.sec-head .ic{width:26px;height:26px;border-radius:8px;background:var(--grad-soft);display:grid;place-items:center;font-size:12px}
+.sec-head h5{font-size:12.5px;font-weight:600;flex:1;letter-spacing:.2px}
+.sec-head .val{font-size:11.5px;color:var(--txt-3);font-weight:500}
+.sec-head .chev{color:var(--txt-3);transition:.25s;font-size:10px}
+.sec.open .chev{transform:rotate(180deg)}
+.sec-body{display:none;padding:2px 14px 14px;flex-direction:column;gap:12px}
+.sec.open .sec-body{display:flex}
+.f-label{font-size:11px;font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px}
+.seg{display:flex;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px}
+.seg button{
+  flex:1;border:none;background:transparent;color:var(--txt-2);font:inherit;font-size:11.5px;font-weight:500;
+  padding:6px 4px;border-radius:7px;cursor:pointer;transition:.15s;
+}
+.seg button.on{background:var(--panel-strong);color:var(--txt);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.inp,select.inp{
+  width:100%;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:9px;
+  color:var(--txt);font:inherit;font-size:12.5px;padding:8px 11px;outline:none;transition:.15s;
+}
+.inp:focus{border-color:rgba(255,45,120,.4)}
+.inp::placeholder{color:var(--txt-3)}
+select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235c5c70' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;cursor:pointer}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.swatches{display:flex;gap:8px}
+.sw{width:26px;height:26px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:.15s}
+.sw.on{border-color:#ff2d78;box-shadow:0 0 0 2px rgba(255,45,120,.25)}
+.toggle{position:relative;width:34px;height:19px;background:rgba(255,255,255,.12);border-radius:20px;cursor:pointer;transition:.2s;flex-shrink:0}
+.toggle::after{content:'';position:absolute;top:2.5px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:.2s}
+.toggle.on{background:var(--grad)}
+.toggle.on::after{left:17px}
+.aspects{display:flex;gap:8px}
+.asp{
+  flex:1;border:1px solid var(--border);background:rgba(0,0,0,.25);border-radius:10px;cursor:pointer;
+  padding:9px 4px;display:flex;flex-direction:column;align-items:center;gap:6px;transition:.15s;
+  color:var(--txt-2);font-size:10.5px;font-weight:600;
+}
+.asp:hover{border-color:var(--border-strong)}
+.asp.on{border-color:rgba(255,45,120,.5);background:var(--grad-soft);color:var(--txt)}
+.asp i{display:block;border:1.5px solid currentColor;border-radius:3px;opacity:.8}
+.asp .r916{width:11px;height:18px}.asp .r169{width:20px;height:12px}.asp .r11{width:15px;height:15px}
+.btn-apply{
+  background:var(--panel-strong);border:1px solid var(--border-strong);color:var(--txt);font:inherit;
+  font-size:12px;font-weight:600;padding:8px;border-radius:9px;cursor:pointer;transition:.15s;
+}
+.btn-apply:hover{background:var(--grad);border-color:transparent}
+.consent{display:flex;gap:9px;align-items:flex-start;font-size:11.5px;color:var(--txt-2);line-height:1.5}
+
+/* ---------- DIRECTOR BAR ---------- */
+.director{
+  position:fixed;left:56px;right:340px;bottom:0;padding:12px 24px 18px;z-index:30;
+  display:flex;flex-direction:column;gap:9px;pointer-events:none;
+  background:linear-gradient(to top,rgba(10,10,18,.95) 40%,transparent);
+}
+.director>*{pointer-events:auto}
+.d-suggest{display:flex;gap:8px;justify-content:center}
+.d-suggest button{
+  background:rgba(20,20,32,.8);backdrop-filter:blur(10px);border:1px solid var(--border);
+  color:var(--txt-2);font:inherit;font-size:11.5px;padding:5px 13px;border-radius:20px;cursor:pointer;transition:.15s;
+}
+.d-suggest button:hover{color:var(--txt);border-color:rgba(255,45,120,.4)}
+.d-shell{
+  display:flex;align-items:center;gap:8px;background:rgba(18,18,30,.92);backdrop-filter:blur(20px);
+  border:1px solid var(--border-strong);border-radius:16px;padding:5px 5px 5px 16px;
+  box-shadow:0 10px 40px rgba(0,0,0,.5);transition:.2s;
+}
+.d-shell:focus-within{border-color:rgba(255,45,120,.5);box-shadow:0 0 0 3px rgba(255,45,120,.12),0 10px 40px rgba(0,0,0,.5)}
+.d-shell .spark{font-size:14px}
+.d-shell input{flex:1;background:none;border:none;outline:none;color:var(--txt);font:inherit;font-size:13.5px;padding:9px 0}
+.d-shell input::placeholder{color:var(--txt-3)}
+.d-send{
+  background:var(--grad);border:none;color:#fff;font-weight:600;font-size:12.5px;font-family:inherit;
+  padding:9px 18px;border-radius:12px;cursor:pointer;box-shadow:0 3px 14px rgba(255,45,120,.35);transition:.18s;
+}
+.d-send:hover{transform:translateY(-1px)}
+
+/* toast */
+.toast{
+  position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-8px);
+  background:rgba(24,24,38,.95);border:1px solid var(--border-strong);border-radius:12px;
+  padding:10px 18px;font-size:12.5px;color:var(--txt);z-index:99;opacity:0;transition:.25s;
+  backdrop-filter:blur(12px);box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:none;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="orb"></div>HOBAI<b>Labs</b></div>
+  <nav class="nav">
+    <a href="#">Story</a><a href="#">Studio</a><a href="#">Brand</a><a href="#" class="active">Canvas</a>
+  </nav>
+  <div class="tb-right">
+    <div class="project-pill">🎬 Chai Seller Reel <span style="font-size:9px">▾</span></div>
+    <div class="credits"><span class="dot"></span>1,240 credits</div>
+    <button class="btn-new">＋ New project</button>
+    <div class="avatar">D</div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- LEFT TOOL RAIL -->
+  <div class="rail">
+    <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/></svg><span class="tip">Plan</span></button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h8l4 4v14H7z"/><path d="M10 12h6M10 16h6"/></svg><span class="tip">Script</span></button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 3 3 4-4 4 4"/></svg><span class="tip">My media</span></button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.4 2.9-5 5.5-5s4.9 1.6 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.8c2.6.2 4.4 1.6 5 4.2"/></svg><span class="tip">Characters</span></button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span class="tip">Review shots</span></button>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M15 10v10"/></svg><span class="tip">Storyboard</span></button>
+    <div class="sep"></div>
+    <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.3 3.8 5.2 3.8 8.5s-1.3 6.2-3.8 8.5c-2.5-2.3-3.8-5.2-3.8-8.5s1.3-6.2 3.8-8.5z"/></svg><span class="tip">World style</span></button>
+    <button style="margin-top:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.2-1.6l2-1.5-2-3.4-2.3 1a7 7 0 00-2.8-1.6L13.2 2h-2.4l-.5 2.9a7 7 0 00-2.8 1.6l-2.3-1-2 3.4 2 1.5A7 7 0 005 12c0 .5.1 1.1.2 1.6l-2 1.5 2 3.4 2.3-1a7 7 0 002.8 1.6l.5 2.9h2.4l.5-2.9a7 7 0 002.8-1.6l2.3 1 2-3.4-2-1.5c.1-.5.2-1.1.2-1.6z"/></svg><span class="tip">Settings</span></button>
+  </div>
+
+  <!-- CENTER STAGE -->
+  <div class="stage">
+    <div class="promptbar">
+      <div class="prompt-shell">
+        <input id="prompt" value="A 30-second Humans of Bombay story: a Mumbai chai seller who funded his daughter's medical degree" placeholder="Describe your film in plain words…">
+        <button class="btn-plan" onclick="plan()">Plan <span>✨</span></button>
+      </div>
+      <div class="chips">
+        <div class="chip-group">
+          <button class="chip on hot" onclick="pick(this)">📷 Real story</button>
+          <button class="chip" onclick="pick(this)">🎭 AI fiction</button>
+        </div>
+        <div class="chip-group">
+          <button class="chip on" onclick="pick(this)">Story</button>
+          <button class="chip" onclick="pick(this)">Commerce</button>
+        </div>
+        <div class="chip-group">
+          <button class="chip on" onclick="pick(this)">Auto</button>
+          <button class="chip" onclick="pick(this)">30s</button>
+          <button class="chip" onclick="pick(this)">60s</button>
+          <button class="chip" onclick="pick(this)">90s</button>
+          <button class="chip" onclick="pick(this)">3m</button>
+        </div>
+        <div class="chip-group">
+          <button class="chip on" onclick="pick(this)">Dev · cheap</button>
+          <button class="chip" onclick="pick(this)">Prod · best</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-wrap">
+      <div class="phone">
+        <div class="art art-1" id="art"></div>
+        <div class="badge real" id="badge">● REAL</div>
+        <div class="caption" id="cap">"Every cup of chai was one page of her textbook."</div>
+        <div class="play"><span>▶</span></div>
+      </div>
+      <div class="preview-meta">
+        <h3 id="frameTitle">Frame 1 — The stall at dawn</h3>
+        <p id="frameDesc">Wide shot. Steam rises off the kettle as the city wakes behind him. Warm golden light, documentary feel.</p>
+        <div class="meta-row">
+          <span class="meta-tag">9:16</span><span class="meta-tag">🎵 Suno auto</span><span class="meta-tag">CC on</span><span class="meta-tag">~30s</span>
+        </div>
+        <div class="legend">
+          <div><i style="background:var(--green)"></i>Real — untouched (our edge)</div>
+          <div><i style="background:var(--orange)"></i>AI — labeled</div>
+          <div><i style="background:var(--red)"></i>AI likeness — consent-gated</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-head">
+        <h4>Storyboard</h4><span class="dur" id="dur">5 frames · 31s</span>
+        <div class="tl-actions">
+          <button class="btn-ghost">🖼 Use my photos</button>
+          <button class="btn-ghost">👥 Characters</button>
+          <button class="btn-ghost">🔎 Review shots</button>
+          <button class="btn-ghost">✏️ Storyboard</button>
+        </div>
+      </div>
+      <div class="frames" id="frames"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT SETTINGS PANEL -->
+  <div class="panel">
+
+    <div class="sec open">
+      <div class="sec-head" onclick="tog(this)"><div class="ic">🎵</div><h5>Audio</h5><span class="val">Music — auto</span><span class="chev">▼</span></div>
+      <div class="sec-body">
+        <div class="seg">
+          <button class="on" onclick="seg(this)">Music</button>
+          <button onclick="seg(this)">Voiceover</button>
+          <button onclick="seg(this)">Song</button>
+          <button onclick="seg(this)">None</button>
+        </div>
+        <select class="inp"><option>Auto — Suno picks the vibe</option><option>Emotional / cinematic</option><option>Upbeat / energetic</option><option>Lo-fi / ambient</option></select>
+        <button class="btn-apply">⬆ Upload a song</button>
+      </div>
+    </div>
+
+    <div class="sec open">
+      <div class="sec-head" onclick="tog(this)"><div class="ic">💬</div><h5>Captions</h5><div class="toggle on" onclick="event.stopPropagation();this.classList.toggle('on')"></div><span class="chev" style="margin-left:9px">▼</span></div>
+      <div class="sec-body">
+        <div><div class="f-label">Position</div>
+          <div class="seg"><button onclick="seg(this)">Top</button><button onclick="seg(this)">Middle</button><button class="on" onclick="seg(this)">Bottom</button></div>
+        </div>
+        <div class="row2">
+          <div><div class="f-label">Font</div><select class="inp"><option>Montserrat</option><option>Satoshi</option></select></div>
+          <div><div class="f-label">Size</div><input class="inp" type="number" value="24"></div>
+        </div>
+        <div><div class="f-label">Color</div>
+          <div class="swatches">
+            <div class="sw on" style="background:#fff" onclick="sw(this)"></div>
+            <div class="sw" style="background:#fbbf24" onclick="sw(this)"></div>
+            <div class="sw" style="background:#111;border:2px solid var(--border-strong)" onclick="sw(this)"></div>
+          </div>
+        </div>
+        <div><div class="f-label">Lines</div>
+          <div class="seg"><button class="on" onclick="seg(this)">1</button><button onclick="seg(this)">2</button><button onclick="seg(this)">3</button><button onclick="seg(this)">∞</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec open">
+      <div class="sec-head" onclick="tog(this)"><div class="ic">📐</div><h5>Format</h5><span class="val">9:16</span><span class="chev">▼</span></div>
+      <div class="sec-body">
+        <div class="aspects">
+          <div class="asp on" onclick="asp(this)"><i class="r916"></i>9:16</div>
+          <div class="asp" onclick="asp(this)"><i class="r169"></i>16:9</div>
+          <div class="asp" onclick="asp(this)"><i class="r11"></i>1:1</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12.5px;color:var(--txt-2)">Watermark</span>
+          <div class="toggle" onclick="this.classList.toggle('on')"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head" onclick="tog(this)"><div class="ic">🌍</div><h5>World style</h5><span class="val">None</span><span class="chev">▼</span></div>
+      <div class="sec-body">
+        <input class="inp" placeholder="Art style — e.g. Indian miniature, anime">
+        <input class="inp" placeholder="Setting — e.g. ancient Ayodhya palace">
+        <button class="btn-apply">Apply world</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head" onclick="tog(this)"><div class="ic">🛡️</div><h5>Trust &amp; consent</h5><span class="val">OK</span><span class="chev">▼</span></div>
+      <div class="sec-body">
+        <div class="consent">
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+          <span>I have consent for uploaded faces. AI renders likeness; outputs are labeled <b style="color:var(--txt)">AI-assisted</b>.</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- DIRECTOR BAR -->
+<div class="director">
+  <div class="d-suggest">
+    <button onclick="fill(this)">make it darker</button>
+    <button onclick="fill(this)">add a rain shot</button>
+    <button onclick="fill(this)">slower pacing</button>
+    <button onclick="fill(this)">end on her graduation</button>
+  </div>
+  <div class="d-shell">
+    <span class="spark">✨</span>
+    <input id="dinput" placeholder="Direct in plain English — 'make frame 3 golden hour', 'swap the music to something hopeful'…">
+    <button class="d-send" onclick="send()">Direct</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const FRAMES=[
+  {t:"Frame 1 — The stall at dawn",d:"Wide shot. Steam rises off the kettle as the city wakes behind him. Warm golden light, documentary feel.",c:'"Every cup of chai was one page of her textbook."',art:"art-1",dur:"6s",src:"real"},
+  {t:"Frame 2 — Monsoon nights",d:"He shelters the stove under a tarp in the rain. Cool blue tones, rain streaks in the lamplight.",c:'"Rain or fever — the stall never closed."',art:"art-2",dur:"7s",src:"real"},
+  {t:"Frame 3 — The acceptance letter",d:"Close on trembling hands opening an envelope. Shallow depth, evening violet hues.",c:'"The day the letter came, he cried into his ledger."',art:"art-3",dur:"6s",src:"ai"},
+  {t:"Frame 4 — White coat ceremony",d:"She receives her white coat; he watches from the back row. Soft green auditorium light.",c:'"Dr. Sharma. His daughter. His customer no more."',art:"art-4",dur:"7s",src:"lik"},
+  {t:"Frame 5 — Back at the stall",d:"Father and daughter share one last cutting chai at the old stall. Golden hour, full circle.",c:'"Some fortunes are brewed one cup at a time."',art:"art-5",dur:"5s",src:"real"},
+];
+const srcColor={real:"var(--green)",ai:"var(--orange)",lik:"var(--red)"};
+const srcBadge={real:["real","● REAL"],ai:["ai","● AI — LABELED"],lik:["lik","● AI LIKENESS"]};
+const wrap=document.getElementById('frames');
+FRAMES.forEach((f,i)=>{
+  const el=document.createElement('div');
+  el.className='frame '+f.art+(i===0?' sel':'');
+  el.innerHTML='<span class="n">'+(i+1)+'</span><span class="d">'+f.dur+'</span><span class="src" style="background:'+srcColor[f.src]+'"></span>';
+  el.onclick=()=>selectFrame(i,el);
+  wrap.appendChild(el);
+});
+const add=document.createElement('button');add.className='frame-add';add.textContent='＋';add.onclick=()=>toast('New frame added to the storyboard');wrap.appendChild(add);
+
+function selectFrame(i,el){
+  document.querySelectorAll('.frame').forEach(f=>f.classList.remove('sel'));
+  el.classList.add('sel');
+  const f=FRAMES[i];
+  const art=document.getElementById('art');
+  art.style.opacity=0;
+  setTimeout(()=>{art.className='art '+f.art;art.style.opacity=1;},180);
+  document.getElementById('cap').textContent=f.c;
+  document.getElementById('frameTitle').textContent=f.t;
+  document.getElementById('frameDesc').textContent=f.d;
+  const b=document.getElementById('badge');
+  b.className='badge '+srcBadge[f.src][0];b.textContent=srcBadge[f.src][1];
+}
+function pick(b){[...b.parentElement.children].forEach(c=>c.classList.remove('on','hot'));b.classList.add('on');if(b.textContent.includes('Real')||b.textContent.includes('fiction'))b.classList.add('hot');}
+function seg(b){[...b.parentElement.children].forEach(c=>c.classList.remove('on'));b.classList.add('on');}
+function sw(b){[...b.parentElement.children].forEach(c=>c.classList.remove('on'));b.classList.add('on');}
+function asp(b){[...b.parentElement.children].forEach(c=>c.classList.remove('on'));b.classList.add('on');}
+function tog(h){h.parentElement.classList.toggle('open');}
+function fill(b){const i=document.getElementById('dinput');i.value=b.textContent;i.focus();}
+function send(){
+  const i=document.getElementById('dinput');
+  if(!i.value.trim())return;
+  toast('<b>Director</b> — applying "'+i.value+'" to the cut…');
+  i.value='';
+}
+function plan(){
+  toast('<b>Planning</b> — drafting shots from your brief ✨');
+}
+let tmr;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.innerHTML=msg;t.classList.add('show');
+  clearTimeout(tmr);tmr=setTimeout(()=>t.classList.remove('show'),2600);
+}
+</script>
+</body>
+</html>

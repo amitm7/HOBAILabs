@@ -732,6 +732,9 @@ def public_state(state: dict) -> dict:
         "world": state.get("world") or {},                    # P2: global art-direction/setting
         "ip": state.get("ip", ""),                            # watermark IP id
         "transition": state.get("transition") or "crossfade",
+        # Set when the last Final Cut produced no audible audio (e.g. the music
+        # engine failed) — the board must show this, never a clean 'done ✓'.
+        "audio_warning": state.get("audio_warning", ""),
     }
 
 

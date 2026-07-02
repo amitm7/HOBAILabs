@@ -570,6 +570,15 @@ def api_canvas_asset(run_id: str, operator: str):
             frame_id=body.get("frame_id"), all_talent=bool(body.get("all_talent")))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    if body.get("mode") == "real":     # asset-QC: no sideways photo reaches the reel
+        try:
+            from agents import image_matcher
+            targets = [f for f in state.get("frames", [])
+                       if not body.get("frame_id") or f.get("frame_id") == body.get("frame_id")]
+            if image_matcher.exif_upright(targets, str(RUNS_DIR / run_id / "upright")):
+                state["board"] = canvas_run.board_cards(state["frames"])
+        except Exception as e:
+            print(f"[Canvas] exif normalization skipped ({e})")
     affected = state.pop("last_affected", 1)
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "affected": affected, "mode": body.get("mode", "reference"),
@@ -607,8 +616,11 @@ def _canvas_tempo_bpm(mood: str) -> int:
     return 92   # default documentary pacing
 
 
-_CANVAS_CAPTION_DEFAULT = {"enabled": True, "font": "Montserrat", "size": 24,
-                           "position": "bottom", "color": "white", "max_lines": 3}
+# Match the engine's storytelling defaults (caption_writer: Baskerville serif, 52px
+# at 1080×1920) — the old Montserrat-24 override produced a tiny, hard-to-read line
+# (a top complaint in the Surbhi head-to-head review). 2 lines max keeps hierarchy.
+_CANVAS_CAPTION_DEFAULT = {"enabled": True, "font": "Baskerville", "size": 52,
+                           "position": "bottom", "color": "white", "max_lines": 2}
 _CANVAS_ORIENTATIONS = {"portrait", "landscape", "square"}   # 9:16 / 16:9 / 1:1
 
 
@@ -1128,8 +1140,12 @@ def api_canvas_check_matches(run_id: str, operator: str):
                     res = llm.chat([{"role": "user", "content": [
                         {"type": "text", "text": (
                             f"Story beat: \"{beat}\"" + (f" (about: {who})" if who and who != 'Narrator' else "") +
-                            ". Does THIS photo reasonably fit that beat — the right kind of person/"
-                            "scene/mood? Reply JSON {\"fits\": true|false, \"reason\": \"short\"}.")},
+                            ". Review THIS photo for a professional 9:16 reel. Flag it (fits=false) if ANY of: "
+                            "(a) it doesn't fit that beat — wrong kind of person/scene/mood; "
+                            "(b) it is ROTATED/sideways (people or horizon at 90°); "
+                            "(c) it has a visible WATERMARK or camera-brand overlay (e.g. '11Pro Dual Camera'); "
+                            "(d) it is a document/newspaper/screenshot that would be unreadable full-frame. "
+                            "Reply JSON {\"fits\": true|false, \"reason\": \"short\"}.")},
                         {"type": "image", "path": src},
                     ]}], json_mode=True, max_tokens=120, model_tier="fast")
                     data = llm.json_loads_lenient(res) or {}
@@ -1243,6 +1259,12 @@ def api_canvas_match_photos(run_id: str, operator: str):
     except Exception as e:
         print(f"[Canvas] photo match failed ({e})")
         matched = False
+    # Asset-QC gate: normalize EXIF-rotated matches so no sideways photo reaches the
+    # reel (originals untouched; upright copies live in the canvas run dir).
+    try:
+        image_matcher.exif_upright(state["frames"], str(RUNS_DIR / run_id / "upright"))
+    except Exception as e:
+        print(f"[Canvas] exif normalization skipped ({e})")
     state["assets_dir"] = folder
     if state["stages"]["keyframes"]["status"] in ("done", "approved", "generating"):
         canvas_run.invalidate_from(state, "keyframes")
@@ -1277,6 +1299,10 @@ def api_canvas_rematch(run_id: str, operator: str):
         image_matcher.smart_match(state["frames"], folder, lambda fn: True)
     except Exception as e:
         print(f"[Canvas] rematch failed ({e})")
+    try:
+        image_matcher.exif_upright([f], str(RUNS_DIR / run_id / "upright"))
+    except Exception as e:
+        print(f"[Canvas] exif normalization skipped ({e})")
     if state["stages"]["keyframes"].get("status") in ("done", "approved", "generating"):
         canvas_run.invalidate_from(state, "keyframes")
     state["board"] = canvas_run.board_cards(state["frames"])
@@ -1415,6 +1441,7 @@ def api_canvas_render(run_id: str, operator: str):
         state["stages"][s].update(status="generating")
     state["render_id"] = render_id
     state["render_phase"] = "full"
+    state.pop("audio_warning", None)     # fresh render — re-judge the audio outcome
     _canvas_save(run_id, state)
     return jsonify({"render_id": render_id, "quality": quality,
                     "canvas": canvas_run.public_state(state)})
@@ -2966,11 +2993,47 @@ def _execute_pipeline(run_id: str, data: dict, run_dir: Path):
         _thread_run.run_id = None   # pooled threads are reused — don't leak the binding
 
 
+def _set_canvas_audio_warning(canvas_id: str, warning: str) -> None:
+    """Persist (or clear, with '') an audible-audio warning on the canvas state so
+    the board can show it. A silent reel must never look like a clean 'done ✓'."""
+    if not canvas_id:
+        return
+    try:
+        state = _canvas_load(canvas_id)
+        if state is None:
+            return
+        if warning:
+            state["audio_warning"] = warning
+        else:
+            state.pop("audio_warning", None)
+        _canvas_save(canvas_id, state)
+    except Exception as e:
+        print(f"[Canvas] audio-warning save skipped ({e})")
+
+
+def _output_is_silent(path: str) -> bool:
+    """True when the file's audio track is effectively digital silence (or absent).
+    Best-effort QC probe — any tooling failure returns False (no false alarms)."""
+    try:
+        import subprocess, re
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-i", path, "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=120)
+        m = re.search(r"max_volume:\s*(-?[\d.]+)\s*dB", r.stderr)
+        if m:
+            return float(m.group(1)) < -60.0
+        return "Audio:" not in r.stderr   # no volumedetect line AND no audio stream at all
+    except Exception:
+        return False
+
+
 def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
     """Canvas render = generate a music bed first (so the engine's beat-aware cutting
     has beats to snap cuts to — the anti-slideshow fix, P1), then run the proven
     pipeline. Music is best-effort: on any failure the reel still renders (uniform
-    cutting), never a hard fail."""
+    cutting), never a hard fail — but the failure is SURFACED on the canvas
+    (audio_warning), because a silent reel shipping as 'done ✓' is how a whole
+    render gets judged useless (the Suno-credits incident)."""
     _thread_run.run_id = run_id
     try:
         if data.get("music_type") == "generate" and not data.get("music_path"):
@@ -2983,11 +3046,31 @@ def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
             if os.path.exists(music_path):
                 data["music_path"] = music_path
                 print("[Canvas] ✓ music bed ready — cuts will land on the beat")
+                _set_canvas_audio_warning(data.get("canvas_run_id", ""), "")
     except Exception as e:
-        print(f"[Canvas] music bed skipped ({e}) — uniform cutting")
+        print(f"[Canvas] ⚠ MUSIC FAILED — the reel will have NO soundtrack: {e}")
+        _set_canvas_audio_warning(
+            data.get("canvas_run_id", ""),
+            f"Music generation failed — this reel has NO soundtrack. Fix the cause and "
+            f"re-run Final Cut, or pick a different Audio option. ({str(e)[:180]})")
     finally:
         _thread_run.run_id = None
     _execute_pipeline(run_id, data, run_dir)
+    # Output QC: catch ANY silent-output cause (failed bed, missing VO, broken mux) —
+    # if the operator asked for audio and the finished file is silent, say so loudly.
+    try:
+        if data.get("music_type") not in ("", "none"):
+            meta = None
+            with _runs_lock:
+                meta = _runs.get(run_id, {}).get("output_path")
+            if meta and os.path.exists(meta) and _output_is_silent(meta):
+                print("[Canvas] ⚠ OUTPUT QC: the finished reel has no audible audio.")
+                _set_canvas_audio_warning(
+                    data.get("canvas_run_id", ""),
+                    "⚠ Output check: the finished reel has no audible audio. Re-run "
+                    "Final Cut after fixing the audio source.")
+    except Exception as e:
+        print(f"[Canvas] output audio QC skipped ({e})")
 
 
 def _execute_preview(run_id: str, data: dict, run_dir: Path):

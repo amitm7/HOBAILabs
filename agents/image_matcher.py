@@ -353,3 +353,39 @@ def smart_match(frames: list[dict], assets_dir: str, is_source_media) -> bool:
             assigned += 1
             print(f"[Matcher] {f['frame_id']} → {os.path.basename(p)}")
     return assigned > 0
+
+
+def exif_upright(frames: list[dict], out_dir: str) -> int:
+    """Asset-QC gate (rotation): for every matched real IMAGE whose EXIF orientation
+    is not upright, write a pixel-rotated copy into out_dir and repoint visual_path.
+    The ORIGINAL file is never modified (real-media preservation — same pixels, just
+    displayed the way the phone shot them). Downstream consumers (Ken Burns fallback,
+    assembler, board thumbnails) then all agree with what Kling already does
+    (clip_builder exif_transposes before animating). Returns #frames normalized.
+    Best-effort: any failure leaves the frame untouched."""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return 0
+    fixed = 0
+    os.makedirs(out_dir, exist_ok=True)
+    for f in frames:
+        p = f.get("visual_path") or ""
+        if not p or os.path.splitext(p)[1].lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            continue
+        try:
+            with Image.open(p) as img:
+                orient = (img.getexif() or {}).get(0x0112, 1)
+                if orient in (0, 1):
+                    continue                      # already upright
+                upright = ImageOps.exif_transpose(img)
+                dst = os.path.join(
+                    out_dir, f"upright_{f.get('frame_id','x')}_{os.path.basename(p)}")
+                upright.convert("RGB").save(dst, quality=95) if dst.lower().endswith((".jpg", ".jpeg")) \
+                    else upright.save(dst)
+                f["visual_path"] = dst
+                fixed += 1
+                print(f"[Matcher] {f.get('frame_id')} EXIF-rotated photo normalized → {os.path.basename(dst)}")
+        except Exception as e:
+            print(f"[Matcher] exif_upright skipped {os.path.basename(p)} ({e})")
+    return fixed

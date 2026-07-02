@@ -331,6 +331,15 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Wrong photo on one beat?** Hover a card → **⟳ Re-match** auto-picks the best-fitting
   photo for just that shot (now role-aware — a "brother" beat looks for a young man, not any
   family photo), or **🖼 Pick** to choose by hand.
+- **Asset QC is automatic on ingest.** Sideways phone photos (EXIF-rotated) are
+  normalized upright the moment they're matched or attached — your original file is
+  never modified. The **🔎 Review** pass also flags rotated pixels, visible
+  watermarks/camera-brand overlays, and documents/newspaper clippings that would be
+  unreadable full-frame (⚠️ on the shot).
+- **Length & captions ship with reel-ready defaults** (you can change all of them):
+  target length defaults to **~60s** (pick 30s/90s/3min or Auto for story-length),
+  captions default to **Baskerville serif, size 52, max 2 lines** — the house
+  storytelling look, readable on a phone.
 - **Approve each stage: Key Frames → Video → Final Cut.** Click **Generate** on the
   *Key Frames* stage to render just the still images — review them, **↻ re-roll** any
   weak one, edit prompts — *before* spending on the expensive video. When you Generate
@@ -339,6 +348,12 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Pick your audio** (same options as Story mode): **🎵 Music — auto** (generated
   score), **⬆ Upload a song** (your own track), **🎙 Voiceover** (ElevenLabs narrates
   the captions — choose a voice), or **🔇 None**.
+- **🔇 No-audio warning.** If music generation fails (e.g. the music provider is out
+  of credits) the reel still renders, but the board now shows a red **🔇 no-soundtrack
+  warning** and the render status says **"done — ⚠ NO AUDIO"** instead of "done ✓".
+  A final output check also probes the finished file — if you asked for audio and the
+  reel is silent for *any* reason, you're told before anyone downloads it. Fix the
+  cause (top up credits / pick another audio option) and re-run **Final Cut**.
 - **Captions & format bar.** Set the burned-in captions — **on/off**, **position**
   (top/middle/bottom), **font**, **size**, **color**, and **1-line / 2-line** (or no limit).
   Pick the reel **format**: **9:16** (portrait), **16:9** (landscape), or **1:1** (square) —

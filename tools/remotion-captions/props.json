@@ -1,0 +1,8 @@
+{
+  "durationSeconds": 10,
+  "captions": [
+    { "text": "Papa was an auto driver,", "start": 0.4, "end": 3.2, "kind": "story" },
+    { "text": "I got selected…", "start": 3.6, "end": 6.8, "kind": "hero", "accent": "#e0a32e" },
+    { "text": "Life changed overnight.", "start": 7.0, "end": 9.6, "kind": "story" }
+  ]
+}

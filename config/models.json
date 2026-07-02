@@ -113,11 +113,12 @@
       "object": { "draft": ["seedream"], "premium": ["flux", "nano_banana"] }
     },
     "video": {
+      "_kling_first_note": "TEMPORARY (2026-07-02): kling_pro (kling-v3 pro) leads EVERY premium lane to burn a prepaid Kling credit balance. Best-fit routing preserved as the 2nd/3rd choices — TO REVERT to auto/best-fit, restore the leads: landscape→hailuo, hero→seedance, dialogue→veo.",
       "real":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance"] },
       "face":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance"] },
-      "landscape": { "draft": ["kling_std"], "premium": ["hailuo", "seedance"] },
-      "hero":      { "draft": ["kling_std"], "premium": ["seedance", "veo"] },
-      "dialogue":  { "draft": ["kling_std"], "premium": ["veo", "kling_pro"] }
+      "landscape": { "draft": ["kling_std"], "premium": ["kling_pro", "hailuo", "seedance"] },
+      "hero":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance", "veo"] },
+      "dialogue":  { "draft": ["kling_std"], "premium": ["kling_pro", "veo"] }
     },
     "identity": {
       "_note": "Reference-conditioned generation (keep a supplied face/character in a new scene). Ordered failover — the edit path (agents/image_editor.edit_image) tries these in order. Override the primary with env IDENTITY_MODEL.",

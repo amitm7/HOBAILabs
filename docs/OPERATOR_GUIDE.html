@@ -671,6 +671,18 @@ so you see and approve everything before it spends.</p>
   showing a real <i>person</i> is never offered Re-create — only Real or Restore.</li>
   <li><b>Save &amp; resume:</b> every action auto-saves. Close the tab and come back via
   the <b>Resume…</b> picker, or the link in the address bar.</li>
+  <li><b>🔇 No-audio warning:</b> if music generation fails (e.g. the music provider is out
+  of credits) the reel still renders, but the board shows a red <b>no-soundtrack warning</b>
+  and the render status reads <b>"done — ⚠ NO AUDIO"</b> instead of "done ✓". A final output
+  check also probes the finished file: if you asked for audio and the reel is silent for any
+  reason, it's flagged before download. Fix the cause and re-run <b>Final Cut</b>.</li>
+  <li><b>Asset QC on ingest:</b> EXIF-rotated (sideways) phone photos are auto-normalized
+  upright when matched or attached — the original file is never modified. The <b>🔎 Review</b>
+  pass additionally flags rotated pixels, visible watermarks / camera-brand overlays, and
+  unreadable full-frame documents (⚠️ on the shot).</li>
+  <li><b>Reel-ready defaults (all operator-changeable):</b> target length defaults to
+  <b>~60s</b> (30s/90s/3min/Auto still available); captions default to <b>Baskerville serif,
+  size 52, max 2 lines</b> — the house storytelling look, readable on a phone.</li>
 </ul>
 
 <hr>
