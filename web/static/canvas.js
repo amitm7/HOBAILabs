@@ -74,6 +74,7 @@
     if (cs.size) $("cap-size").value = cs.size;
     if (cs.color) $("cap-color").value = cs.color;
     if (cs.max_lines !== undefined) $("cap-lines").value = String(cs.max_lines);
+    if ($("cap-engine")) $("cap-engine").checked = cs.engine === "remotion";
     if (canvas.orientation) $("orientation").value = canvas.orientation;
     if ($("ip") && canvas.ip !== undefined) $("ip").value = canvas.ip;
     // Story-type mode: AI (fiction) hides the real-media tools (folder match / enhance /
@@ -129,6 +130,7 @@
       size: parseInt($("cap-size").value, 10) || 24,
       color: $("cap-color").value,
       max_lines: parseInt($("cap-lines").value, 10),
+      engine: ($("cap-engine") && $("cap-engine").checked) ? "remotion" : "libass",
     };
     try {
       const d = await api(`/api/canvas/${runId}/settings`,
@@ -139,7 +141,7 @@
     } catch (e) { err(e.message); }
   }
   ["cap-enabled", "cap-position", "cap-font", "cap-size", "cap-color", "cap-lines",
-   "orientation", "ip"]
+   "cap-engine", "orientation", "ip"]
     .forEach((id) => { const el = $(id); if (el) el.addEventListener("change", saveSettings); });
   // Populate the IP/watermark dropdown from the server (HOB properties).
   (async function loadIPs() {

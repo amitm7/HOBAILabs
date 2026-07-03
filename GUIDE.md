@@ -358,6 +358,28 @@ A **stage-gated board** that builds your reel one approved step at a time —
   If you try to Generate Key Frames while characters still have no locked face,
   you're warned first (their look may drift between shots) — you decide whether to
   proceed. The Narrator never needs a face (voice-only).
+- **✨ Suggested settings.** Planning auto-fills empty World Context fields, hints a
+  narrator profile, and picks up a target length stated in your brief — all marked as
+  suggestions; edit anything, nothing applies until you act.
+- **🌐 Language versions.** After Video is approved, pick a language and **Translate &
+  review** — every caption is machine-translated and opened for MANDATORY review/edit
+  (names & honorifics!), then **Render version** produces `output` in that language:
+  same clips and music from cache, new captions (script-correct Noto Serif font) + VO.
+  The original reel is never overwritten.
+- **📚 Library.** Every story's assets — character portraits, key frames, clips,
+  storyboard panels, audio, final cuts (incl. language versions) — browsable and
+  downloadable at **/library**, plus a per-story zip.
+- **Takes & stills.** ↻ Re-roll now archives the previous clip — the Inspector shows
+  **Previous takes** you can restore free. **🖼 New still** regenerates only the key
+  frame from your edited Image Prompt (image cost) so you review before paying for video.
+- **Overlays (comic devices).** Per shot, add up to 2: **🗣 speaker chip**, **📷 memory
+  polaroid**, **💭 thought bubble**, or an image-free **✨ sticker** — preset positions
+  and sizes, free preview on the still, composited at Final Cut. One-click **🗣 Speaker
+  chips** puts the talking character's face on every dialogue shot.
+- **✨ Animated captions.** A checkbox in Captions Format switches to the animated
+  typography engine (hero lines spring in word-by-word with a gold accent; serif story
+  lines). Adds ~1–2 min to Final Cut; falls back to standard captions automatically on
+  any failure (and tells you in the render report).
 - **Reviewing a face:** the portrait shows large on the sheet — **click it to view
   full size**. Don't like it? **↻ New face** generates a fresh one, and it uses any
   attribute edits you just typed (no separate Save needed). Repeat until it's right —

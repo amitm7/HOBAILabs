@@ -1,0 +1,11 @@
+{
+  "_note": "T6 (docs/REMOTION_CAPTIONS_PLAN.md): pluggable caption engine. 'libass' = the proven ffmpeg subtitle burn (default; also the AUTOMATIC fallback whenever the animated engine fails — a render can never die because Chromium hiccuped). 'remotion' = animated typographic overlay (hero-line word-springs, serif story lines) rendered by tools/remotion-captions via headless Chromium and composited over the assembled reel. Requires node+npx and the npm deps installed in tools/remotion-captions (npm install). Per-reel override: caption_style.engine from the canvas settings wins over this default.",
+  "_cost_note": "The animated engine adds roughly real-time render (a 60s reel ≈ 1-2 min extra) and needs ~1GB extra in the Docker image (node + headless chrome). Keep default 'libass'; choose animated per hero reel.",
+  "engine": "libass",
+  "remotion": {
+    "project_dir": "tools/remotion-captions",
+    "composition": "CaptionOverlay",
+    "hero_min_words": 2,
+    "_hero_note": "A caption becomes a HERO line (big centred word-spring) when the shot has hero_line=true, or when it ends with '!' or '…' and is short (<= 8 words). Everything else renders as the serif story-line."
+  }
+}

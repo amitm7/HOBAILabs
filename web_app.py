@@ -689,7 +689,8 @@ def _canvas_tempo_bpm(mood: str) -> int:
 # at 1080×1920) — the old Montserrat-24 override produced a tiny, hard-to-read line
 # (a top complaint in the Surbhi head-to-head review). 2 lines max keeps hierarchy.
 _CANVAS_CAPTION_DEFAULT = {"enabled": True, "font": "Baskerville", "size": 52,
-                           "position": "bottom", "color": "white", "max_lines": 2}
+                           "position": "bottom", "color": "white", "max_lines": 2,
+                           "engine": "libass"}   # T6: 'remotion' = animated typography
 _CANVAS_ORIENTATIONS = {"portrait", "landscape", "square"}   # 9:16 / 16:9 / 1:1
 
 
@@ -753,9 +754,11 @@ def api_canvas_settings(run_id: str, operator: str):
     body = request.json or {}
     if isinstance(body.get("caption_style"), dict):
         cur = {**_CANVAS_CAPTION_DEFAULT, **(state.get("caption_style") or {})}
-        for k in ("enabled", "font", "size", "position", "color", "max_lines"):
+        for k in ("enabled", "font", "size", "position", "color", "max_lines", "engine"):
             if k in body["caption_style"]:
                 cur[k] = body["caption_style"][k]
+        if cur.get("engine") not in ("libass", "remotion"):
+            cur["engine"] = "libass"
         state["caption_style"] = cur
     if body.get("orientation") in _CANVAS_ORIENTATIONS:
         if state.get("orientation") != body["orientation"]:
@@ -3945,12 +3948,29 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         # Burning subtitles is optional. When disabled, skip caption generation
         # entirely and pass no subtitle file to the assembler (clean video).
         captions_on = caption_style.get("enabled", True)
+        ass_path = None
+        cap_overlay_mov = None       # T6: animated caption track (composited post-assembly)
         if captions_on:
-            srt_path = os.path.join(clip_temp, "captions.srt")
-            ass_path = generate_frame_srt(frames, srt_path, caption_style=caption_style,
-                                          timecodes=frame_times)
+            from agents import remotion_overlay
+            if remotion_overlay.engine_for(caption_style) == "remotion":
+                try:
+                    total_s = frame_times[-1][1] if frame_times else sum(
+                        f.get("duration", 4.0) for f in frames)
+                    props = remotion_overlay.build_props(frames, frame_times, total_s)
+                    if props["captions"]:
+                        cap_overlay_mov = remotion_overlay.render_overlay(
+                            props, str(run_dir / "cap_overlay.mov"))
+                except Exception as e:
+                    from agents import degradation
+                    degradation.report("captions", "warn",
+                                       f"animated captions failed ({str(e)[:120]}) — "
+                                       f"falling back to the standard burn")
+                    cap_overlay_mov = None
+            if not cap_overlay_mov:
+                srt_path = os.path.join(clip_temp, "captions.srt")
+                ass_path = generate_frame_srt(frames, srt_path, caption_style=caption_style,
+                                              timecodes=frame_times)
         else:
-            ass_path = None
             print("[Pipeline] Captions disabled — rendering without subtitles")
 
         # ── Music / Voice-over ────────────────────────────────────────────
@@ -4044,16 +4064,34 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         except Exception as e:
             print(f"[Provenance] burn-in check skipped ({e})")
 
-        needs_overlay = is_brand or bool(watermark_path) or bool(provenance_disc)
+        needs_post = is_brand or bool(watermark_path) or bool(provenance_disc)
+        needs_overlay = needs_post or bool(cap_overlay_mov)
         assemble_target = str(run_dir / "_raw_output.mp4") if needs_overlay else output_path
         assemble_caption_only(clips, clip_temp, assemble_target,
                               music_path=music_path, srt_path=ass_path,
                               transition=transition, is_voiceover=is_vo,
                               bg_music_path=bg_music_path, overlaps=overlaps)
 
+        # T6: composite the animated caption track over the assembled reel. Failure
+        # here is loud (alert) — an animated-caption reel must never ship caption-less
+        # silently; the operator re-runs with the standard engine.
+        if cap_overlay_mov:
+            from agents import remotion_overlay as _ro
+            try:
+                step_out = str(run_dir / "_cap_composited.mp4") if needs_post else output_path
+                _ro.composite(assemble_target, cap_overlay_mov, step_out)
+                assemble_target = step_out
+                print("[Remotion] animated captions composited ✓")
+            except Exception as e:
+                from agents import degradation
+                degradation.report("captions", "alert",
+                                   f"caption composite failed — reel has NO captions ({str(e)[:100]})")
+                if not needs_post:      # nothing else will produce output_path
+                    shutil.copy2(assemble_target, output_path)
+
         # Single overlay post-pass: IP watermark (both modes) + brand disclosure/logo
         # (brand only) + provenance disclosure (any mode) — one final encode.
-        if needs_overlay:
+        if needs_post:
             from agents.assembler import apply_brand_overlay
             disc, logo, corner = "", "", "tr"
             if is_brand:
