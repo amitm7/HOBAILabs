@@ -1,5 +1,7 @@
 # HOBAILabs AI Reel Platform — Product Roadmap
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** PARTIAL — see docs/L99_EXECUTION_AUDIT.md; #2 face-consistency V1-only, #9 reframe + #11 batch deferred with triggers.
+
 **Last revised:** 2026-06-09  
 **Stack:** Python + FFmpeg + Kling AI + OpenAI + ElevenLabs + Suno AI  
 **Current state:** Single-story pipeline working end-to-end (script → Kling clips → ASS captions → assembled Reel). Web UI live at `web_app.py`.  

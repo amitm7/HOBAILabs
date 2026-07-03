@@ -1,5 +1,7 @@
 # Character Consistency, Story/Frame Config & Retrieval — Gap Analysis + Implementation Plan
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** MOSTLY SHIPPED — C1 order bug in CLI open (audit action A3); C5 CLIP deferred; C6 re-match SHIPPED (canvas); D5 multi-ref not built.
+
 > Investigation artifact (NO code changes yet). Based on a 4-agent codebase audit
 > (character/face pipeline, cast/character system, image-matcher ranking, per-frame
 > override schema). Date: 2026-07-01. Companion to `CANVAS_STORY_PARITY_BACKLOG.md`.

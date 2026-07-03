@@ -1,5 +1,7 @@
 # HOBAILabs — Gap Backlog (missing capabilities register)
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** MOSTLY SHIPPED — P0/P1 gaps closed & verified; #7 dubbing → ticket T13; #9 virality deferred (placeholder endpoint flagged).
+
 **Created:** 2026-06-24
 **Companion:** [MARKET_FIT_REVIEW.md](MARKET_FIT_REVIEW.md) · [PRODUCT_IDEAS.md](PRODUCT_IDEAS.md) · [ROADMAP.md](../ROADMAP.md)
 **Status:** prioritized register — informs roadmap, not a build spec

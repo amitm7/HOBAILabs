@@ -1,5 +1,7 @@
 # HOBAILabs — Scale Plan (single-operator tool → multi-user product)
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** PARTIAL — T0.2/T0.3/T0.4 shipped; OPEN: T0.1 S3 artifact copy, T0.5 Sentry, T0.6 backups (ops track in L99_ARCH_PLAN §4b).
+
 **Created:** 2026-06-12
 **Companion:** [HLD.md](HLD.md) · [LLD.md](LLD.md) · [WORK_PLAN.md](WORK_PLAN.md) (storage/matching)
 **Scope:** durable job orchestration, product surface (projects/library/brand kits/

@@ -1,5 +1,7 @@
 # Real vs AI story — the intake switch + Fiction/Character mode
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** SHIPPED P0–P2; P3 LoRA-per-character DEFERRED with explicit revisit trigger (L99_ARCH_PLAN §4b).
+
 > Discussion artifact (NO code). Adds a **story-type switch at intake** — *Real story
 > (HOB authentic)* vs *AI story (fiction/mythology, e.g. Ramayana or a Bible tale)* — and
 > maps exactly what the AI path needs that we don't have, which third-party tools fill each

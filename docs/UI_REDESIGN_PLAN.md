@@ -1,5 +1,7 @@
 # UI Redesign Plan
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** SHIPPED — all 11 items verified (2026-07-03 audit); deferred extras correctly marked.
+
 Professional dark UI shell for Story / Brand / Studio modes.
 
 ## Shipped

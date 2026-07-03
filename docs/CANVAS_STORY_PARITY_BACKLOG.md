@@ -1,5 +1,14 @@
 # Canvas ↔ Story parity — control delta + mismatch handling
 
+> **Status (2026-07-03): LARGELY SUPERSEDED — read `docs/L99_EXECUTION_AUDIT.md` §2 first.**
+> Many items below shipped after this doc was written and it was NOT updated, which
+> actively misled an execution audit: per-shot re-match (`/rematch`), match-confidence
+> flags (`/check-matches` + ⚠️), storyboard pencil-art (`/storyboard-art`), the caption
+> styling bar, per-shot duration edit (+ `/redistribute`), and the orientation picker are
+> ALL SHIPPED. Still genuinely open: camera-move dropdown vocabulary, canvas model picker,
+> B-1 re-derive-prompt-on-reroll, hover match descriptions. New work is tracked in
+> `docs/L99_ARCH_PLAN.md` (master order), not here.
+
 > Planning artifact (no code). Two lists: **A.** controls Story mode has that the Canvas
 > lacks, each as a todo with effort; **B.** how to handle a frame whose suggested content
 > doesn't match the image it chose/created. Date: 2026-07-01.

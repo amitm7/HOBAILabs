@@ -1,5 +1,7 @@
 # Infra & Resilience Review — Kafka? Redis? Event bus? Circuit breakers?
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** FOLLOWED — circuit breaker shipped; Redis waits on its documented trigger; Kafka correctly never.
+
 > Artifact + red-team on whether to adopt distributed-infra patterns. Companion to
 > `SCALE_PLAN.md` (which already rules on job orchestration + Redis + "no Kafka"). This
 > doc adds the **red-team per technology** and the **circuit-breaker** angle SCALE_PLAN

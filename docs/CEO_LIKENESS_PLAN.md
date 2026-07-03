@@ -1,5 +1,7 @@
 # CEO Likeness Plan — Karishma voice & on-screen presence
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** SCHEDULED — owner approved enforcement trio 2026-07-03 (audit action A4): 5.2 moderation → 5.3 photo_spec flip → 5.1 provenance burn-in.
+
 > Strategy + red-team artifact for two requests: (1) narrate stories in HOB CEO
 > Karishma's cloned voice via ElevenLabs; (2) make her *appear talking* in
 > partner-office backgrounds (AWS / Tata) from real photos, without a shoot.

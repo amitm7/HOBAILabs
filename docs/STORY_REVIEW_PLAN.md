@@ -1,5 +1,7 @@
 # STR-2 — Story Review Gate (PLAN)
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** PARTIAL — P1 module+tests shipped; P2/P3 routing was NEVER wired (dead gate) — being fixed as audit action A2 (2026-07-03).
+
 > Status: **PROPOSED** (artifact-first per build-feature §"Plan-first for big features").
 > Confirm scope/phasing before executing. One engine, many front doors — this is a
 > read-only check layer over the existing `frames[]`, **not** a new pipeline.

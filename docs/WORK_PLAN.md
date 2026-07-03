@@ -1,5 +1,7 @@
 # HOBAILabs — Storage & Matching Work Plan
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** PARTIAL — P1/P2 shipped; P3 partial; P4 (CLIP) + P5 (eviction) deferred with triggers (L99_ARCH_PLAN §4b).
+
 **Created:** 2026-06-09
 **Scope:** the caching / DB / embeddings questions raised against the current
 pipeline. **Companion:** [HLD.md](HLD.md) · [LLD.md](LLD.md)

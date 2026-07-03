@@ -2,7 +2,10 @@
 
 **Created:** 2026-06-12
 **Companion:** [HLD.md](HLD.md) · [LLD.md](LLD.md) · [SCALE_PLAN.md](SCALE_PLAN.md)
-**Status:** decisions locked (this doc), execution NOT started.
+**Status:** SHIPPED (B1.1–B1.8 verified in code, 2026-07-03 execution audit) — B1.3
+brand-context vision critique PARTIAL; B2 kinetic-graphics layer deferred by design.
+See `docs/L99_EXECUTION_AUDIT.md`. *(Header previously said "execution NOT started" —
+that was stale.)*
 
 Brand mode turns the storytelling engine into a **branded-ad / collaboration** tool
 without forking it: one engine, a second front door (`/brand`), and a brand layer

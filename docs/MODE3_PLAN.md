@@ -1,5 +1,7 @@
 # MODE3_PLAN — Studio Mode (prompt → full reel)
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** SHIPPED — P1–P5 all verified in code (2026-07-03 audit).
+
 Status: **in progress** (Phase P1–P5 landing in one unit of work).
 Owner: HOBAILabs. Front door: `/studio`. Engine: the SAME `_run_inner` + `agents/*`.
 

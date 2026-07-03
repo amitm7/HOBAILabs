@@ -1,5 +1,7 @@
 # AGENTIC_CANVAS_PLAN.md — staged "director canvas" over the shared engine
 
+> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** CORE SHIPPED — P0–P2 + beat-cutting + editing/attach flows verified; P3/P4/P5 partial; P6 deferred. V2 board fixes in CANVAS_POLISH_PLAN.
+
 > Status: **IN PROGRESS** (branch `feature/agentic-canvas`) · Date: 2026-06-30 · Owner: Amit
 > Trigger: competitive teardown of **galleri5 AI Studio** (aistudio.galleri5.com) — a more
 > mature competitor whose "Agentic Canvas" runs Script → Assets → Storyboard → Keyframes →
