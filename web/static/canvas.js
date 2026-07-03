@@ -517,7 +517,8 @@
         <div style="border-top:1px solid #f1f5f9;margin-top:6px;padding-top:10px">
           <div class="inspector-label" style="margin-bottom:6px">Shot Actions</div>
           <div class="inspector-actions">
-            <button class="btn-secondary reroll" data-frame="${fid}">↻ Re-roll</button>
+            <button class="btn-secondary restill" data-frame="${fid}" title="Regenerate ONLY the key frame from the (edited) Image Prompt — image cost, review before paying for video">🖼 New still</button>
+            <button class="btn-secondary reroll" data-frame="${fid}" title="Regenerate still + clip (image + video cost)">↻ Re-roll</button>
             ${c.can_recreate ? `<button class="btn-secondary recreate" data-frame="${fid}">🎬 Re-create</button>` : ""}
             ${c.can_upscale ? `<button class="btn-secondary upscale" data-frame="${fid}">⬆ Upscale</button>` : ""}
             ${c.can_revert_real ? `<button class="src-btn revert-real btn-secondary" data-frame="${fid}">Revert to real</button>` : ""}
@@ -544,6 +545,33 @@
     `;
     
     $("inspector-content").innerHTML = html;
+    loadTakes(fid);   // T5: previous clips for this shot, restorable without re-spend
+  }
+
+  // ── T5 take history: list + restore previous clips (a good take is never lost) ──
+  async function loadTakes(fid) {
+    if (!runId) return;
+    try {
+      const d = await api(`/api/canvas/${runId}/takes?frame_id=${encodeURIComponent(fid)}`);
+      const takes = d.takes || [];
+      if (!takes.length || activeFrameId !== fid) return;
+      const host = $("inspector-content");
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <div style="border-top:1px solid #f1f5f9;padding-top:10px;margin-top:10px">
+          <div class="inspector-label" style="margin-bottom:6px">Previous takes (${takes.length}) — click to restore, free</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${takes.map((t) => `
+              <div class="take-chip" data-frame="${fid}" data-path="${encodeURIComponent(t.path)}"
+                   title="Restore this take (the current clip is saved as a take too)"
+                   style="width:84px;cursor:pointer;border:2px solid #e2e8f0;border-radius:8px;overflow:hidden">
+                <video src="${mediaUrl(t.path)}" muted preload="metadata" style="width:100%;height:56px;object-fit:cover;display:block"></video>
+                <div style="font-size:9px;color:#64748b;text-align:center;padding:2px">↩ restore</div>
+              </div>`).join("")}
+          </div>
+        </div>`;
+      host.appendChild(div);
+    } catch (e) { /* takes are a bonus — never block the inspector */ }
   }
 
   function selectFrame(fid) {
@@ -1028,6 +1056,43 @@
     }
   }
 
+  // T5: still-only regeneration from the (edited) Image Prompt — review-first, image cost.
+  async function restillShot(fid, btn) {
+    if (!runId) return;
+    err("");
+    const cell = document.querySelector(`.cv2-cell[data-stage="keyframes"][data-frame="${fid}"]`);
+    if (cell) cell.classList.add("shimmer");
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const d = await api(`/api/canvas/${runId}/restill`, { frame_id: fid });
+      if (d.still_path) {
+        const u = mediaUrl(d.still_path);
+        showStillOnCard(fid, u + (u.includes("?") ? "&" : "?") + "t=" + Date.now());
+        $("match-hint").textContent = "🖼 new key frame — happy? ↻ Re-roll animates it";
+      }
+    } catch (e) { err("New still: " + e.message); }
+    finally {
+      if (cell) cell.classList.remove("shimmer");
+      btn.disabled = false; btn.textContent = old;
+    }
+  }
+
+  // T5: restore a previous take as the live clip (free; current clip is archived too).
+  async function restoreTake(fid, path) {
+    if (!runId) return;
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/take-restore`, { frame_id: fid, path });
+      if (d.clip_path) {
+        const u = mediaUrl(d.clip_path);
+        showClipOnCard(fid, u + (u.includes("?") ? "&" : "?") + "t=" + Date.now());
+        $("match-hint").textContent = "↩ take restored — the replaced clip is saved as a take too";
+        renderInspector(fid);   // refresh the takes strip
+      }
+    } catch (e) { err("Restore: " + e.message); }
+  }
+
   // Optional ambient re-create — opt-in per shot (non-person only).
   async function recreateShot(fid, btn) {
     if (!runId) return;
@@ -1056,6 +1121,14 @@
     }
     const rb = ev.target.closest(".reroll");
     if (rb) { ev.preventDefault(); rerollShot(rb.getAttribute("data-frame"), rb); return; }
+    const rs = ev.target.closest(".restill");
+    if (rs) { ev.preventDefault(); restillShot(rs.getAttribute("data-frame"), rs); return; }
+    const tk = ev.target.closest(".take-chip");
+    if (tk) {
+      ev.preventDefault();
+      restoreTake(tk.getAttribute("data-frame"), decodeURIComponent(tk.getAttribute("data-path")));
+      return;
+    }
     const rc = ev.target.closest(".recreate");
     if (rc) { ev.preventDefault(); recreateShot(rc.getAttribute("data-frame"), rc); return; }
     const mb = ev.target.closest(".more-btn");

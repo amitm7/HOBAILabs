@@ -1832,6 +1832,7 @@ def api_canvas_reroll(run_id: str, operator: str):
                                 force_5s=(quality == "dev"),
                                 kling_mode="pro", provider="kling")
             dst = str(run_dir / f"clip_{fid}.mp4")
+            _archive_take(run_dir, fid)   # T5: never lose the previous paid-for take
             shutil.copy2(clips[0]["clip_path"], dst)
         finally:
             shutil.rmtree(clip_temp, ignore_errors=True)
@@ -1847,6 +1848,131 @@ def api_canvas_reroll(run_id: str, operator: str):
             pass
         import traceback
         traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+def _archive_take(run_dir: Path, fid: str, keep: int = 4) -> None:
+    """T5 take history: before a clip is overwritten, park the current one in
+    takes/ (newest-first, pruned to `keep`) so a good take is never lost to a worse
+    re-roll. Best-effort — archiving must never block the re-roll itself."""
+    import time as _time
+    try:
+        cur = run_dir / f"clip_{fid}.mp4"
+        if not cur.exists():
+            return
+        tdir = run_dir / "takes"
+        tdir.mkdir(exist_ok=True)
+        # ns timestamp: two archives in the same second must not collide/overwrite
+        shutil.copy2(cur, tdir / f"clip_{fid}_{_time.time_ns()}.mp4")
+        old = sorted(tdir.glob(f"clip_{fid}_*.mp4"),
+                     key=lambda p: p.stat().st_mtime, reverse=True)[keep:]
+        for p in old:
+            p.unlink(missing_ok=True)
+    except Exception as e:
+        print(f"[Takes] archive skipped ({e})")
+
+
+@app.route("/api/canvas/<run_id>/takes")
+@auth.require_operator()
+def api_canvas_takes(run_id: str, operator: str):
+    """T5 — list a shot's saved takes (previous clips), newest first."""
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.args.get("frame_id") or "").strip()
+    rid = state.get("render_id", "")
+    takes = []
+    if rid and fid:
+        tdir = RUNS_DIR / rid / "takes"
+        if tdir.exists():
+            for p in sorted(tdir.glob(f"clip_{fid}_*.mp4"),
+                            key=lambda q: q.stat().st_mtime, reverse=True):
+                takes.append({"path": str(p), "size": p.stat().st_size,
+                              "mtime": int(p.stat().st_mtime)})
+    return jsonify({"frame_id": fid, "takes": takes})
+
+
+@app.route("/api/canvas/<run_id>/take-restore", methods=["POST"])
+@auth.require_operator()
+def api_canvas_take_restore(run_id: str, operator: str):
+    """T5 — restore a previous take as the shot's clip (no re-spend). The clip being
+    replaced is archived too, so restore is always reversible."""
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    fid = (body.get("frame_id") or "").strip()
+    path = (body.get("path") or "").strip()
+    rid = state.get("render_id", "")
+    if not (fid and path and rid):
+        return jsonify({"error": "frame_id and path required"}), 400
+    run_dir = RUNS_DIR / rid
+    tdir = (run_dir / "takes").resolve()
+    src = Path(path).resolve()
+    if not (src.is_relative_to(tdir) and src.exists() and src.name.startswith(f"clip_{fid}_")):
+        return jsonify({"error": "Not a saved take for this shot"}), 400
+    _archive_take(run_dir, fid)                     # current becomes a take
+    dst = run_dir / f"clip_{fid}.mp4"
+    shutil.copy2(src, dst)
+    return jsonify({"frame_id": fid, "clip_path": str(dst)})
+
+
+@app.route("/api/canvas/<run_id>/restill", methods=["POST"])
+@auth.require_operator()
+def api_canvas_restill(run_id: str, operator: str):
+    """T5 — regenerate ONE shot's STILL from its (edited) prompt — image cost only,
+    review-first: look at the new key frame before paying for video. Replaces the
+    hidden 'edit prompt → Re-roll ($$ still+clip)' dance for the common case."""
+    from agents import canvas_run, governance, pricing
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    frame_payload = next((f for f in state.get("frames", []) if f.get("frame_id") == fid), None)
+    if not frame_payload:
+        return jsonify({"error": "Unknown shot"}), 400
+    rid = state.get("render_id") or str(uuid.uuid4())
+    state["render_id"] = rid
+    quality = state.get("quality", "prod")
+    run_dir = RUNS_DIR / rid
+    run_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = str(run_dir / "assets")
+    usd = pricing.image_cost("flux")
+    one = {"mode": "story", "quality": quality, "frames": [{"frame_id": fid}],
+           "session_id": rid, "operator_id": operator}
+    spend_missing = governance.reserve_spend(one, usd, run_id=rid)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    try:
+        _ps = (frame_payload.get("photo_spec") or "").strip()
+        clear_vp = _ps.startswith("ai_") or not _ps
+        fb = {**frame_payload, "visual_path": "" if clear_vp else frame_payload.get("visual_path", "")}
+        max_frame_dur = 5.0 if quality == "dev" else 9.0
+        frames = _build_frames_from_payload(
+            {"mode": "story", "quality": quality, "frames": [fb], "assets_dir": "",
+             "mood": state.get("mood", "")}, max_frame_dur)
+        frames = _generate_stills(frames, assets_dir, "", "", state.get("mood", ""),
+                                  cost_tier=("draft" if quality == "dev" else "premium"),
+                                  force_regen_ids={fid})
+        newp = frames[0].get("visual_path", "")
+        governance.release_reservation(one, run_id=rid, reason="canvas_restill_done")
+        governance.record_cost_event(governance.project_key(one), item="canvas_restill",
+                                     usd=usd, run_id=rid, event_type="estimate")
+        if not (newp and os.path.exists(newp)):
+            return jsonify({"error": "still generation produced nothing"}), 500
+
+        def _apply(fresh):
+            ff = _canvas_frame(fresh, fid)
+            if ff is not None:
+                ff["visual_path"] = newp
+            fresh["board"] = canvas_run.board_cards(fresh["frames"])
+        _canvas_mutate(run_id, _apply)
+        return jsonify({"frame_id": fid, "still_path": newp})
+    except Exception as e:
+        try:
+            governance.release_reservation(one, run_id=rid, reason="canvas_restill_failed")
+        except Exception:
+            pass
         return jsonify({"error": str(e)}), 500
 
 
