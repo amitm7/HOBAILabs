@@ -115,9 +115,22 @@ def _image_bytes_and_format(part: dict) -> tuple[bytes, str]:
         fmt = "png" if "png" in header else "jpeg"
         return base64.b64decode(b64), fmt
     path = part["path"]
-    fmt = (mimetypes.guess_type(path)[0] or "image/jpeg").split("/")[-1]
-    fmt = "jpeg" if fmt in ("jpg", "jpeg") else ("png" if fmt == "png" else fmt)
-    return Path(path).read_bytes(), fmt
+    raw = Path(path).read_bytes()
+    # Sniff the REAL format from magic bytes — generators regularly write PNG/WebP
+    # bytes into ".jpg" paths, and a wrong declared media type makes strict vision
+    # APIs reject the request (Gate B2 was silently skipping every QC because of it).
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        fmt = "png"
+    elif raw[:2] == b"\xff\xd8":
+        fmt = "jpeg"
+    elif raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        fmt = "webp"
+    elif raw[:6] in (b"GIF87a", b"GIF89a"):
+        fmt = "gif"
+    else:  # unknown magic — fall back to the extension guess
+        fmt = (mimetypes.guess_type(path)[0] or "image/jpeg").split("/")[-1]
+        fmt = "jpeg" if fmt in ("jpg", "jpeg") else fmt
+    return raw, fmt
 
 
 def _data_uri(part: dict) -> str:

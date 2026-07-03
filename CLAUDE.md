@@ -68,10 +68,17 @@ pytest tests/                                         # tests
   sticky action bar across Story / Brand / Studio (`web/static/shell.js`, `style.css`).
 - **Studio Mode** WIP landed on `main` in commit `cd0447d` (front door `/studio`,
   `agents/shot_planner.py`, talent/product identity library — see `docs/MODE3_PLAN.md`).
-- A **feedback-loop stub** (`run_store.performance_note` + `POST /performance/<run_id>` +
-  output-panel "did this reel perform?" capture) is being produced by a cloud ultraplan PR.
+- The **feedback-loop stub** (`run_store.performance_*` + `POST /performance/<run_id>`) is
+  SHIPPED (was previously listed as in-flight).
+- **`docs/L99_EXECUTION_AUDIT.md`** (2026-07-03): full planned-vs-executed audit across all
+  plan docs (~170 items, ~62% shipped) — read it before trusting any plan doc's status
+  claims; PARITY_BACKLOG in particular is stale.
 - Strategy artifacts in flight: `docs/MARKET_FIT_REVIEW.md` (OODA review) +
   `docs/GAP_BACKLOG.md` (prioritized missing capabilities).
+- **`docs/L99_ARCH_PLAN.md`** (2026-07-03, red-teamed): hardening plan — P0 degradation
+  ledger + canvas-state write safety; P1 plan-time auto-fill, per-character voices,
+  shot take-history, Remotion caption wiring; P2 selective lip-sync + beat→asset ladder.
+  Includes the owner-suggestion ledger (S1–S17) — check it before starting canvas work.
 
 ## 10. Canonical docs (start here)
 - `GUIDE.md` — full user guide (behaviour source of truth).

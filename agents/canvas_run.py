@@ -647,17 +647,30 @@ def derive_characters(state: dict) -> list[dict]:
 
 # Story-level character sheet attributes (A1). Frame overrides still win (the resolver
 # only fills a character's shots that don't set their own).
-CHARACTER_ATTRS = ("role", "name", "gender", "age", "skin_tone", "hair", "clothing", "source")
+# T11: "species" carries non-human anatomy (e.g. "vanara — monkey-like face, long curved
+# monkey tail") so mythological characters keep consistent anatomy across every shot —
+# the Hanuman snake-tail/monkey-tail drift was this attribute not existing.
+# T4: "voice_id" gives each character their own narrator (radio-drama dialogue) —
+# resolved per-frame by cast.voice_for_frame via the render data's voice_map.
+CHARACTER_ATTRS = ("role", "name", "gender", "age", "skin_tone", "hair", "clothing",
+                   "species", "voice_id", "source")
 
 
 def _character_appearance(char: dict) -> str:
     """Compact appearance clause from a character's attributes, injected into that
-    character's shots so their look (age/gender/skin/hair/wardrobe) stays consistent."""
+    character's shots so their look (anatomy/age/gender/skin/hair/wardrobe) stays
+    consistent. Wardrobe + species are phrased as INVARIANTS ("always…", "exactly…")
+    — soft phrasing let outfits and anatomy drift shot-to-shot (T11)."""
     look = " ".join(str(char.get(k) or "").strip()
                     for k in ("age", "gender", "skin_tone", "hair") if char.get(k)).strip()
     who = look or (char.get("name") or char.get("label") or "").strip()
+    species = str(char.get("species") or "").strip()
     clothing = str(char.get("clothing") or "").strip()
-    parts = [p for p in (who, ("wearing " + clothing) if clothing else "") if p]
+    parts = [p for p in (
+        (f"a {species} — this exact anatomy in every shot" if species else ""),
+        who,
+        (f"always wearing {clothing} (the same outfit in every scene)" if clothing else ""),
+    ) if p]
     return ", ".join(parts)
 
 
@@ -735,6 +748,9 @@ def public_state(state: dict) -> dict:
         # Set when the last Final Cut produced no audible audio (e.g. the music
         # engine failed) — the board must show this, never a clean 'done ✓'.
         "audio_warning": state.get("audio_warning", ""),
+        # T1 Degradation Ledger: the last render's quality receipt — every fallback/
+        # QC event that fired ({step, severity: info|warn|alert, msg, ts}).
+        "render_report": state.get("render_report", []),
     }
 
 

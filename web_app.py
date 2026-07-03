@@ -316,7 +316,45 @@ def _track_job(run_id: str, target, *args):
     threading.Thread(target=_runner, daemon=True).start()
 
 
+# ── Canvas state-write safety (T2, docs/L99_ARCH_PLAN.md) ─────────────────────
+# One RLock per canvas serializes load/save; _canvas_mutate gives long-running jobs
+# an atomic re-load → narrow-merge → save so a state object held for minutes can
+# never clobber operator edits made in between (the observed race).
+_CANVAS_LOCKS: dict = {}
+_CANVAS_LOCKS_GUARD = threading.Lock()
+
+
+def _canvas_lock(run_id: str):
+    with _CANVAS_LOCKS_GUARD:
+        lk = _CANVAS_LOCKS.get(run_id)
+        if lk is None:
+            lk = _CANVAS_LOCKS[run_id] = threading.RLock()
+        return lk
+
+
+def _canvas_mutate(run_id: str, apply_fn) -> dict | None:
+    """Atomically apply a NARROW mutation to the freshest state and save it.
+    Threaded jobs must write through this instead of saving their (stale) copy."""
+    with _canvas_lock(run_id):
+        fresh = _canvas_load(run_id)
+        if fresh is None:
+            return None
+        apply_fn(fresh)
+        _canvas_save(run_id, fresh)
+        return fresh
+
+
+def _canvas_frame(state: dict, frame_id: str) -> dict | None:
+    return next((f for f in state.get("frames", []) if f.get("frame_id") == frame_id), None)
+
+
 def _canvas_load(run_id: str) -> dict | None:
+    from agents import run_store
+    with _canvas_lock(run_id):
+        return _canvas_load_locked(run_id)
+
+
+def _canvas_load_locked(run_id: str) -> dict | None:
     from agents import run_store
     stored = run_store.load(run_id)
     if not stored:
@@ -345,8 +383,10 @@ def _canvas_load(run_id: str) -> dict | None:
 
 def _canvas_save(run_id: str, state: dict) -> None:
     from agents import run_store
-    run_store.save(run_id, status="canvas", run_dir=str(RUNS_DIR / run_id),
-                   payload={"mode": "canvas", "session_id": run_id, "canvas": state})
+    with _canvas_lock(run_id):
+        state["rev"] = int(state.get("rev") or 0) + 1    # write counter (observability)
+        run_store.save(run_id, status="canvas", run_dir=str(RUNS_DIR / run_id),
+                       payload={"mode": "canvas", "session_id": run_id, "canvas": state})
 
 
 @app.route("/canvas")
@@ -373,6 +413,14 @@ def api_canvas_plan():
                                   quality=data.get("quality", "dev"),
                                   target_seconds=target_seconds,
                                   story_type=data.get("story_type", "real"))
+    # Characters-first for AI stories (galleri5's stage-2 lesson): auto-derive the cast
+    # at Plan time so the sheet is on screen BEFORE any scene spend — consistency is a
+    # step in the flow, not operator diligence. Free (cast detection only, no portraits).
+    if state.get("story_type") == "ai":
+        try:
+            state["characters"] = canvas_run.derive_characters(state)
+        except Exception as e:
+            print(f"[Canvas] auto cast derivation skipped ({e})")
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
@@ -648,6 +696,11 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
         "transition": state.get("transition") or "crossfade",   # crossfade | cut | …
         "session_id": render_id, "operator_id": operator,
         "likeness_consent": {"face": True, "voice": True}, "canvas_run_id": "",
+        # T4 per-character voices: cast-sheet voice assignments, resolved per spoken
+        # frame by cast.voice_for_frame (speaker_id → voice). Narrator default wins
+        # for anyone unassigned. Stock voices only — cloning stays behind governance.
+        "voice_map": {c["id"]: c.get("voice_id", "")
+                      for c in state.get("characters", []) if c.get("voice_id")},
         # D1: auto per-speaker face reuse ON by default — every un-anchored shot of a
         # speaker reuses that speaker's FIRST generated portrait, so the same person keeps
         # the same face across the whole reel without anchoring every frame by hand.
@@ -706,10 +759,21 @@ def api_canvas_character_portrait(run_id: str, operator: str):
     state = _canvas_load(run_id)
     if state is None:
         return jsonify({"error": "Unknown canvas"}), 404
-    char_id = (request.json or {}).get("char_id", "")
+    body = request.json or {}
+    char_id = body.get("char_id", "")
     char = next((c for c in state.get("characters", []) if c.get("id") == char_id), None)
     if not char:
         return jsonify({"error": "Unknown character"}), 400
+    # Apply any just-typed sheet attributes FIRST (the UI sends them along), so
+    # "changed skin tone → Generate" actually generates with the new attributes —
+    # previously unsaved edits + the content-hash cache returned the OLD portrait.
+    if isinstance(body.get("attrs"), dict) and body["attrs"]:
+        state = canvas_run.set_character(state, char_id, attrs=body["attrs"])
+        char = next(c for c in state["characters"] if c.get("id") == char_id)
+    try:
+        variant = int(body.get("variant") or 0)
+    except (TypeError, ValueError):
+        variant = 0
     appearance = canvas_run._character_appearance(char) or (char.get("name") or char.get("label") or "a person")
     world_clause = canvas_run._world_clause(state.get("world") or {})
     usd = pricing.image_cost("flux")
@@ -721,7 +785,8 @@ def api_canvas_character_portrait(run_id: str, operator: str):
     out_dir = str(RUNS_DIR / run_id / "characters")
     try:
         portrait = image_generator.generate_character_portrait(
-            appearance, out_dir, world_clause=world_clause, char_id=char_id)
+            appearance, out_dir, world_clause=world_clause, char_id=char_id,
+            variant=variant)
         governance.release_reservation(one, run_id=run_id, reason="canvas_char_portrait_done")
         governance.record_cost_event(governance.project_key(one), item="canvas_char_portrait",
                                      usd=usd, run_id=run_id, event_type="estimate")
@@ -787,6 +852,7 @@ def api_canvas_keyframes(run_id: str, operator: str):
     render_id = state.get("render_id") or str(uuid.uuid4())
     state["render_id"] = render_id
     data = _canvas_render_data(state, render_id, operator)
+    data["canvas_run_id"] = run_id     # ledger + report persistence target (T1)
     # Stills-only spend gate (images, not video).
     governance.record_consent(data, confirmed_by=operator)
     governance.record_likeness_consent(data, confirmed_by=operator)
@@ -996,35 +1062,45 @@ def api_canvas_storyboard_art(run_id: str, operator: str):
     def _job(st):
         # Panels are independent → render them CONCURRENTLY (each ~10s on the draft model;
         # sequential would be N×10s). Pool capped so we don't exceed the model's fal limit.
+        # Writes go through _canvas_mutate (T2): only THIS job's fields are merged onto
+        # the freshest state — never a wholesale save of the stale `st` object.
         from agents import image_generator
         from concurrent.futures import ThreadPoolExecutor
         lock = threading.Lock()
         progress = {"done": 0}
 
         def _panel(f):
+            art = ""
             try:
-                p = image_generator.generate_storyboard_panel(f, out_dir)
-                if p:
-                    f["storyboard_art"] = p
+                art = image_generator.generate_storyboard_panel(f, out_dir) or ""
             except Exception as e:
                 print(f"[Storyboard] {f.get('frame_id')} ({e})")
             with lock:
                 progress["done"] += 1
-                st["sketch_done"] = progress["done"]
-                st["board"] = canvas_run.board_cards(st["frames"])
-                _canvas_save(run_id, st)
+                done = progress["done"]
+            fid = f.get("frame_id")
+
+            def _apply(fresh):
+                ff = _canvas_frame(fresh, fid)
+                if art and ff is not None:
+                    ff["storyboard_art"] = art
+                fresh["sketch_done"] = max(int(fresh.get("sketch_done") or 0), done)
+                fresh["board"] = canvas_run.board_cards(fresh["frames"])
+            _canvas_mutate(run_id, _apply)
 
         with ThreadPoolExecutor(max_workers=5) as ex:
             list(ex.map(_panel, st["frames"]))
-        st["sketching"] = False
         try:
             governance.release_reservation(one, run_id=run_id, reason="canvas_storyboard_done")
             governance.record_cost_event(governance.project_key(one), item="canvas_storyboard",
                                          usd=usd, run_id=run_id, event_type="estimate")
         except Exception:
             pass
-        st["board"] = canvas_run.board_cards(st["frames"])
-        _canvas_save(run_id, st)
+
+        def _finish(fresh):
+            fresh["sketching"] = False
+            fresh["board"] = canvas_run.board_cards(fresh["frames"])
+        _canvas_mutate(run_id, _finish)
 
     _track_job(run_id, _job, state)
     return jsonify({"sketching": True, "total": len(frames),
@@ -1059,28 +1135,39 @@ def api_canvas_restore(run_id: str, operator: str):
     _canvas_save(run_id, state)
 
     def _job(st):
+        # Writes via _canvas_mutate (T2): merge each result onto the FRESH state.
         from agents import restore
         for i, f in enumerate(targets, 1):
             src = f.get("visual_path") or f.get("photo_spec")
-            f.setdefault("orig_visual", src)   # preserve original for Passthrough revert
+            newp = ""
             try:
-                newp = restore.restore_file(src, out_dir)
-                if newp and newp != src:
-                    f["visual_path"] = newp
-                    f["photo_spec"] = newp
-                    f["restored"] = True
-                    f.pop("recreated_from_real", None)   # restore supersedes a prior re-create
+                got = restore.restore_file(src, out_dir)
+                if got and got != src:
+                    newp = got
             except Exception as e:
                 print(f"[Restore] {src} ({e})")
-            st["restore_done"] = i
-            st["board"] = canvas_run.board_cards(st["frames"])
-            _canvas_save(run_id, st)
-        st["restoring"] = False
-        if st["stages"]["keyframes"]["status"] in ("done", "approved", "generating"):
-            canvas_run.invalidate_from(st, "keyframes")   # new visuals → re-render downstream
-        st["board"] = canvas_run.board_cards(st["frames"])
-        st["costs"] = canvas_run.stage_costs(st["frames"], quality=st.get("quality", "dev"))
-        _canvas_save(run_id, st)
+            fid = f.get("frame_id")
+
+            def _apply(fresh, fid=fid, src=src, newp=newp, i=i):
+                ff = _canvas_frame(fresh, fid)
+                if ff is not None:
+                    ff.setdefault("orig_visual", src)   # preserve original for Passthrough revert
+                    if newp:
+                        ff["visual_path"] = newp
+                        ff["photo_spec"] = newp
+                        ff["restored"] = True
+                        ff.pop("recreated_from_real", None)  # restore supersedes a prior re-create
+                fresh["restore_done"] = max(int(fresh.get("restore_done") or 0), i)
+                fresh["board"] = canvas_run.board_cards(fresh["frames"])
+            _canvas_mutate(run_id, _apply)
+
+        def _finish(fresh):
+            fresh["restoring"] = False
+            if fresh["stages"]["keyframes"]["status"] in ("done", "approved", "generating"):
+                canvas_run.invalidate_from(fresh, "keyframes")   # new visuals → re-render downstream
+            fresh["board"] = canvas_run.board_cards(fresh["frames"])
+            fresh["costs"] = canvas_run.stage_costs(fresh["frames"], quality=fresh.get("quality", "dev"))
+        _canvas_mutate(run_id, _finish)
 
     _track_job(run_id, _job, state)
     return jsonify({"restoring": True, "total": len(targets),
@@ -1149,20 +1236,32 @@ def api_canvas_check_matches(run_id: str, operator: str):
                         {"type": "image", "path": src},
                     ]}], json_mode=True, max_tokens=120, model_tier="fast")
                     data = llm.json_loads_lenient(res) or {}
-                    f["match_flag"] = "" if data.get("fits", True) else (data.get("reason") or "may not fit this beat")
+                    flag = "" if data.get("fits", True) else (data.get("reason") or "may not fit this beat")
+                else:
+                    flag = None
             except Exception as e:
                 print(f"[MatchCheck] {f.get('frame_id')} ({e})")
+                flag = None
             with lock:
                 prog["n"] += 1
-                st["check_done"] = prog["n"]
-                st["board"] = canvas_run.board_cards(st["frames"])
-                _canvas_save(run_id, st)
+                done = prog["n"]
+            fid = f.get("frame_id")
+
+            def _apply(fresh):
+                ff = _canvas_frame(fresh, fid)
+                if ff is not None and flag is not None:
+                    ff["match_flag"] = flag
+                fresh["check_done"] = max(int(fresh.get("check_done") or 0), done)
+                fresh["board"] = canvas_run.board_cards(fresh["frames"])
+            _canvas_mutate(run_id, _apply)
 
         with ThreadPoolExecutor(max_workers=5) as ex:
             list(ex.map(_check, targets))
-        st["checking"] = False
-        st["board"] = canvas_run.board_cards(st["frames"])
-        _canvas_save(run_id, st)
+
+        def _finish(fresh):
+            fresh["checking"] = False
+            fresh["board"] = canvas_run.board_cards(fresh["frames"])
+        _canvas_mutate(run_id, _finish)
 
     _track_job(run_id, _job, state)
     return jsonify({"checking": True, "total": len(targets),
@@ -1412,6 +1511,11 @@ def api_canvas_render(run_id: str, operator: str):
     if data["music_type"] == "voiceover":
         data["voice_id"] = (body.get("voice_id") or "").strip()
         data["beat_grid_bpm"] = 0   # gentle, uniform cuts under narration (don't beat-cut speech)
+        # Optional background bed UNDER the narration (VO full, bed ducked + looped —
+        # same assembler mix Brand mode uses). Operator-supplied file; invalid → skip.
+        bg = (body.get("bg_music_path") or "").strip()
+        if bg and _path_allowed(bg) and os.path.exists(bg):
+            data["bg_music_path"] = bg
     quality = data["quality"]
     # Same gates as /run — money/rights are not bypassed by the canvas surface.
     missing = governance.validate_consent(data)
@@ -3034,7 +3138,9 @@ def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
     cutting), never a hard fail — but the failure is SURFACED on the canvas
     (audio_warning), because a silent reel shipping as 'done ✓' is how a whole
     render gets judged useless (the Suno-credits incident)."""
+    from agents import degradation
     _thread_run.run_id = run_id
+    degradation.bind(run_id)      # T1: every fallback during this render is ledgered
     try:
         if data.get("music_type") == "generate" and not data.get("music_path"):
             from agents.music_generator import generate_music, compose_music_brief
@@ -3049,6 +3155,8 @@ def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
                 _set_canvas_audio_warning(data.get("canvas_run_id", ""), "")
     except Exception as e:
         print(f"[Canvas] ⚠ MUSIC FAILED — the reel will have NO soundtrack: {e}")
+        degradation.report("audio", "alert",
+                           f"music generation failed — reel has NO soundtrack ({str(e)[:120]})")
         _set_canvas_audio_warning(
             data.get("canvas_run_id", ""),
             f"Music generation failed — this reel has NO soundtrack. Fix the cause and "
@@ -3065,16 +3173,32 @@ def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
                 meta = _runs.get(run_id, {}).get("output_path")
             if meta and os.path.exists(meta) and _output_is_silent(meta):
                 print("[Canvas] ⚠ OUTPUT QC: the finished reel has no audible audio.")
+                degradation.report("audio", "alert",
+                                   "output check: the finished reel has NO audible audio")
                 _set_canvas_audio_warning(
                     data.get("canvas_run_id", ""),
                     "⚠ Output check: the finished reel has no audible audio. Re-run "
                     "Final Cut after fixing the audio source.")
     except Exception as e:
         print(f"[Canvas] output audio QC skipped ({e})")
+    # T1: persist the render's degradation ledger on the canvas — the quality receipt.
+    try:
+        events = degradation.drain(run_id)
+        cid = data.get("canvas_run_id", "")
+        if cid:
+            def _apply(fresh):
+                fresh["render_report"] = events
+            _canvas_mutate(cid, _apply)
+            n_warn = sum(1 for e in events if e["severity"] != "info")
+            print(f"[Canvas] render report: {len(events)} event(s), {n_warn} warning(s)+")
+    except Exception as e:
+        print(f"[Canvas] render report skipped ({e})")
 
 
 def _execute_preview(run_id: str, data: dict, run_dir: Path):
+    from agents import degradation
     _thread_run.run_id = run_id   # route this thread's prints into this run's log
+    degradation.bind(run_id)      # T1: keyframes-stage fallbacks are ledgered too
 
     def _finish(status: str):
         with _runs_lock:
@@ -3096,6 +3220,15 @@ def _execute_preview(run_id: str, data: dict, run_dir: Path):
         _finish("error")
     finally:
         _thread_run.run_id = None   # pooled threads are reused — don't leak the binding
+        try:   # T1: persist this stage's degradation ledger on the canvas
+            events = degradation.drain(run_id)
+            cid = data.get("canvas_run_id", "")
+            if cid:
+                def _apply(fresh):
+                    fresh["render_report"] = events
+                _canvas_mutate(cid, _apply)
+        except Exception as e:
+            print(f"[Canvas] render report skipped ({e})")
 
 
 def _preview_inner(run_id: str, data: dict, run_dir: Path):
@@ -3342,8 +3475,15 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
             spoken = sum(1 for f in vo_frames if (f.get("caption") or "").strip())
             if spoken:
                 print(f"[Pipeline] Generating voice-over track ({spoken} spoken frames)…")
-                music_path = generate_voiceover_track(vo_frames, vo_path, voice_id)
+                music_path = generate_voiceover_track(vo_frames, vo_path, voice_id,
+                                                      voice_map=data.get("voice_map") or None)
                 is_vo = True
+                # Optional operator-supplied bed under the narration — reuses the
+                # brand-mode assembler mix (VO full, bed looped + ducked + faded out).
+                bg = data.get("bg_music_path", "")
+                if bg and os.path.exists(bg):
+                    bg_music_path = bg
+                    print(f"[Pipeline] Background bed under narration: {os.path.basename(bg)}")
 
         # ── Assemble ───────────────────────────────────────────────────────
         # HOB IP/property watermark (both modes): full-frame PNG over the whole reel.

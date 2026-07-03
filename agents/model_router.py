@@ -166,19 +166,28 @@ def run_with_fallback(cands, attempt, *, axis: str = "", logger=None):
     falsy result is treated as a failure and the next candidate is tried, so one
     vendor outage degrades independently. Raises the last error if all fail.
     """
+    from agents import degradation
+    cands = list(cands)
     last_exc = None
-    for mid in cands:
+    for i, mid in enumerate(cands):
         try:
             result = attempt(mid)
         except Exception as e:           # vendor error / no key / no balance / timeout
             last_exc = e
             if logger:
                 logger(f"[fallback] {axis or 'vendor'}: {mid} failed ({e}); trying next")
+            degradation.report(axis or "vendor", "info",
+                               f"{mid} failed ({str(e)[:80]}) — trying fallback")
             continue
         if result:
+            if i > 0:   # succeeded on a fallback, not the routed first choice
+                degradation.report(axis or "vendor", "info",
+                                   f"used fallback model {mid} (primary {cands[0]} failed)")
             return result, mid
         if logger:
             logger(f"[fallback] {axis or 'vendor'}: {mid} returned no result; trying next")
+    degradation.report(axis or "vendor", "alert",
+                       f"ALL models failed ({cands}) — this step produced nothing")
     if last_exc:
         raise last_exc
     raise RuntimeError(f"all vendors failed for {axis or 'axis'}: {list(cands)}")

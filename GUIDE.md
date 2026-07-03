@@ -348,6 +348,31 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Pick your audio** (same options as Story mode): **🎵 Music — auto** (generated
   score), **⬆ Upload a song** (your own track), **🎙 Voiceover** (ElevenLabs narrates
   the captions — choose a voice), or **🔇 None**.
+- **Voiceover + music bed.** In Voiceover mode an optional **⬆ Music bed** upload
+  appears: your track plays looped and ducked *under* the narration (narration at
+  full volume, bed low, faded out at the end) — the storytelling-with-score mix,
+  in one render.
+- **Characters-first for AI stories.** Planning a **🎭 AI story** auto-derives the
+  cast onto the Character sheet immediately (free). **🎨 Generate all faces** locks a
+  canonical face per character in one click, and every shot then reuses that face.
+  If you try to Generate Key Frames while characters still have no locked face,
+  you're warned first (their look may drift between shots) — you decide whether to
+  proceed. The Narrator never needs a face (voice-only).
+- **Reviewing a face:** the portrait shows large on the sheet — **click it to view
+  full size**. Don't like it? **↻ New face** generates a fresh one, and it uses any
+  attribute edits you just typed (no separate Save needed). Repeat until it's right —
+  each click is a new sample, never the cached previous image.
+- **Outfit & anatomy stay locked.** The `clothing` attribute is enforced as *the same
+  outfit in every scene*, and the new `species/anatomy` field (e.g. "vanara — monkey-like
+  face, long curved monkey tail") keeps non-human anatomy consistent across shots.
+  Portraits are generated head-to-knees so the outfit itself anchors the identity.
+- **A voice per character (radio-drama dialogue).** Each cast row has a **voice
+  dropdown** — that character's lines are narrated in their own voice; anyone unset
+  falls back to the narrator's voice.
+- **🧾 Render report.** After any render, a "Render report" panel lists everything
+  that degraded along the way — a fallback model used (ℹ), a skipped QC gate or lost
+  identity reference (⚠), or a critical problem like no audio (🔴). An empty report
+  means a clean render. Read it before judging the output.
 - **🔇 No-audio warning.** If music generation fails (e.g. the music provider is out
   of credits) the reel still renders, but the board now shows a red **🔇 no-soundtrack
   warning** and the render status says **"done — ⚠ NO AUDIO"** instead of "done ✓".

@@ -59,6 +59,10 @@ def edit_image(image_path: str, edit_prompt: str, out_path: str, model_id: str =
             last_err = e
             nxt = " — trying fallback" if i + 1 < len(order) else ""
             print(f"[ImageEditor] identity model '{m}' failed ({e}){nxt}")
+            from agents import degradation
+            degradation.report("identity", "warn" if nxt else "alert",
+                               f"identity model {m} failed ({str(e)[:100]})"
+                               + ("" if nxt else " — NO identity conditioning; this shot's face/outfit may drift"))
     raise RuntimeError(f"all identity/edit models failed: {last_err}")
 
 

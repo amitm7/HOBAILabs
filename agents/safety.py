@@ -37,6 +37,8 @@ def moderate_script(script_text: str) -> None:
         raise
     except Exception as e:
         print(f"[Safety] Gate A: Moderation API unavailable ({e}) — skipping.")
+        from agents import degradation
+        degradation.report("safety", "warn", f"Gate A moderation skipped ({str(e)[:80]})")
 
 
 def moderate_frames(frames: list[dict]) -> None:
@@ -197,6 +199,8 @@ def critique_image(image_path: str, frame_id: str, prompt: str) -> bool:
         return ok
     except Exception as e:
         print(f"[Safety] Gate B2: vision QC unavailable ({e}) — skipping.")
+        from agents import degradation
+        degradation.report("safety", "warn", f"Gate B2 vision QC skipped on {frame_id} ({str(e)[:80]})")
         return True
 
 

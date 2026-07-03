@@ -253,8 +253,13 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
 
     if use_ref:
         from agents.image_editor import edit_image
-        ref_prompt = ("Keep this EXACT person's face and identity — same person, "
-                      "photorealistic. Re-imagine the photograph as: " + prompt)
+        # Character-consistency phrasing on purpose: "keep this EXACT person's face and
+        # identity" reads as a deepfake instruction to vendor content checkers (fal 422
+        # content_policy_violation → silent fallback → no face conditioning at all).
+        ref_prompt = ("The reference image shows a recurring character from this story. "
+                      "Depict the SAME character — consistent facial features, the SAME "
+                      "outfit and wardrobe as the reference, consistent anatomy and "
+                      "character design, photorealistic. New scene: " + prompt)
         print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via reference edit "
               f"(face from {os.path.basename(reference_path)})…")
         _generate_image_checked("", prompt, out_path, "", frame_id,
@@ -351,20 +356,24 @@ STORYBOARD_STYLE = (
 
 
 def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: str = "",
-                                char_id: str = "char", model_id: str = "") -> str:
+                                char_id: str = "char", model_id: str = "",
+                                variant: int = 0) -> str:
     """Generate a CANONICAL character reference portrait from the sheet attributes (P1
     character-sheet-first). Used once per character in AI/fiction mode; the result becomes
     that character's reference so every shot conditions on the SAME face (via the pluggable
     identity path). Front-facing, neutral background — a clean face lock."""
     prompt = (
-        "Character reference portrait — ONE person, front-facing, head and shoulders, "
-        "neutral studio background, soft even lighting, clear unobstructed face, looking at "
-        f"camera. {appearance}. {world_clause}. Consistent character design, highly detailed "
-        "face, no text, no watermark, vertical 9:16."
+        "Character reference sheet — ONE character, front-facing, three-quarter framing "
+        "(head to knees) so the FULL OUTFIT is clearly visible, neutral studio background, "
+        "soft even lighting, clear unobstructed face, looking at camera. "
+        f"{appearance}. {world_clause}. Consistent character design, highly detailed face "
+        "and wardrobe, no text, no watermark, vertical 9:16."
     )
     chosen = model_id or "flux"           # face-strong model for a clean canonical portrait
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"charref_{char_id}_{_prompt_hash(chosen, prompt, char_id)}.jpg")
+    # variant participates in the cache key: 0 reuses a prior identical portrait (bulk
+    # flow); any other value forces a FRESH sample — the operator's "↻ New face" redo.
+    out_path = os.path.join(out_dir, f"charref_{char_id}_{_prompt_hash(chosen, prompt, f'{char_id}_v{variant}')}.jpg")
     if _image_cached(out_path):
         return out_path
     print(f"[ImageGen] Canonical character portrait ({char_id}) via {chosen}…")

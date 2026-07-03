@@ -683,6 +683,24 @@ so you see and approve everything before it spends.</p>
   <li><b>Reel-ready defaults (all operator-changeable):</b> target length defaults to
   <b>~60s</b> (30s/90s/3min/Auto still available); captions default to <b>Baskerville serif,
   size 52, max 2 lines</b> — the house storytelling look, readable on a phone.</li>
+  <li><b>Voiceover + music bed:</b> in 🎙 Voiceover mode an optional <b>⬆ Music bed</b>
+  upload appears — your track loops <i>under</i> the narration (VO full volume, bed ducked,
+  faded out at the end), so narrated story + score renders in one pass.</li>
+  <li><b>Characters-first for AI stories:</b> planning a 🎭 AI story auto-derives the cast
+  onto the Character sheet (free). <b>🎨 Generate all faces</b> locks one canonical face per
+  character; every shot reuses it. Generating Key Frames with unlocked faces warns first
+  (look may drift between shots) — operator decides. Narrator is voice-only, never needs a face.</li>
+  <li><b>Reviewing a face:</b> the portrait shows large — <b>click to view full size</b>.
+  <b>↻ New face</b> generates a fresh sample (never the cached previous image) and picks up
+  any attribute edits you just typed, no separate Save needed.</li>
+  <li><b>Outfit &amp; anatomy lock:</b> <code>clothing</code> is enforced as the SAME outfit in
+  every scene; the <code>species/anatomy</code> field (e.g. "vanara — monkey tail") keeps
+  non-human anatomy consistent. Portraits render head-to-knees so the outfit anchors identity.</li>
+  <li><b>Per-character voices:</b> a voice dropdown on each cast row — that character's lines
+  are read in their own voice (radio-drama dialogue); unset falls back to the narrator.</li>
+  <li><b>🧾 Render report:</b> after any render, a panel lists every degradation that occurred —
+  fallback model used (ℹ), skipped QC / lost identity reference (⚠), critical issues like no
+  audio (🔴). Empty report = clean render.</li>
 </ul>
 
 <hr>

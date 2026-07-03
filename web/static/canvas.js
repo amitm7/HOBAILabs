@@ -142,22 +142,29 @@
     const mode = $("audio-mode").value;
     const o = { music_type: mode };
     if (mode === "upload") o.music_path = canvasMusicPath;
-    if (mode === "voiceover") o.voice_id = $("voice-id").value || "";
+    if (mode === "voiceover") {
+      o.voice_id = $("voice-id").value || "";
+      // Optional music bed UNDER the narration (uploaded via the same song control).
+      if (canvasMusicPath) o.bg_music_path = canvasMusicPath;
+    }
     return o;
   }
+  let voicesCache = [];   // shared by the narrator select AND per-character dropdowns (T4)
   async function loadVoices() {
     try {
       const d = await api("/voices");
-      const voices = d.voices || d || [];
-      $("voice-id").innerHTML = voices.map((v) =>
+      voicesCache = d.voices || d || [];
+      $("voice-id").innerHTML = voicesCache.map((v) =>
         `<option value="${v.voice_id}">${escapeHtml(v.name || v.voice_id)}</option>`).join("");
     } catch (e) { /* ignore */ }
   }
   $("audio-mode").addEventListener("change", () => {
     const m = $("audio-mode").value;
     $("voice-id").hidden = m !== "voiceover";
-    $("song-label").hidden = m !== "upload";
-    if (m !== "upload") $("song-name").textContent = "";
+    // Song upload doubles as the optional BED under narration in voiceover mode.
+    $("song-label").hidden = !(m === "upload" || m === "voiceover");
+    $("song-label").firstChild.textContent = m === "voiceover" ? "⬆ Music bed (optional) " : "⬆ Choose song ";
+    if (m !== "upload" && m !== "voiceover") { $("song-name").textContent = ""; canvasMusicPath = ""; }
     if (lastCanvas) renderBoard(lastCanvas.board);   // Audio column mirrors this mode
   });
   $("song-file").addEventListener("change", async (ev) => {
@@ -185,7 +192,12 @@
       return;
     }
 
-    const stages = lastCanvas ? lastCanvas.stages : [];
+    // Final Cut is a whole-reel assembly, not a per-shot stage — its per-row cells were
+    // all identical ("Awaiting Video"), pure noise. Drop the column from the board (the
+    // reel is still assembled via the top "Render reel" button + the render-panel status).
+    const allStages = lastCanvas ? lastCanvas.stages : [];
+    const stages = allStages.filter((s) => s.id !== "finalcut");
+    $("board").style.gridTemplateColumns = `repeat(${stages.length}, 260px)`;
 
     // 1. Column headers
     const headerHtml = stages.map((s) => {
@@ -360,35 +372,27 @@
       </div>
     `;
 
-    // Cell 5: Final Cut
-    const cell5 = `
-      <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="finalcut">
-        <div class="cell-hdr"><span>Final Cut</span></div>
-        <div class="cell-content" style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%">
-          ${stages.find(s => s.id === "video")?.status === "approved" ? `
-            <div style="font-weight:700;color:#16a34a;font-size:11px">✓ Approved</div>
-            <div style="font-size:9px;color:#64748b;margin-top:2px">Timeline Active</div>
-          ` : `
-            <div class="muted" style="font-size:11px">Awaiting Video</div>
-          `}
-        </div>
-      </div>
-    `;
-
-    return cell0 + cell1 + cell2 + cell3 + cell4 + cell5;
+    // (Final Cut per-row cell removed — it repeated one identical status 33× and added a
+    // full extra column of horizontal scroll. The reel is assembled from the top bar.)
+    return cell0 + cell1 + cell2 + cell3 + cell4;
   }
 
   function renderTimelineStrip(board) {
     const strip = $("timeline-strip");
     if (!strip) return;
     const isApproved = lastCanvas && lastCanvas.stages.find(s => s.id === "video")?.status === "approved";
-    strip.innerHTML = board.map((c) => {
+    strip.innerHTML = board.map((c, i) => {
       const fid = c.frame_id;
       const stillPath = stillsCache[fid] || c.real_path || "";
       const activeClass = (fid === activeFrameId) ? " active" : "";
+      // Empty cards used to be a flat gray box (reads as "broken"); show the shot number
+      // in a muted placeholder so the strip reads as "shot N, no preview yet".
+      const inner = stillPath
+        ? mediaThumb(stillPath, "timeline frame")
+        : `<div class="tl-empty">${i + 1}</div>`;
       return `
-        <div class="cv2-timeline-card${activeClass}${isApproved ? " approved" : ""}" data-frame="${fid}">
-          ${mediaThumb(stillPath, "timeline frame")}
+        <div class="cv2-timeline-card${activeClass}${isApproved ? " approved" : ""}" data-frame="${fid}" title="Shot ${i + 1}">
+          ${inner}
         </div>
       `;
     }).join("");
@@ -712,6 +716,12 @@
     lastCanvas = canvas;
     syncSettings(canvas);
     renderBoard(canvas.board);   // stage headers render as the grid's first row
+    // Characters-first: the cast sheet is on screen as soon as the cast exists (AI
+    // stories derive it at Plan time). Skip re-render while the operator is typing
+    // in it — background polls must not clobber a focused attribute field.
+    if ((canvas.characters || []).length && !$("characters").contains(document.activeElement)) {
+      renderCharacters(canvas.characters);
+    }
     const hasBoard = canvas.board && canvas.board.length > 0;
     const vid = (canvas.stages || []).find((s) => s.id === "video");
     const videoApproved = vid && vid.status === "approved";
@@ -724,7 +734,27 @@
     updateCostBanner(canvas);
     // A silent finished reel is a defect, not a footnote — show it in the error strip.
     if (canvas.audio_warning) err("🔇 " + canvas.audio_warning);
+    renderReport(canvas.render_report || []);
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
+  }
+
+  // T1 Degradation Ledger — the render's quality receipt. Alerts scream, warns list,
+  // infos collapse. An empty report = clean render = the panel stays hidden.
+  function renderReport(events) {
+    const el = $("render-report");
+    if (!el) return;
+    const warns = events.filter((e) => e.severity === "warn");
+    const alerts = events.filter((e) => e.severity === "alert");
+    const infos = events.filter((e) => e.severity === "info");
+    if (!events.length || (!warns.length && !alerts.length && !infos.length)) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `
+      <details ${alerts.length || warns.length ? "open" : ""}>
+        <summary>🧾 Render report — ${alerts.length ? `<b style="color:#dc2626">${alerts.length} critical</b> · ` : ""}${warns.length} warning(s) · ${infos.length} info</summary>
+        ${alerts.map((e) => `<div class="rr rr-alert">🔴 <b>${escapeHtml(e.step)}</b>: ${escapeHtml(e.msg)}</div>`).join("")}
+        ${warns.map((e) => `<div class="rr rr-warn">⚠ <b>${escapeHtml(e.step)}</b>: ${escapeHtml(e.msg)}</div>`).join("")}
+        ${infos.map((e) => `<div class="rr rr-info">ℹ ${escapeHtml(e.step)}: ${escapeHtml(e.msg)}</div>`).join("")}
+      </details>`;
   }
 
   // Upfront whole-reel cost + spend-cap (parity with galleri5's credit warning,
@@ -892,7 +922,12 @@
         story_type: $("story-type").value,
       });
       setRun(d.run_id);
-      render(d.canvas);
+      // Push the operator's PRE-PLAN settings (captions/orientation/watermark) onto the
+      // new canvas FIRST — they were silently dropped before (no run existed to save to),
+      // so e.g. "position: Middle" chosen before Plan never reached the render.
+      _settingsReady = true;
+      await saveSettings();                     // renders the returned canvas itself
+      if (!lastCanvas) render(d.canvas);        // settings save failed → still show the board
       loadRecents();
     } catch (e) { err(e.message); }
     finally { $("plan-btn").disabled = false; $("plan-btn").textContent = "Plan ✨"; }
@@ -1225,13 +1260,20 @@
     const el = $("characters");
     if (!chars || !chars.length) { el.hidden = true; return; }
     el.hidden = false;
-    el.innerHTML = `<h4>👥 Character sheet — attributes carry to every shot; a real photo keeps the face exact (consent needed for AI likeness)</h4>`
+    // Narrator is voice-only — never needs (or should spend on) a locked face.
+    const unlocked = chars.filter((c) => !c.ref_path && c.id !== "narrator").length;
+    const bulk = unlocked
+      ? `<button class="char-gen-all char-save" style="margin-left:8px" title="Generate a canonical face for every character that doesn't have one yet — each shot then reuses that same face (consistency-first, like a character DNA sheet)">🎨 Generate all faces (${unlocked})</button>`
+      : `<span class="hint" style="margin-left:8px">✓ all faces locked</span>`;
+    el.innerHTML = `<h4>👥 Character sheet — attributes carry to every shot; a real photo keeps the face exact (consent needed for AI likeness)${bulk}</h4>`
       + chars.map((c) => `
         <div class="cv-char" data-char="${c.id}">
           <div class="char-head">
             <span class="nm">${escapeHtml(c.role || c.name || c.label || c.id)}</span>
-            ${c.ref_path ? `<img src="${mediaUrl(c.ref_path)}" alt="">` : `<span class="muted">no photo</span>`}
-            <button class="char-gen" data-char="${c.id}" title="Generate a canonical face for this character from the attributes below — then every shot uses the same face">🎨 Generate</button>
+            ${c.ref_path ? `<img class="char-photo" src="${mediaUrl(c.ref_path)}" alt="" title="Click to view full size">` : `<span class="muted">no photo</span>`}
+            <button class="char-gen" data-char="${c.id}" title="${c.ref_path
+              ? "Don't like this face? Generate a FRESH one from the attributes below (uses any edits you just typed — no need to Save first)"
+              : "Generate a canonical face for this character from the attributes below — then every shot uses the same face"}">${c.ref_path ? "↻ New face" : "🎨 Generate"}</button>
             <label class="attach-btn">📎 Real photo<input type="file" accept="image/*" data-char="${c.id}" hidden></label>
             <label><input type="checkbox" class="consent" data-char="${c.id}" ${c.consent ? "checked" : ""}> consent</label>
           </div>
@@ -1242,23 +1284,66 @@
             ${_cattr(c.id, "age", c.age, "age (child/adult/elderly)")}
             ${_cattr(c.id, "skin_tone", c.skin_tone, "skin tone")}
             ${_cattr(c.id, "hair", c.hair, "hair")}
-            ${_cattr(c.id, "clothing", c.clothing, "clothing style")}
+            ${_cattr(c.id, "clothing", c.clothing, "outfit — locked across all shots")}
+            ${_cattr(c.id, "species", c.species, "species/anatomy (e.g. vanara, monkey tail)")}
+            <select class="char-voice cattr" data-char="${c.id}" data-attr="voice_id" title="This character's lines are read in their OWN voice (radio-drama dialogue); unset = narrator's voice">
+              <option value="">🎙 narrator's voice</option>
+              ${voicesCache.map((v) => `<option value="${v.voice_id}"${v.voice_id === c.voice_id ? " selected" : ""}>${escapeHtml(v.name || v.voice_id)}</option>`).join("")}
+            </select>
             <button class="char-save" data-char="${c.id}">Save</button>
           </div>
         </div>`).join("");
   }
-  // Generate a canonical face for a character from its attributes (P1).
+  // Bulk: generate a canonical face for EVERY character still missing one —
+  // sequential (each call is spend-gated server-side), with visible progress.
+  async function generateAllFaces(btn) {
+    const missing = ((lastCanvas && lastCanvas.characters) || []).filter((c) => !c.ref_path && c.id !== "narrator");
+    if (!missing.length) return;
+    err(""); if (btn) btn.disabled = true;
+    let done = 0, lastCanvasResp = null;
+    for (const c of missing) {
+      $("match-hint").textContent = `🎨 generating faces ${done}/${missing.length} — ${c.role || c.name || c.label || c.id}…`;
+      try {
+        const d = await api(`/api/canvas/${runId}/character-portrait`, { char_id: c.id });
+        lastCanvasResp = d.canvas; done++;
+      } catch (e) { err(`Face for ${c.label || c.id}: ${e.message}`); }
+    }
+    $("match-hint").textContent = `✓ ${done}/${missing.length} character faces locked — every shot reuses them`;
+    if (lastCanvasResp) render(lastCanvasResp);
+    if (btn) btn.disabled = false;
+  }
+  $("characters").addEventListener("click", (ev) => {
+    const all = ev.target.closest(".char-gen-all");
+    if (all) { generateAllFaces(all); }
+  });
+
+  // Generate (or REDO) a canonical face for a character. Sends the row's current
+  // attribute inputs along (so just-typed edits count without a separate Save), and a
+  // fresh cache variant when a face already exists (redo must not return the cached one).
   $("characters").addEventListener("click", async (ev) => {
+    const photo = ev.target.closest("img.char-photo");
+    if (photo) { window.open(photo.src, "_blank"); return; }   // expand: full size in a new tab
     const gen = ev.target.closest(".char-gen");
     if (!gen) return;
     const cid = gen.getAttribute("data-char");
+    const row = gen.closest(".cv-char");
+    const attrs = {};
+    document.querySelectorAll(`.cattr[data-char="${cid}"]`).forEach((i) => {
+      attrs[i.getAttribute("data-attr")] = i.value;
+    });
+    const isRedo = !!(row && row.querySelector("img.char-photo"));
+    const oldLabel = gen.textContent;
     err(""); gen.disabled = true; gen.textContent = "…";
     try {
-      const d = await api(`/api/canvas/${runId}/character-portrait`, { char_id: cid });
+      const d = await api(`/api/canvas/${runId}/character-portrait`, {
+        char_id: cid, attrs,
+        variant: isRedo ? (1 + Math.floor(Math.random() * 1e6)) : 0,
+      });
       renderCharacters(d.canvas.characters); render(d.canvas);
-      $("match-hint").textContent = "✓ character face generated — reused across their shots";
-    } catch (e) { err("Generate: " + e.message); }
-    finally { gen.disabled = false; gen.textContent = "🎨 Generate"; }
+      $("match-hint").textContent = isRedo
+        ? "↻ new face generated — click it to view full size; ↻ again for another"
+        : "✓ character face generated — reused across their shots";
+    } catch (e) { err("Generate: " + e.message); gen.disabled = false; gen.textContent = oldLabel; }
   });
   // Save a character's attributes (delegated click on its Save button).
   $("characters").addEventListener("click", async (ev) => {
@@ -1282,9 +1367,29 @@
     try {
       const d = await api(`/api/canvas/${runId}/characters`, {});
       renderCharacters((d.canvas && d.canvas.characters) || d.characters || []);
+      // Visible response: the sheet may already be open (auto-rendered) — clicking
+      // Cast should still DO something. Scroll to it and flash it.
+      const panel = $("characters");
+      if (!panel.hidden) {
+        panel.scrollIntoView({ behavior: "smooth", block: "center" });
+        panel.classList.add("flash");
+        setTimeout(() => panel.classList.remove("flash"), 1200);
+      }
     } catch (e) { err(e.message); }
   });
   $("characters").addEventListener("change", async (ev) => {
+    const vsel = ev.target.closest("select.char-voice");
+    if (vsel) {   // T4: assign this character their own narration voice
+      try {
+        const d = await api(`/api/canvas/${runId}/character`,
+          { char_id: vsel.getAttribute("data-char"), attrs: { voice_id: vsel.value } });
+        renderCharacters(d.canvas.characters);
+        $("match-hint").textContent = vsel.value
+          ? "✓ voice assigned — this character's lines are read in it"
+          : "voice cleared — lines fall back to the narrator";
+      } catch (e) { err(e.message); }
+      return;
+    }
     const file = ev.target.closest('input[type="file"][data-char]');
     const consent = ev.target.closest("input.consent");
     if (file && file.files[0]) {
@@ -1338,6 +1443,19 @@
     try {
       if (gen) {
         const stage = gen.getAttribute("data-stage");
+        // Characters-first soft gate (AI stories): unlocked faces at Key Frames time is
+        // how cross-shot drift happens — warn BEFORE the spend, but the operator decides.
+        if (stage === "keyframes" && (lastCanvas?.story_type === "ai")) {
+          const unlocked = (lastCanvas.characters || []).filter((c) => !c.ref_path && c.id !== "narrator");
+          if (unlocked.length) {
+            const names = unlocked.map((c) => c.role || c.name || c.label || c.id).join(", ");
+            if (!confirm(`⚠ ${unlocked.length} character(s) have no locked face yet (${names}).\n\nWithout one, their look may DRIFT between shots.\n\nOK = generate Key Frames anyway · Cancel = lock faces first (🎨 in the Character sheet)`)) {
+              renderCharacters(lastCanvas.characters);
+              $("characters").scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+          }
+        }
         gen.disabled = true; gen.textContent = "Working…";
         let d;
         if (stage === "keyframes") {

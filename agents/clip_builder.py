@@ -247,6 +247,9 @@ def _kling_motion_prompt(segment_text: str, motion_prompt: str = "") -> str:
     # (e.g. echoing the caption) creates competing instructions and drift.
     if motion_prompt:
         return motion_prompt
+    preset = _motion_preset_for(segment_text)     # T12: beat-aware motion, physics-safe
+    if preset:
+        return preset
     return ("Slow gentle push-in, natural ambient movement — hair, fabric and "
             "foliage stirring softly, subtle light shift, cinematic and calm")
 
@@ -290,7 +293,37 @@ def _kling_camera_control(motion_prompt: str):
 # Default Kling negative prompt. Studio Mode can override it per shot (the
 # masterclass "hard negative" discipline); story/brand keep this default.
 DEFAULT_KLING_NEGATIVE = ("blurry, distorted, text, watermark, subtitles, captions, logo, "
-                          "low quality, static, morphing faces, extra limbs, flickering")
+                          "low quality, static, morphing faces, extra limbs, flickering, "
+                          # T12 physics negatives — the floating-Bhima class of clip:
+                          "floating, hovering, levitating, sliding without foot contact, "
+                          "unnatural gravity, feet leaving the ground unintentionally")
+
+# T12: beat-type motion presets. Effort/action beats under-specified motion and Kling
+# invented physics (a straining warrior drifting into the air). Keyword-detected from
+# the beat text; an operator motion_override always wins (checked before these).
+_MOTION_PRESETS = (
+    (("strain", "pull", "grip", "lift", "tug", "drag", "push", "heave", "wrestl"),
+     "Intense physical effort: muscles tensing, body braced low, feet firmly PLANTED on "
+     "the ground throughout, slight trembling with exertion, no sliding, no floating, "
+     "camera static or a very slow push-in"),
+    (("kneel", "bow", "collaps", "fall to", "sinks"),
+     "A grounded, weighted movement downward — knees bending to the ground, natural "
+     "gravity, garments settling, camera gently tilting with the motion"),
+    (("walk", "stride", "march", "approach"),
+     "Natural walking motion with clear ground contact on every step, steady pace, "
+     "camera tracking smoothly"),
+    (("rise", "transform", "reveal", "glory", "divine"),
+     "A slow, powerful upward rise — deliberate and majestic, light intensifying, "
+     "fabric and hair lifting gently, camera tilting up in awe"),
+)
+
+
+def _motion_preset_for(segment_text: str) -> str:
+    t = (segment_text or "").lower()
+    for keys, preset in _MOTION_PRESETS:
+        if any(k in t for k in keys):
+            return preset
+    return ""
 
 
 def _kling_submit(image_path: str, segment_text: str, duration: float,
