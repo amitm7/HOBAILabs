@@ -36,6 +36,7 @@
 | S24 | Per-frame **static image overlays** before Final Cut — speaker insets, memory/flashback panels, comic thought/emotion devices, operator-sized/placed | 📋 planned → **T14** — see `docs/FRAME_COMPOSER_PLAN.md` (red-teamed; presets-only v1, PIL+ffmpeg, zero model spend) |
 | S25 | Proper **language choice** for the story (Hindi etc.) | 📋 planned → **T13** — see `docs/FRAME_COMPOSER_PLAN.md` Part B (author-in-language + version-after-render flows; fonts, voices, mandatory translated-script review gate) |
 | S26 | **Library section** — a folder per story where the operator can browse and DOWNLOAD every asset that was created (portraits, keyframes, clips, storyboard panels, music, final cuts) | 📋 planned → **T15** — assets already exist on disk per run dir and `/export/<run_id>` zip already ships; the gap is purely the browsing surface |
+| S27 | *(found during T3 verify)* **Plan-stage degradation is silent** — shot_planner fell back to 3 generic shots + narrator-only cast with NO visible log and NO ledger entry (T1 binds at render time only) | 📋 NEW — bind `degradation` at plan/chat routes too; `shot_planner` fallback must `report("plan","alert",…)`; suspected Bedrock throttling on a ~3-min-story planning call |
 
 ---
 

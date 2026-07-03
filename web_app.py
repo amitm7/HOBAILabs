@@ -402,8 +402,9 @@ def api_canvas_plan():
     brief = (data.get("brief") or "").strip()
     if not brief:
         return jsonify({"error": "Enter a brief first."}), 400
-    from agents import canvas_run
+    from agents import canvas_run, degradation
     run_id = str(uuid.uuid4())
+    degradation.bind(run_id)     # S27: plan-stage fallbacks are ledgered too
     try:
         target_seconds = int(data.get("target_seconds") or 0)
     except (TypeError, ValueError):
@@ -434,6 +435,13 @@ def api_canvas_plan():
         state["suggestions"] = canvas_run.plan_suggestions(brief, state.get("story_type", "real"))
     except Exception as e:
         print(f"[Canvas] plan suggestions skipped ({e})")
+    # S27: surface any plan-stage fallbacks in the board report immediately.
+    try:
+        plan_events = degradation.drain(run_id)
+        if plan_events:
+            state["render_report"] = plan_events
+    except Exception:
+        pass
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
@@ -1561,6 +1569,120 @@ def api_canvas_render(run_id: str, operator: str):
     state.pop("audio_warning", None)     # fresh render — re-judge the audio outcome
     _canvas_save(run_id, state)
     return jsonify({"render_id": render_id, "quality": quality,
+                    "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/translate", methods=["POST"])
+@auth.require_operator()
+def api_canvas_translate(run_id: str, operator: str):
+    """T13b step 1 — translate every caption into the chosen language (LLM text only,
+    no render spend) and store it on the canvas for the MANDATORY review pass. The
+    master captions are never touched; translations live in state["translations"]."""
+    from agents import canvas_run
+    from agents.languages import normalize_languages
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    langs = normalize_languages([(request.json or {}).get("language", "")])
+    if not langs:
+        return jsonify({"error": "Unsupported language"}), 400
+    lang = langs[0]
+    from agents.growth import caption_language_variants
+    variants = caption_language_variants(state.get("frames") or [], [lang]).get(lang) or []
+    lines = {str(v.get("frame_id")): (v.get("draft_caption") or v.get("draft_voiceover") or "")
+             for v in variants}
+    if not any(lines.values()):
+        return jsonify({"error": f"Translation into {lang} failed — try again or edit manually."}), 502
+    state.setdefault("translations", {})[lang] = lines
+    _canvas_save(run_id, state)
+    return jsonify({"language": lang, "lines": lines,
+                    "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/translation", methods=["POST"])
+@auth.require_operator()
+def api_canvas_translation_edit(run_id: str, operator: str):
+    """T13b review gate — the operator edits ONE translated line (never the master)."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    lang = (body.get("language") or "").strip()
+    fid = (body.get("frame_id") or "").strip()
+    if lang not in (state.get("translations") or {}) or not fid:
+        return jsonify({"error": "Translate first."}), 400
+    state["translations"][lang][fid] = str(body.get("text") or "")
+    _canvas_save(run_id, state)
+    return jsonify({"ok": True, "language": lang, "frame_id": fid})
+
+
+@app.route("/api/canvas/<run_id>/render-language", methods=["POST"])
+@auth.require_operator()
+def api_canvas_render_language(run_id: str, operator: str):
+    """T13b step 2 — render a LANGUAGE VERSION of the finished reel: same shots, the
+    reviewed translated captions burned (script-correct font) + VO spoken in that
+    language. Runs as a FRESH render id so the original output is preserved; stills
+    and clips come back from the content-hash caches (near-zero re-spend — the
+    repurposing multiplier). Gated: Video approved + translation reviewed (exists)."""
+    from agents import canvas_run, governance, run_store
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    lang = (body.get("language") or "").strip()
+    lines = (state.get("translations") or {}).get(lang) or {}
+    if not lines:
+        return jsonify({"error": "Translate & review the captions first (🌐)."}), 400
+    if state["stages"]["video"].get("status") != "approved":
+        return jsonify({"error": "Generate and approve Video clips first."}), 409
+    import copy
+    render_id = str(uuid.uuid4())            # fresh dir — never overwrite the original
+    data = _canvas_render_data(state, render_id, operator)
+    data["canvas_run_id"] = run_id
+    data["language"] = lang
+    data["frames"] = copy.deepcopy(state["frames"])
+    for f in data["frames"]:
+        t = lines.get(str(f.get("frame_id")))
+        if t:
+            f["caption"] = t
+    # Audio options — same contract as /render (VO reads the translated captions).
+    data["music_type"] = body.get("music_type") or "voiceover"
+    if data["music_type"] == "voiceover":
+        data["voice_id"] = (body.get("voice_id") or "").strip()
+        data["beat_grid_bpm"] = 0
+        bg = (body.get("bg_music_path") or "").strip()
+        if bg and _path_allowed(bg) and os.path.exists(bg):
+            data["bg_music_path"] = bg
+    elif data["music_type"] == "upload":
+        mp = (body.get("music_path") or "").strip()
+        if mp and _path_allowed(mp):
+            data["music_path"] = mp
+    missing = governance.validate_consent(data)
+    if missing:
+        return jsonify({"error": "Consent / rights requirements missing", "missing": missing}), 400
+    governance.record_consent(data, confirmed_by=operator)
+    spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
+    if spend_missing:
+        return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
+    run_dir = RUNS_DIR / render_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with _runs_lock:
+        _runs[render_id] = {"status": "running", "log": [], "output_path": None,
+                            "clips": {}, "events": []}
+    try:
+        run_store.save(render_id, status="running", payload=data, run_dir=str(run_dir))
+    except Exception as e:
+        print(f"[RunStore] language render save skipped ({e})")
+    _track_render(render_id, _canvas_render_thread, render_id, data, run_dir)
+    state.setdefault("language_renders", {})[lang] = render_id
+    state["render_id"] = render_id            # board tracks the latest render
+    state["render_phase"] = "full"
+    state.pop("audio_warning", None)
+    for s in ("audio", "finalcut"):
+        state["stages"][s].update(status="generating")
+    _canvas_save(run_id, state)
+    return jsonify({"render_id": render_id, "language": lang,
                     "canvas": canvas_run.public_state(state)})
 
 
@@ -3330,6 +3452,10 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
     global_img_model = (data.get("image_model", "") or "").strip()
     global_vid_model = (data.get("video_model", "") or "").strip()
     caption_style = data.get("caption_style", {})
+    # T13: the render language rides caption_style so the burner picks a font with
+    # the right glyphs (Devanagari/Gurmukhi/Bengali → bundled Noto Serif).
+    if data.get("language") and data["language"] != "en":
+        caption_style = {**caption_style, "language": data["language"]}
     orientation   = data.get("orientation", "portrait")
     width, height = (1080, 1920) if orientation == "portrait" else (1920, 1080)
     fps           = int(data.get("fps", 30))
@@ -3521,8 +3647,10 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
             spoken = sum(1 for f in vo_frames if (f.get("caption") or "").strip())
             if spoken:
                 print(f"[Pipeline] Generating voice-over track ({spoken} spoken frames)…")
+                _lang = data.get("language") or ""
                 music_path = generate_voiceover_track(vo_frames, vo_path, voice_id,
-                                                      voice_map=data.get("voice_map") or None)
+                                                      voice_map=data.get("voice_map") or None,
+                                                      lang=_lang if _lang and _lang != "en" else None)
                 is_vo = True
                 # Optional operator-supplied bed under the narration — reuses the
                 # brand-mode assembler mix (VO full, bed looped + ducked + faded out).

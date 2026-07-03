@@ -221,7 +221,15 @@ def _load_language_voices(lang: str) -> dict:
     try:
         with open(os.path.abspath(_VOICES_PATH)) as f:
             data = json.load(f) or {}
-        return (data.get("language_voices") or {}).get(lang) or {}
+        voices = (data.get("language_voices") or {}).get(lang) or {}
+        if not any(str(v).strip() for v in voices.values()):
+            # T13c honesty: no native voice configured -> the multilingual default
+            # reads the text anyway, but the operator should know (accent may drift).
+            from agents import degradation
+            degradation.report("voice", "info",
+                               f"no {lang}-native voice in config/voices.json -> "
+                               f"using the default multilingual voice")
+        return voices
     except Exception:
         return {}
 

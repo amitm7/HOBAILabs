@@ -140,7 +140,8 @@ def generate_single_tts(text: str, path: str, voice_id: str) -> float:
 
 
 def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str,
-                             voice_map: dict | None = None) -> str:
+                             voice_map: dict | None = None,
+                             lang: str | None = None) -> str:
     """
     Generate a voice-over audio track timed to match the video.
     Each frame caption is read by ElevenLabs; silent frames get silence.
@@ -185,7 +186,7 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str,
             print(f"  {frame.get('frame_id','?')} → silence ({duration:.1f}s)")
         else:
             raw_path = os.path.join(tmp_dir, f"raw_{i:03d}.mp3")
-            frame_voice = voice_for_frame(frame, voice_id, voice_map)
+            frame_voice = voice_for_frame(frame, voice_id, voice_map, lang=lang)
             try:
                 if use_elevenlabs and frame_voice:
                     emotion = frame.get("scene", {}).get("emotion", "")

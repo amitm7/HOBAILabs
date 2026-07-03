@@ -208,9 +208,17 @@ def plan(brief: str, *, scope: str = "general", talent: dict | None = None,
         frames = _to_frames(raw.get("frames", []), scope)
         if not frames:
             frames = _fallback_frames(brief, scope)
+            from agents import degradation
+            degradation.report("plan", "alert",
+                               f"planner returned no usable shots -> {len(frames)} generic "
+                               f"fallback shots (S27) — re-Plan before spending")
         cache_path.write_text(json.dumps(frames))
         print(f"[ShotPlanner] {scope}: planned {len(frames)} shots")
         return frames
     except Exception as e:
         print(f"[ShotPlanner] plan failed ({e}) — falling back to a sentence split")
+        from agents import degradation
+        degradation.report("plan", "alert",
+                           f"planner LLM failed ({str(e)[:100]}) -> sentence-split fallback "
+                           f"shots (S27) — re-Plan before spending")
         return _fallback_frames(brief, scope)

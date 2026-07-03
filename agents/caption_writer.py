@@ -130,6 +130,15 @@ def generate_frame_srt(frames: list[dict], srt_path: str,
     # Default font is env-overridable so the Linux image can point at a font that
     # actually ships in it (HOB_CAPTION_FONT), while local macOS keeps Baskerville.
     font       = style.get("font") or os.environ.get("HOB_CAPTION_FONT", "Baskerville")
+    # T13a: non-Latin languages swap to a bundled Noto Serif face that HAS the glyphs
+    # (Baskerville renders Devanagari as tofu □□). Explicit non-default fonts win.
+    language   = (style.get("language") or "").strip().lower()
+    if language:
+        try:
+            from agents.languages import font_for_language
+            font = font_for_language(language, font)
+        except Exception:
+            pass
     size       = int(style.get("size", 52))
     color      = style.get("color", "white")
     highlight_color = style.get("highlight_color", "yellow")

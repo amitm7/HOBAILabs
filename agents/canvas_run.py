@@ -757,6 +757,10 @@ def public_state(state: dict) -> dict:
         # T3 plan-time auto-fill: SUGGESTED world/length/voice derived from the brief.
         # The UI fills only empty fields (marked ✨); nothing applies without the operator.
         "suggestions": state.get("suggestions", {}),
+        # T13 language versions: reviewed translations per language + the render id of
+        # each finished language version (original render is never overwritten).
+        "translations": state.get("translations", {}),
+        "language_renders": state.get("language_renders", {}),
     }
 
 

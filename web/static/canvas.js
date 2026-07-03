@@ -752,6 +752,8 @@
     const videoApproved = vid && vid.status === "approved";
     $("render-btn").hidden = !hasBoard;
     $("render-btn").disabled = !videoApproved;
+    // T13: language versions unlock exactly when Final Cut does.
+    if ($("lang-controls")) $("lang-controls").hidden = !(hasBoard && videoApproved);
     $("render-btn").textContent = videoApproved ? "🎬 Final Cut" : "🎬 Render reel";
     $("render-btn").title = videoApproved
       ? "Assemble the approved clips into the finished reel"
@@ -1205,6 +1207,75 @@
     } catch (e) { err(e.message); btn.disabled = false; }
   });
 
+  // ── T13 Language versions ────────────────────────────────────────────────────
+  // Author once → translate → MANDATORY review in the script panel → render the
+  // version (same clips/music via cache; new captions + VO). Master captions never change.
+  let langReview = null;   // { lang, native } while the review panel is open
+  (async function loadLanguages() {
+    try {
+      const d = await fetch("/languages").then((r) => r.json());
+      const sel = $("lang-pick"); if (!sel) return;
+      (d.languages || []).filter((l) => l.code !== "en").forEach((l) => {
+        const o = document.createElement("option");
+        o.value = l.code; o.textContent = `${l.native} (${l.english})`;
+        sel.appendChild(o);
+      });
+    } catch (e) { /* picker stays empty — button will error politely */ }
+  })();
+
+  $("lang-translate") && $("lang-translate").addEventListener("click", async () => {
+    if (!runId || !lastCanvas) { err("Plan a story first."); return; }
+    const lang = $("lang-pick").value;
+    if (!lang) { err("Pick a language."); return; }
+    const btn = $("lang-translate");
+    err(""); btn.disabled = true; btn.textContent = "🌐 Translating…";
+    try {
+      const d = await api(`/api/canvas/${runId}/translate`, { language: lang });
+      lastCanvas = d.canvas;
+      openLangReview(lang, d.lines);
+    } catch (e) { err(e.message); }
+    finally { btn.disabled = false; btn.textContent = "🌐 Translate & review"; }
+  });
+
+  function openLangReview(lang, lines) {
+    const native = ($("lang-pick").selectedOptions[0] || {}).textContent || lang;
+    langReview = { lang, native };
+    const board = (lastCanvas && lastCanvas.board) || [];
+    $("script-panel").innerHTML =
+      `<div class="hdr">🌐 <b>${escapeHtml(native)}</b> captions — machine-translated, <b>review every line</b>
+        (names & honorifics especially). Edits save automatically and never touch the original captions.
+        <button id="lang-render" class="btn-primary" style="margin-left:10px;padding:6px 14px">🎬 Render ${escapeHtml(native)} version</button>
+        <button id="lang-cancel" class="btn-secondary" style="margin-left:6px;padding:6px 10px">Back</button></div>`
+      + board.map((c, i) => `
+        <div class="ln">
+          <span class="n">${i + 1}</span>
+          <span class="meta" title="original">${escapeHtml((c.caption || "").slice(0, 34))}</span>
+          <textarea class="lang-line" data-lang="${lang}" data-frame="${c.frame_id}" rows="1">${escapeHtml(lines[c.frame_id] || "")}</textarea>
+        </div>`).join("");
+    $("script-panel").querySelectorAll("textarea").forEach(_autosize);
+    $("script-panel").hidden = false; $("board-viewport").hidden = true;
+  }
+
+  function closeLangReview() {
+    langReview = null;
+    $("script-panel").hidden = true; $("board-viewport").hidden = false;
+  }
+
+  $("script-panel").addEventListener("click", async (ev) => {
+    if (ev.target.closest("#lang-cancel")) { closeLangReview(); return; }
+    const rb = ev.target.closest("#lang-render");
+    if (rb && langReview) {
+      err(""); rb.disabled = true; rb.textContent = "🎬 Rendering…";
+      try {
+        const d = await api(`/api/canvas/${runId}/render-language`,
+          { language: langReview.lang, ...audioOpts() });
+        closeLangReview();
+        render(d.canvas);     // render_id now tracks the language version
+        $("match-hint").textContent = `🌐 rendering the ${langReview ? langReview.native : ""} version — clips & music reused from cache`;
+      } catch (e) { err(e.message); rb.disabled = false; rb.textContent = "🎬 Render version"; }
+    }
+  });
+
   // 📄 Script view — read/edit the story as narration prose BEFORE generating anything.
   // Review-first: the captions ARE the script; edits save straight to the shots.
   let scriptView = false;
@@ -1239,6 +1310,15 @@
     const t = ev.target.closest(".script-line"); if (t) _autosize(t);
   });
   $("script-panel").addEventListener("change", (ev) => {
+    const lt = ev.target.closest(".lang-line");
+    if (lt) {   // T13 review edit — saves the TRANSLATION, never the master caption
+      api(`/api/canvas/${runId}/translation`, {
+        language: lt.getAttribute("data-lang"),
+        frame_id: lt.getAttribute("data-frame"),
+        text: lt.value,
+      }).catch((e) => err(e.message));
+      return;
+    }
     const t = ev.target.closest(".script-line"); if (t) saveField(t);   // → /frame {caption}
   });
 

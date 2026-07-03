@@ -401,6 +401,11 @@
       <input id="chat-input" type="text" placeholder="Refine in plain English — e.g. 'make it darker and add a rain shot'…">
       <button id="chat-send" class="btn-primary">Send</button>
     </div>
+
+    <div id="lang-controls" hidden style="display:flex;gap:6px;align-items:center;flex:0 0 auto">
+      <select id="lang-pick" title="Language version — same clips & music, translated captions + voiceover" style="background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;font-size:12px"></select>
+      <button id="lang-translate" class="btn-secondary" title="Translate every caption, review/edit them, then render the language version">🌐 Translate &amp; review</button>
+    </div>
     
     <div id="render-panel" class="cv-render" hidden>
       <div class="render-head"><strong>Status:</strong> <span id="render-status" class="muted"></span></div>

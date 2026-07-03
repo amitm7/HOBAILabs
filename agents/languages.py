@@ -56,3 +56,27 @@ def normalize_languages(codes) -> list[str]:
 def catalogue() -> list[dict]:
     """UI-friendly list for the language picker."""
     return [{"code": code, **names} for code, names in SUPPORTED_LANGUAGES.items()]
+
+
+# T13a: caption font per script. Latin house fonts (Baskerville/Montserrat/Satoshi)
+# have NO Devanagari/Gurmukhi/Bengali glyphs — a Hindi caption in Baskerville renders
+# tofu (□□). Bundled Noto Serif faces (deploy/fonts/) keep the serif storytelling look
+# per script. An operator-chosen NON-Latin-default font is respected as-is.
+CAPTION_FONTS: dict[str, str] = {
+    "hi": "Noto Serif Devanagari",
+    "mr": "Noto Serif Devanagari",   # Marathi uses Devanagari
+    "pa": "Noto Serif Gurmukhi",
+    "bn": "Noto Serif Bengali",
+}
+
+_LATIN_ONLY_DEFAULTS = {"baskerville", "libre baskerville", "montserrat", "satoshi"}
+
+
+def font_for_language(code: str, requested_font: str = "") -> str:
+    """The caption font that can actually draw this language's script. Keeps the
+    operator's font when it isn't one of the Latin-only house defaults."""
+    if code not in CAPTION_FONTS:
+        return requested_font
+    if requested_font and requested_font.strip().lower() not in _LATIN_ONLY_DEFAULTS:
+        return requested_font       # explicit non-default choice — operator wins
+    return CAPTION_FONTS[code]
