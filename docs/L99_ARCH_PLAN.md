@@ -2,7 +2,7 @@
 
 **Created:** 2026-07-03 · **Method:** L99 (research → OODA → artifact → red-team plan → build+verify → red-team diff → docs-sync)
 **Scope:** Director Canvas + engine, after the 2026-07-01..03 incident/fix cycle (silent reel → six-dimension quality pass → operator field-testing).
-**Status:** PLAN — red-teamed below; nothing here is built until each ticket goes through its own build+verify loop.
+**Status:** EXECUTED (2026-07-03) — NOW block (A0–A4, T3, T10) + NEXT block (T13, T15, T5, T14, T6) + S27 all shipped & verified; remaining: T7/T8/T9 (LATER) + deferred items with triggers (§4b).
 
 ---
 
@@ -20,12 +20,12 @@
 | S8 | Character portrait too small / no expand | ✅ shipped — 76px + click-to-full-size |
 | S9 | No redo on generated face / cache returned old image | ✅ shipped — ↻ New face + cache `variant` + attrs sent along |
 | S10 | Cast button "did nothing" | ✅ shipped — scroll + flash feedback |
-| S11 | Shot-level image can't be changed (shot 14) | ⚠ partial — works via prompt-edit→Re-roll, but flow is non-obvious → **T5** |
-| S12 | Auto-fill settings from the story, operator edits | 📋 planned → **T3** |
+| S11 | Shot-level image can't be changed (shot 14) | ✅ shipped (T5) — 🖼 New still (prompt→still only, image cost) + take history |
+| S12 | Auto-fill settings from the story, operator edits | ✅ shipped (T3) — ✨ suggestions fill empty fields only |
 | S13 | Per-character voices; lip-sync for cinematic dialogue | 📋 planned → **T4** (voices) / **T7** (selective lip-sync) |
 | S14 | Text↔frame mismatch (CEO review, P2 ladder) | 📋 planned → **T8** |
-| S15 | Runway-style iteration: don't lose good takes | 📋 planned → **T5** (take history) |
-| S16 | Remotion caption layer (spike verified) | 📋 planned → **T6** (P1 wiring per REMOTION_CAPTIONS_PLAN) |
+| S15 | Runway-style iteration: don't lose good takes | ✅ shipped (T5) — re-roll archives takes (keep 4), restore free |
+| S16 | Remotion caption layer (spike verified) | ✅ shipped (T6) — engine seam + auto libass fallback + ✨ checkbox |
 | S17 | Compare vs galleri5 Mahabharat trailer | 🎯 pending the Hanuman build — measured after P1 tickets |
 | S18 | Hanuman run: "captions didn't appear" | ✅ root-caused — captions WERE burned (bottom, defaults) but operator's pre-Plan settings (position=Middle etc.) were **silently dropped** (saveSettings early-returns with no run). Fixed: Plan now pushes the pre-set UI settings onto the new canvas. Legibility-vs-benchmark gap remains → **T6** |
 | S19 | Two characters locked, but CLOTHES keep changing between shots | 📋 → **T11** — canonical portrait is head-and-shoulders, so identity conditioning anchors the FACE only; clothing exists only as a text clause per shot → drifts |
@@ -33,10 +33,10 @@
 | S21 | Bhima "slipping" clip broken — stuck floating mid-air | 📋 → **T12** — effort/action beats need motion-prompt presets + physics negatives; today the motion prompt under-specifies and Kling invents |
 | S22 | *(found in S18's run logs, invisible to operator)* identity model `nano_banana_edit` hit a fal **content-policy rejection** on some shots → fell back → those shots rendered **without face conditioning** — directly worsening S19/S20 drift, silently | 📋 evidence for **T1** (ledger would have shown "identity ref failed on N shots"); also: soften the identity-edit prompt phrasing that trips the checker |
 | S23 | *(same logs)* Safety **Gate B2 vision QC silently skipped** — jpeg/png media-type mismatch in the API call (image is PNG, declared JPEG) | ✅ fixed (B1) |
-| S24 | Per-frame **static image overlays** before Final Cut — speaker insets, memory/flashback panels, comic thought/emotion devices, operator-sized/placed | 📋 planned → **T14** — see `docs/FRAME_COMPOSER_PLAN.md` (red-teamed; presets-only v1, PIL+ffmpeg, zero model spend) |
-| S25 | Proper **language choice** for the story (Hindi etc.) | 📋 planned → **T13** — see `docs/FRAME_COMPOSER_PLAN.md` Part B (author-in-language + version-after-render flows; fonts, voices, mandatory translated-script review gate) |
-| S26 | **Library section** — a folder per story where the operator can browse and DOWNLOAD every asset that was created (portraits, keyframes, clips, storyboard panels, music, final cuts) | 📋 planned → **T15** — assets already exist on disk per run dir and `/export/<run_id>` zip already ships; the gap is purely the browsing surface |
-| S27 | *(found during T3 verify)* **Plan-stage degradation is silent** — shot_planner fell back to 3 generic shots + narrator-only cast with NO visible log and NO ledger entry (T1 binds at render time only) | 📋 NEW — bind `degradation` at plan/chat routes too; `shot_planner` fallback must `report("plan","alert",…)`; suspected Bedrock throttling on a ~3-min-story planning call |
+| S24 | Per-frame **static image overlays** before Final Cut — speaker insets, memory/flashback panels, comic thought/emotion devices, operator-sized/placed | ✅ shipped (T14 v1) — chips/polaroids/bubbles/stickers, preview-first, composited at Final Cut |
+| S25 | Proper **language choice** for the story (Hindi etc.) | ✅ shipped (T13) — translate→review-gate→render-language; Noto Serif fonts (glyph-tested); voices lang-plumbed |
+| S26 | **Library section** — a folder per story where the operator can browse and DOWNLOAD every asset that was created (portraits, keyframes, clips, storyboard panels, music, final cuts) | ✅ shipped (T15) — /library page + per-story grouped listing + downloads + zip |
+| S27 | *(found during T3 verify)* **Plan-stage degradation is silent** — shot_planner fell back to 3 generic shots + narrator-only cast with NO visible log and NO ledger entry (T1 binds at render time only) | ✅ fixed — plan route binds the ledger; shot_planner fallbacks report 'plan' alerts into the board report |
 
 ---
 
