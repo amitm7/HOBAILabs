@@ -1689,7 +1689,9 @@ def parse_script():
     try:
         from agents.script_parser import extract_caption_block, parse_frame_script
         smart_match = bool(request.json.get("smart_match", False))
-        frames = parse_frame_script(tmp.name, assets_dir or "", smart_match=smart_match)
+        frames = parse_frame_script(tmp.name, assets_dir or "", smart_match=smart_match,
+                                    cast_first=True,
+                                    subject=(request.json.get("subject_name") or ""))
         posting_caption = extract_caption_block(script_text)
     except Exception as e:
         return jsonify({"error": str(e)}), 400

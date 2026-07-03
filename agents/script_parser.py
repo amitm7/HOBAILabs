@@ -164,7 +164,8 @@ def _parse_format_b(raw: str, assets_dir: str) -> list[dict]:
 
 def parse_frame_script(script_path: str, assets_dir: str,
                        max_frame_dur: float = 9.0,
-                       smart_match: bool = False) -> list[dict]:
+                       smart_match: bool = False,
+                       cast_first: bool = False, subject: str = "") -> list[dict]:
     with open(script_path, "r") as f:
         raw = f.read()
 
@@ -204,6 +205,16 @@ def parse_frame_script(script_path: str, assets_dir: str,
         # Smart tier (opt-in): content-aware GPT-4o matching for unpinned frames.
         # Safe + additive — fills what it can; positional handles the rest below.
         if smart_match:
+            # C1 (CHARACTER_RETRIEVAL_PLAN / audit A3): cast detection must run BEFORE
+            # matching so the matcher sees WHO each beat is about (role/gender/age) —
+            # otherwise a "brother" beat happily takes a photo of only women.
+            # detect_cast is idempotent, so callers that also run it later are safe.
+            if cast_first:
+                try:
+                    from agents import cast as _cast
+                    _cast.detect_cast(frames, subject, "")
+                except Exception as e:
+                    print(f"[ScriptParser] cast-before-match skipped ({e})")
             try:
                 from agents.image_matcher import smart_match as _smart_match
                 _smart_match(frames, assets_dir, _is_source_media)

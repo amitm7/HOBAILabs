@@ -104,9 +104,11 @@ def main():
 
     pipeline_success = False
     try:
-        # 1. Parse script frames
+        # 1. Parse script frames (cast-first so the matcher is role-aware — C1/A3;
+        # the later detect_cast call stays as an idempotent no-op safety net)
         frames = parse_frame_script(args.script, args.assets, max_frame_dur=max_frame_dur,
-                                    smart_match=args.smart_match)
+                                    smart_match=args.smart_match,
+                                    cast_first=not args.no_speakers, subject=args.subject)
 
         # 1a. Cast / per-line speaker detection (auto; --no-speakers to disable).
         # Tags each beat with who's speaking so quoted lines (a kid, the father)
