@@ -1970,6 +1970,7 @@ def api_canvas_restill(run_id: str, operator: str):
             ff = _canvas_frame(fresh, fid)
             if ff is not None:
                 ff["visual_path"] = newp
+            fresh.setdefault("render_id", rid)   # keep later restills in ONE render dir
             fresh["board"] = canvas_run.board_cards(fresh["frames"])
         _canvas_mutate(run_id, _apply)
         return jsonify({"frame_id": fid, "still_path": newp})
