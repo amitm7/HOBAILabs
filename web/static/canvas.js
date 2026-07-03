@@ -282,6 +282,8 @@
       <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="script">
         <div class="cell-hdr">
           <span>Shot ${index + 1} · Script</span>
+          <span class="form-tag form-${c.form || "narration"}" title="Storytelling form (S28): 🎬 dialogue = a character speaks in-scene · 🎙 narration = the storyteller's voice · 🌫 silent = atmosphere. Override it in the Inspector.">${
+            c.form === "dialogue" ? "🎬 dialogue" : c.form === "silent" ? "🌫 silent" : "🎙 narration"}</span>
         </div>
         <div class="cell-content">
           <div style="font-weight:700;margin-bottom:4px;font-size:11px">${escapeHtml(c.shot_size || "shot")}</div>
@@ -477,6 +479,16 @@
         <div class="inspector-field">
           <label class="inspector-label">Caption / Script Line</label>
           <input class="edit" data-frame="${fid}" data-field="caption" value="${escapeHtml(c.caption || "")}" placeholder="narration script line">
+        </div>
+
+        <div class="inspector-field">
+          <label class="inspector-label">Form (S28) — who carries this beat</label>
+          <select class="edit" data-frame="${fid}" data-field="form_override">
+            <option value="" ${!c.form_override ? "selected" : ""}>Auto — detected: ${c.form || "narration"}</option>
+            <option value="dialogue" ${c.form_override === "dialogue" ? "selected" : ""}>🎬 Dialogue (character speaks in-scene)</option>
+            <option value="narration" ${c.form_override === "narration" ? "selected" : ""}>🎙 Narration (storyteller's voice)</option>
+            <option value="silent" ${c.form_override === "silent" ? "selected" : ""}>🌫 Silent (atmosphere only)</option>
+          </select>
         </div>
 
         <div class="inspector-field">
@@ -843,8 +855,25 @@
       severity: w.severity === "warn" ? "warn" : "info",
       msg: `${w.frame_id || ""}: ${w.message || ""}${w.fix ? " → " + w.fix : ""}`,
     }));
-    renderReport([...(canvas.render_report || []), ...planEvents]);
+    // S28 live form warnings (e.g. dialogue detected but characters share one voice)
+    const formEvents = (canvas.form_warnings || []).map((w) => ({
+      step: "form", severity: w.severity || "warn",
+      msg: `${w.message || ""}${w.fix ? " → " + w.fix : ""}`,
+    }));
+    renderReport([...(canvas.render_report || []), ...planEvents, ...formEvents]);
+    renderFormBadge(canvas.story_form);
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
+  }
+
+  // S28 detect→declare: the story-level form verdict, always visible once planned.
+  function renderFormBadge(sf) {
+    const el = $("form-badge");
+    if (!el) return;
+    if (!sf || (!sf.dialogue && !sf.narration && !sf.silent)) { el.hidden = true; return; }
+    const label = { cinematic: "🎬 Cinematic", narrated: "🎙 Narrated", mixed: "🎭 Mixed form", silent: "🌫 Silent" }[sf.form] || sf.form;
+    el.hidden = false;
+    el.innerHTML = `<b>${label}</b> — ${sf.dialogue} dialogue · ${sf.narration} narrated · ${sf.silent} silent
+      <span class="muted">(detected per shot from who speaks — flip any shot's form in its Inspector)</span>`;
   }
 
   // T1 Degradation Ledger — the render's quality receipt. Alerts scream, warns list,

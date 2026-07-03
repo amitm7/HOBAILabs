@@ -143,6 +143,61 @@ def stage_etas(frames: list[dict], *, quality: str = "dev") -> dict:
     }
 
 
+def shot_form(frame: dict) -> str:
+    """S28 step 0 — a shot's storytelling FORM, derived deterministically from data
+    the planner already produces (so it stays true through every script edit):
+      dialogue  — a line spoken by a named character (in-scene performance)
+      narration — a line carried by the narrator (VO over illustration)
+      silent    — no line (atmosphere/action beat)
+    The operator can force it via frame["form_override"] (detect → declare)."""
+    ov = (frame.get("form_override") or "").strip().lower()
+    if ov in ("dialogue", "narration", "silent"):
+        return ov
+    if not (frame.get("caption") or "").strip():
+        return "silent"
+    sid = (frame.get("speaker_id") or "narrator").strip().lower()
+    return "narration" if sid in ("", "narrator") else "dialogue"
+
+
+def story_form(frames: list[dict]) -> dict:
+    """Story-level verdict + counts: 🎬 cinematic (dialogue-driven), 🎙 narrated,
+    or mixed. Thresholds are deliberately simple: any meaningful dialogue presence
+    (>=20% of spoken lines) makes it mixed; dialogue majority makes it cinematic."""
+    counts = {"dialogue": 0, "narration": 0, "silent": 0}
+    for f in frames or []:
+        counts[shot_form(f)] += 1
+    spoken = counts["dialogue"] + counts["narration"]
+    if spoken == 0:
+        form = "silent"
+    elif counts["dialogue"] >= max(1, spoken * 0.5):
+        form = "cinematic"
+    elif counts["dialogue"] >= max(1, round(spoken * 0.2)):
+        form = "mixed"
+    else:
+        form = "narrated"
+    return {"form": form, **counts}
+
+
+def form_warnings(state: dict) -> list[dict]:
+    """S28 live checks (computed fresh so they track cast/script edits):
+    dialogue without distinct voices = radio-drama with one actor."""
+    frames = state.get("frames") or []
+    sf = story_form(frames)
+    warns = []
+    if sf["dialogue"]:
+        speakers = {(f.get("speaker_id") or "") for f in frames
+                    if shot_form(f) == "dialogue"}
+        speakers.discard(""); speakers.discard("narrator")
+        chars = {c.get("id"): c for c in state.get("characters") or []}
+        unvoiced = sorted(s for s in speakers if not chars.get(s, {}).get("voice_id"))
+        if len(speakers) >= 2 and unvoiced:
+            warns.append({"id": "dialogue_voices_missing", "severity": "warn",
+                          "frame_id": "",
+                          "message": f"cinematic dialogue detected, but these characters have no OWN voice yet: {', '.join(unvoiced)} — their lines will all sound like the narrator",
+                          "fix": "Assign a voice per character on the Character sheet (T4)."})
+    return warns
+
+
 def board_cards(frames: list[dict]) -> list[dict]:
     """Per-shot board data the UI renders as storyboard cards: shot grammar, the
     motion arrow, the emotion/beat, the (editable) generation prompt, and the
@@ -157,6 +212,8 @@ def board_cards(frames: list[dict]) -> list[dict]:
         real_path = (f.get("visual_path") or f.get("photo_spec") or "") if kind == ASSET_REAL else ""
         cards.append({
             "frame_id":   f.get("frame_id"),
+            "form":       shot_form(f),              # S28: dialogue | narration | silent
+            "form_override": f.get("form_override") or "",
             "overlays":   f.get("overlays") or [],   # T14 Frame Composer spec per shot
             "caption":    f.get("caption", ""),
             "shot_size":  f.get("shot_size") or "",
@@ -398,6 +455,7 @@ def set_ai_generic(state: dict, frame_id: str) -> dict:
 EDITABLE_FRAME_FIELDS = {
     "caption", "director_note", "motion_override", "negative_prompt", "image_prompt",
     "emotion", "camera_angle",   # nested under scene (B1)
+    "form_override",             # S28: force a shot's form (dialogue|narration|silent)
 }
 _SCENE_FIELDS = {"image_prompt", "emotion", "camera_angle"}
 
@@ -726,7 +784,13 @@ def public_state(state: dict) -> dict:
              "eta_sec": etas.get(s, 0)}
             for s in STAGES
         ],
-        "board": state.get("board", []),
+        # Board cards enriched with the live form tag (S28) so canvases saved before
+        # the classifier existed still show correct tags without a board rebuild.
+        "board": [
+            {**card, "form": shot_form(fmap.get(card.get("frame_id"), card))}
+            for fmap in [{f.get("frame_id"): f for f in state.get("frames") or []}]
+            for card in state.get("board", [])
+        ],
         "total_cost_usd": round(sum(state.get("costs", {}).values()), 4),
         "legend": {"real": ASSET_REAL, "ai": ASSET_AI, "ai_person": ASSET_AI_PERSON},
         "render_id": state.get("render_id", ""),   # set once a full render is dispatched
@@ -758,6 +822,9 @@ def public_state(state: dict) -> dict:
         # T3 plan-time auto-fill: SUGGESTED world/length/voice derived from the brief.
         # The UI fills only empty fields (marked ✨); nothing applies without the operator.
         "suggestions": state.get("suggestions", {}),
+        # S28 detect→declare: story-level form verdict + live warnings (always fresh).
+        "story_form": story_form(state.get("frames") or []),
+        "form_warnings": form_warnings(state),
         # T13 language versions: reviewed translations per language + the render id of
         # each finished language version (original render is never overwritten).
         "translations": state.get("translations", {}),

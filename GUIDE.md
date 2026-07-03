@@ -358,6 +358,12 @@ A **stage-gated board** that builds your reel one approved step at a time —
   If you try to Generate Key Frames while characters still have no locked face,
   you're warned first (their look may drift between shots) — you decide whether to
   proceed. The Narrator never needs a face (voice-only).
+- **🎬 Story form — detected, then declared.** After planning, a badge shows the
+  story's form (🎬 Cinematic / 🎙 Narrated / 🎭 Mixed) with per-shot tags — dialogue
+  (a character speaks in-scene), narration (storyteller's voice), or silent
+  (atmosphere). Detection is automatic from who speaks; flip any shot's form in its
+  Inspector. If dialogue is detected while speaking characters share one voice, the
+  report warns you to assign per-character voices on the Character sheet.
 - **✨ Suggested settings.** Planning auto-fills empty World Context fields, hints a
   narrator profile, and picks up a target length stated in your brief — all marked as
   suggestions; edit anything, nothing applies until you act.
