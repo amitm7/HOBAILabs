@@ -1572,6 +1572,95 @@ def api_canvas_render(run_id: str, operator: str):
                     "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/library")
+def library_page():
+    """T15 — the Story Asset Library: browse & download every asset per story."""
+    return render_template("library.html")
+
+
+def _lib_entry(p: Path, frame_id: str = "") -> dict:
+    _VID = {".mp4", ".mov", ".m4v", ".webm", ".avi"}
+    _AUD = {".mp3", ".wav", ".m4a"}
+    ext = p.suffix.lower()
+    return {"name": p.name, "path": str(p), "size": p.stat().st_size,
+            "is_video": ext in _VID, "is_audio": ext in _AUD,
+            "frame_id": frame_id, "mtime": int(p.stat().st_mtime)}
+
+
+@app.route("/api/library/<canvas_id>")
+def api_library_story(canvas_id: str):
+    """T15 — read-only asset listing for ONE story, grouped the way an operator
+    thinks: characters / keyframes / clips / storyboard / audio / final cuts.
+    Path-confined to RUNS_DIR; half-written files (tiny or seconds-old) are skipped;
+    superseded takes stay listed newest-first (grouping by frame_id happens in UI)."""
+    import re as _re
+    import time as _time
+    state = _canvas_load(canvas_id)
+    if state is None:
+        return jsonify({"error": "Unknown story"}), 404
+    now = _time.time()
+
+    def _stable(p: Path, min_size: int = 1024) -> bool:
+        try:
+            st = p.stat()
+            return st.st_size >= min_size and (now - st.st_mtime) > 5
+        except OSError:
+            return False
+
+    def _walk(d: Path, pattern: str = "*") -> list[Path]:
+        if not d.exists():
+            return []
+        return sorted([p for p in d.glob(pattern) if p.is_file() and _stable(p)],
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+
+    groups: dict[str, list[dict]] = {
+        "characters": [], "storyboard": [], "keyframes": [],
+        "clips": [], "audio": [], "final_cuts": [],
+    }
+    cdir = RUNS_DIR / canvas_id
+    for p in _walk(cdir / "characters"):
+        groups["characters"].append(_lib_entry(p))
+    for p in _walk(cdir / "storyboard"):
+        groups["storyboard"].append(_lib_entry(p))
+    for sub in ("upright", "restored", "upscaled"):
+        for p in _walk(cdir / sub):
+            groups["keyframes"].append(_lib_entry(p))
+
+    # Render dirs: the active render + every language version (originals preserved).
+    rids = []
+    if state.get("render_id"):
+        rids.append(("", state["render_id"]))
+    for lang, rid in (state.get("language_renders") or {}).items():
+        if rid and all(rid != r for _, r in rids):
+            rids.append((lang, rid))
+    frame_re = _re.compile(r"clip_(f\d+)\.mp4$")
+    for lang, rid in rids:
+        rdir = RUNS_DIR / rid
+        for p in _walk(rdir, "clip_*.mp4"):
+            m = frame_re.search(p.name)
+            groups["clips"].append(_lib_entry(p, m.group(1) if m else ""))
+        for p in _walk(rdir / "assets", "ai_*.jpg") + _walk(rdir / "assets", "ai_*.png"):
+            fid = ""
+            m = _re.search(r"_(f\d+)_", p.name)
+            if m:
+                fid = m.group(1)
+            groups["keyframes"].append(_lib_entry(p, fid))
+        for name in ("music.mp3", "voiceover.mp3", "announcer.mp3"):
+            p = rdir / name
+            if p.exists() and _stable(p):
+                groups["audio"].append(_lib_entry(p))
+        for p in _walk(rdir, "output*.mp4"):
+            e = _lib_entry(p)
+            e["language"] = lang or "original"
+            groups["final_cuts"].append(e)
+
+    title = (state.get("brief") or canvas_id)[:80]
+    return jsonify({"canvas_id": canvas_id, "title": title,
+                    "render_id": state.get("render_id", ""),
+                    "groups": {k: v for k, v in groups.items()},
+                    "counts": {k: len(v) for k, v in groups.items()}})
+
+
 @app.route("/api/canvas/<run_id>/translate", methods=["POST"])
 @auth.require_operator()
 def api_canvas_translate(run_id: str, operator: str):

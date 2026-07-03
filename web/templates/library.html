@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOBAILabs — Story Asset Library</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  /* Light-themed standalone page (same pattern as the canvas). */
+  body { margin:0; background:#f8fafc; color:#0f172a; font-family: var(--font-sans, system-ui, sans-serif); padding-bottom:40px; }
+  .lib-top { height:56px; display:flex; align-items:center; gap:16px; padding:0 20px; border-bottom:1px solid #e5e7eb; background:#fff; }
+  .lib-top h1 { font-size:18px; margin:0; color:#0f172a; white-space:nowrap; }
+  .lib-top nav { display:flex; gap:16px; margin-left:24px; }
+  .lib-top a { color:#6b7280; text-decoration:none; font-size:14px; font-weight:500; }
+  .lib-top a.active { color:#e0a32e; }
+  .lib-wrap { max-width:1240px; margin:0 auto; padding:20px; }
+  /* Story cards */
+  .stories { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:14px; }
+  .story-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; cursor:pointer;
+    transition:border-color .15s, box-shadow .15s; }
+  .story-card:hover { border-color:#e0a32e; box-shadow:0 4px 14px rgba(0,0,0,.06); }
+  .story-card h3 { margin:0 0 6px; font-size:14px; color:#0f172a; }
+  .story-card .meta { font-size:12px; color:#64748b; }
+  /* Story detail */
+  .grp { margin-top:22px; }
+  .grp h2 { font-size:14px; text-transform:uppercase; letter-spacing:.05em; color:#334155; margin:0 0 10px;
+    display:flex; align-items:center; gap:8px; }
+  .grp h2 .cnt { background:#eef2f7; color:#64748b; font-size:11px; padding:2px 8px; border-radius:999px; }
+  .assets-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:10px; }
+  .asset { background:#fff; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
+  .asset .thumbbox { aspect-ratio:1; background:#eef2f7; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative; }
+  .asset img, .asset video { width:100%; height:100%; object-fit:cover; display:block; }
+  .asset .audio-ic, .asset .vid-ic { font-size:34px; color:#94a3b8; }
+  .asset .cap { padding:6px 8px; font-size:10px; color:#475569; display:flex; justify-content:space-between; align-items:center; gap:6px; }
+  .asset .cap .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .asset .dl { flex:0 0 auto; text-decoration:none; background:#111827; color:#fff; border-radius:6px; padding:3px 8px; font-size:10px; font-weight:600; }
+  .asset .playvid { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:26px; color:#fff;
+    text-shadow:0 2px 6px rgba(0,0,0,.6); cursor:pointer; }
+  .backbar { margin:16px 0 0; display:flex; align-items:center; gap:12px; }
+  .btn { background:#111827; color:#fff; border:0; border-radius:8px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; }
+  .btn.sec { background:#f1f5f9; color:#334155; border:1px solid #e2e8f0; }
+  .muted { color:#64748b; font-size:12px; }
+  .err { color:#dc2626; font-size:13px; margin:10px 0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="lib-top">
+  <h1>📚 Story Asset Library</h1>
+  <nav>
+    <a href="/">Story</a><a href="/studio">Studio</a><a href="/brand">Brand</a>
+    <a href="/canvas">Canvas</a><a href="/library" class="active">Library</a>
+  </nav>
+</div>
+
+<div class="lib-wrap">
+  <div id="err" class="err" hidden></div>
+
+  <div id="stories-view">
+    <p class="muted">Every story keeps its generated assets — portraits, key frames, clips, storyboard panels,
+    audio and final cuts — browsable and downloadable here. Click a story.</p>
+    <div id="stories" class="stories"></div>
+  </div>
+
+  <div id="story-view" hidden>
+    <div class="backbar">
+      <button class="btn sec" id="back">← All stories</button>
+      <h2 id="story-title" style="margin:0;font-size:16px"></h2>
+      <a id="dl-all" class="btn" hidden>⬇ Download all (zip)</a>
+    </div>
+    <div id="groups"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const err = (m) => { const e = $("err"); e.hidden = !m; e.textContent = m || ""; };
+  const media = (p) => "/media?path=" + encodeURIComponent(p);
+  const fmtSize = (b) => b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+  const GROUP_LABELS = { characters: "👥 Characters", storyboard: "✏️ Storyboard panels",
+    keyframes: "🖼 Key frames", clips: "🎬 Clips", audio: "🎵 Audio", final_cuts: "🏁 Final cuts" };
+
+  async function loadStories() {
+    try {
+      const d = await fetch("/api/canvas/list").then((r) => r.json());
+      const list = d.canvases || [];
+      $("stories").innerHTML = list.length ? list.map((c) => `
+        <div class="story-card" data-id="${c.run_id}">
+          <h3>${(c.title || c.run_id).replace(/</g, "&lt;")}</h3>
+          <div class="meta">${c.shots ? c.shots + " shots · " : ""}${c.story_type === "ai" ? "🎭 AI story" : "📷 Real story"}</div>
+        </div>`).join("")
+        : '<p class="muted">No stories yet — plan one on the Canvas.</p>';
+    } catch (e) { err("Couldn't load stories: " + e.message); }
+  }
+
+  async function openStory(id) {
+    err("");
+    try {
+      const d = await fetch("/api/library/" + id).then((r) => r.json());
+      if (d.error) { err(d.error); return; }
+      $("story-title").textContent = d.title;
+      $("dl-all").hidden = !d.render_id;
+      if (d.render_id) $("dl-all").href = "/export/" + d.render_id;
+      $("groups").innerHTML = Object.entries(d.groups).map(([k, items]) => {
+        if (!items.length) return "";
+        return `<div class="grp"><h2>${GROUP_LABELS[k] || k} <span class="cnt">${items.length}</span></h2>
+          <div class="assets-grid">` + items.map((a) => {
+            let thumb;
+            if (a.is_video) thumb = `<div class="thumbbox"><video src="${media(a.path)}" preload="metadata" muted></video><span class="playvid" data-p="${encodeURIComponent(a.path)}">▶</span></div>`;
+            else if (a.is_audio) thumb = `<div class="thumbbox"><audio controls src="${media(a.path)}" style="width:92%"></audio></div>`;
+            else thumb = `<div class="thumbbox"><img loading="lazy" src="${media(a.path)}" alt=""></div>`;
+            return `<div class="asset">${thumb}
+              <div class="cap"><span class="nm" title="${a.name}">${a.frame_id ? a.frame_id + " · " : ""}${a.language && a.language !== "original" ? "🌐" + a.language + " · " : ""}${a.name}</span>
+              <a class="dl" download href="${media(a.path)}" title="${fmtSize(a.size)}">⬇</a></div>
+            </div>`;
+          }).join("") + `</div></div>`;
+      }).join("") || '<p class="muted">No assets yet for this story.</p>';
+      $("stories-view").hidden = true; $("story-view").hidden = false;
+    } catch (e) { err("Couldn't load assets: " + e.message); }
+  }
+
+  $("stories").addEventListener("click", (ev) => {
+    const c = ev.target.closest(".story-card");
+    if (c) openStory(c.getAttribute("data-id"));
+  });
+  $("groups").addEventListener("click", (ev) => {
+    const p = ev.target.closest(".playvid");
+    if (p) {   // inline play/pause on the tile
+      const v = p.parentElement.querySelector("video");
+      if (v.paused) { v.play(); p.style.opacity = 0.15; } else { v.pause(); p.style.opacity = 1; }
+    }
+  });
+  $("back").addEventListener("click", () => { $("story-view").hidden = true; $("stories-view").hidden = false; });
+
+  loadStories();
+})();
+</script>
+</body>
+</html>
