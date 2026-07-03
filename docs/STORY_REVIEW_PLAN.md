@@ -1,6 +1,6 @@
 # STR-2 — Story Review Gate (PLAN)
 
-> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** PARTIAL — P1 module+tests shipped; P2/P3 routing was NEVER wired (dead gate) — being fixed as audit action A2 (2026-07-03).
+> **Status (2026-07-03, evening — audit action A2 EXECUTED):** P1 module+tests SHIPPED (earlier); P2/P3 NOW WIRED — /story-intake returns review=contract_validate(frames), canvas Plan stores public_state.plan_review, board report panel shows the warnings. P4 docs synced.
 
 > Status: **PROPOSED** (artifact-first per build-feature §"Plan-first for big features").
 > Confirm scope/phasing before executing. One engine, many front doors — this is a

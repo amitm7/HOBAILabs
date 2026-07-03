@@ -289,13 +289,34 @@ def main():
         for f in frames:
             if f.get("edit_prompt") and f.get("visual_path") and os.path.exists(f["visual_path"]):
                 from agents.image_editor import edit_image
+                from agents.provenance import classify_frame, REAL
                 src = f["visual_path"]
+                was_real = classify_frame(f) == REAL
                 # Write edited copy into the temp dir, never next to the source
                 # photo (avoids polluting the user's asset folder).
                 base = os.path.splitext(os.path.basename(src))[0]
                 edited = os.path.join(temp_dir, f"{base}_edited.jpg")
                 try:
                     f["visual_path"] = edit_image(src, f["edit_prompt"], edited)
+                    # CEO_LIKENESS §5.3 (audit A4): a generative edit on REAL media means
+                    # the pixels are no longer the untouched real photo — provenance must
+                    # say so, or a synthetic face ships labeled "Real footage". Person in
+                    # frame → ai_portrait (strong tier); otherwise ai_edited_real.
+                    if was_real:
+                        f["orig_visual"] = src
+                        f["edited_real"] = True
+                        person = False
+                        try:
+                            from agents.safety import has_person
+                            person = has_person(f["visual_path"])
+                        except Exception:
+                            person = True     # can't verify → assume the stronger tier
+                        f["photo_spec"] = "ai_portrait" if person else "ai_edited_real"
+                        from agents import degradation
+                        degradation.report(
+                            "provenance", "warn",
+                            f"{f['frame_id']}: generative edit applied to REAL media — "
+                            f"reclassified {'ai_portrait (person present)' if person else 'ai_edited_real'}")
                 except Exception as e:
                     print(f"[Pipeline] Image edit failed for {f['frame_id']} ({e}) — using original")
 

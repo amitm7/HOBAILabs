@@ -3003,21 +3003,44 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
             continue
         if prompt and vp and os.path.exists(vp):
             from agents.image_editor import edit_image
+            from agents.provenance import classify_frame, REAL
             src = f["visual_path"]
+            was_real = classify_frame(f) == REAL
             phash = hashlib.md5(prompt.encode()).hexdigest()[:8]
             # Always write the edited copy into the RUN dir, never next to the
             # source — otherwise edited files pollute the user's photo folder
             # and shift the auto-match order on the next parse.
             base = os.path.splitext(os.path.basename(src))[0]
             edited = os.path.join(assets_dir, f"{base}_edit_{phash}.jpg")
+            applied = False
             if os.path.exists(edited) and os.path.getsize(edited) > 10_000:
                 f["visual_path"] = edited  # cached edit — reuse, no cost
+                applied = True
                 print(f"[ImageEditor] {f['frame_id']}: reusing cached edit")
             else:
                 try:
                     f["visual_path"] = edit_image(src, prompt, edited)
+                    applied = True
                 except Exception as e:
                     print(f"[Pipeline] Image edit failed for {f['frame_id']} ({e}) — using original")
+            # CEO_LIKENESS §5.3 (audit A4): a generative edit on REAL media is no longer
+            # the untouched real photo — flip provenance (person → ai_portrait) so the
+            # label can't say "Real footage" over a synthetic face.
+            if applied and was_real:
+                f["orig_visual"] = src
+                f["edited_real"] = True
+                person = True
+                try:
+                    from agents.safety import has_person
+                    person = has_person(f["visual_path"])
+                except Exception:
+                    person = True      # can't verify → assume the stronger tier
+                f["photo_spec"] = "ai_portrait" if person else "ai_edited_real"
+                from agents import degradation
+                degradation.report(
+                    "provenance", "warn",
+                    f"{f['frame_id']}: generative edit applied to REAL media — "
+                    f"reclassified {'ai_portrait (person present)' if person else 'ai_edited_real'}")
 
     # Brand-safety pass on GENERATED frames (real product/logo beats are exempt —
     # they're real assets). Best-effort; degrades to pass.
@@ -3510,7 +3533,22 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         output_path = str(run_dir / "output.mp4")
         # A post-pass is needed for a brand overlay OR an IP watermark; otherwise
         # assemble straight to the final output (one encode).
-        needs_overlay = is_brand or bool(watermark_path)
+        # CEO_LIKENESS §5.1 (audit A4): when the reel contains an AI likeness of a real
+        # person, the disclosure must be BURNED INTO the video — a provenance.json
+        # sidecar is invisible to the audience (an undisclosed deepfake, legally).
+        provenance_disc = ""
+        try:
+            from agents.provenance import summarize as _prov_summarize
+            _prov = _prov_summarize({**data, "frames": frames})
+            if _prov.get("real_person_ai"):
+                # Compact form for the burn (drawtext doesn't wrap; the full label
+                # lives in provenance.json + the UI badge).
+                mods = " & ".join(_prov.get("modalities") or ["likeness"])
+                provenance_disc = f"Contains AI {mods} likeness — consented"
+        except Exception as e:
+            print(f"[Provenance] burn-in check skipped ({e})")
+
+        needs_overlay = is_brand or bool(watermark_path) or bool(provenance_disc)
         assemble_target = str(run_dir / "_raw_output.mp4") if needs_overlay else output_path
         assemble_caption_only(clips, clip_temp, assemble_target,
                               music_path=music_path, srt_path=ass_path,
@@ -3518,7 +3556,7 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                               bg_music_path=bg_music_path, overlaps=overlaps)
 
         # Single overlay post-pass: IP watermark (both modes) + brand disclosure/logo
-        # (brand only) composited together so the final video is encoded once.
+        # (brand only) + provenance disclosure (any mode) — one final encode.
         if needs_overlay:
             from agents.assembler import apply_brand_overlay
             disc, logo, corner = "", "", "tr"
@@ -3527,6 +3565,10 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                 disc = disclosure_text(brand) if brand.get("disclosure", True) else ""
                 logo = brand.get("logo_path", "") if brand.get("logo_bug") else ""
                 corner = brand.get("logo_corner", "tr")
+            if provenance_disc:
+                # Brand disclosure wins the slot if both exist; append provenance to it.
+                disc = f"{disc} · {provenance_disc}" if disc else provenance_disc
+                print(f"[Provenance] burning disclosure into video: {provenance_disc}")
             if watermark_path:
                 print(f"[Watermark] applying IP layer: {data.get('ip','')}")
             apply_brand_overlay(
@@ -3588,7 +3630,22 @@ def _brand_audio(brand: dict, run_dir: Path) -> tuple:
         vo_track = brand["vo_audio_path"]
     elif (brand.get("announcer_script") or "").strip():
         # AI announcer DRAFT reads the brand-supplied script verbatim.
+        # CEO_LIKENESS §5.2 (audit A4): an AI voice speaking operator-supplied copy is
+        # a synthesized claim — it MUST pass moderation BEFORE any TTS spend. A flagged
+        # script kills the VO (reel renders without it) and is ledgered as an alert.
+        script_ok = True
         try:
+            from agents.safety import moderate_script
+            moderate_script(brand["announcer_script"])
+        except ValueError as e:
+            script_ok = False
+            print(f"[Brand] ⚠ announcer script FAILED moderation — VO blocked: {e}")
+            from agents import degradation
+            degradation.report("safety", "alert",
+                               f"announcer script failed moderation — VO blocked ({str(e)[:120]})")
+        try:
+            if not script_ok:
+                raise RuntimeError("announcer script blocked by moderation")
             from agents.tts_generator import generate_single_tts
             vo_path = str(run_dir / "announcer.mp3")
             voice_id = (brand.get("vo_voice_id") or os.environ.get("ELEVENLABS_VOICE_ID", "")).strip()

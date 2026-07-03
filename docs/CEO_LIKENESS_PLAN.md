@@ -1,6 +1,6 @@
 # CEO Likeness Plan — Karishma voice & on-screen presence
 
-> **Status (2026-07-03, per docs/L99_EXECUTION_AUDIT.md):** SCHEDULED — owner approved enforcement trio 2026-07-03 (audit action A4): 5.2 moderation → 5.3 photo_spec flip → 5.1 provenance burn-in.
+> **Status (2026-07-03, evening — audit action A4 EXECUTED):** enforcement trio SHIPPED & verified — 5.2 announcer-script moderation gates TTS (blocked→music-only + ledger alert), 5.3 generative edit on REAL media flips provenance (person→ai_portrait, else ai_edited_real; both pipelines), 5.1 provenance disclosure BURNED into the MP4 for any real-person-AI reel (compact label; full label stays in provenance.json). 5.4/5.5 remain policy-level (signed releases, third-party marks).
 
 > Strategy + red-team artifact for two requests: (1) narrate stories in HOB CEO
 > Karishma's cloned voice via ElevenLabs; (2) make her *appear talking* in
