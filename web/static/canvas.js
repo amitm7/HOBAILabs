@@ -84,6 +84,28 @@
     const w = canvas.world || {};
     if ($("world-style") && document.activeElement !== $("world-style")) $("world-style").value = w.style || "";
     if ($("world-setting") && document.activeElement !== $("world-setting")) $("world-setting").value = w.setting || "";
+    // T3 auto-fill: suggestions from the brief fill EMPTY fields only, clearly marked.
+    // Nothing generates from them until the operator clicks "Apply world".
+    const sug = canvas.suggestions || {};
+    if (sug.world_style && $("world-style") && !$("world-style").value.trim()
+        && document.activeElement !== $("world-style")) {
+      $("world-style").value = sug.world_style;
+    }
+    if (sug.world_setting && $("world-setting") && !$("world-setting").value.trim()
+        && document.activeElement !== $("world-setting")) {
+      $("world-setting").value = sug.world_setting;
+    }
+    if ((sug.world_style || sug.world_setting) && !(w.style || w.setting) && $("world-hint")) {
+      $("world-hint").textContent = "✨ suggested from your story — edit freely, then Apply world";
+    }
+    if (sug.narrator_profile && $("voice-id")) {
+      $("voice-id").title = "✨ suggested narrator: " + sug.narrator_profile;
+      const ah = $("audio-hint"); if (ah) ah.textContent = "✨ narrator suggestion: " + sug.narrator_profile;
+    }
+    if (sug.target_seconds && $("length") && !$("length").dataset.userSet) {
+      const opt = [...$("length").options].find((o) => o.value === String(sug.target_seconds));
+      if (opt) { $("length").value = String(sug.target_seconds); }
+    }
     _settingsReady = true;
   }
   $("world-save") && $("world-save").addEventListener("click", async () => {
@@ -158,6 +180,9 @@
         `<option value="${v.voice_id}">${escapeHtml(v.name || v.voice_id)}</option>`).join("");
     } catch (e) { /* ignore */ }
   }
+  // T3: a manually chosen length must never be overwritten by a suggestion.
+  $("length") && $("length").addEventListener("change", () => { $("length").dataset.userSet = "1"; });
+
   $("audio-mode").addEventListener("change", () => {
     const m = $("audio-mode").value;
     $("voice-id").hidden = m !== "voiceover";

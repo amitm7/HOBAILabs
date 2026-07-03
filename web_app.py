@@ -428,6 +428,12 @@ def api_canvas_plan():
         state["plan_review"] = contract_validate(state.get("frames") or []).get("warnings", [])
     except Exception as e:
         print(f"[StoryReview] canvas plan gate skipped ({e})")
+    # T3 plan-time auto-fill: derive SUGGESTED world/length/voice from the brief (one
+    # fast-tier call). UI fills only EMPTY fields, marked ✨ — operator always decides.
+    try:
+        state["suggestions"] = canvas_run.plan_suggestions(brief, state.get("story_type", "real"))
+    except Exception as e:
+        print(f"[Canvas] plan suggestions skipped ({e})")
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 

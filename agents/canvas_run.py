@@ -754,6 +754,9 @@ def public_state(state: dict) -> dict:
         # A2 story-review contract gate: deterministic plan-time warnings
         # ({id, severity, frame_id, message, fix}) — shown in the board report.
         "plan_review": state.get("plan_review", []),
+        # T3 plan-time auto-fill: SUGGESTED world/length/voice derived from the brief.
+        # The UI fills only empty fields (marked ✨); nothing applies without the operator.
+        "suggestions": state.get("suggestions", {}),
     }
 
 
@@ -763,3 +766,38 @@ class PaidStageDispatch(Exception):
     def __init__(self, stage: str):
         super().__init__(f"paid stage {stage!r} must dispatch to the render pipeline")
         self.stage = stage
+
+
+def plan_suggestions(brief: str, story_type: str = "real") -> dict:
+    """T3 plan-time auto-fill (L99_ARCH_PLAN): derive SUGGESTED settings from the brief —
+    world style/setting, a target length if the brief states one, and a narrator-voice
+    profile. Suggestions only: the UI fills EMPTY fields, marks them ✨, and nothing is
+    applied to generation until the operator acts (world needs Apply; voice is a hint).
+    One cheap fast-tier call; safe no-op ({}) on any failure."""
+    from agents import llm
+    try:
+        res = llm.chat([{"role": "user", "content": (
+            "You prepare production settings for a short 9:16 story reel.\n"
+            f"STORY BRIEF:\n{brief[:4000]}\n\n"
+            f"Story type: {'fully AI-generated fiction/mythology' if story_type == 'ai' else 'real people, real photos'}.\n"
+            "Reply JSON only:\n"
+            "{\"world_style\": \"<art direction, <=12 words, e.g. 'epic cinematic photorealism, warm golden filmic grade'>\",\n"
+            " \"world_setting\": \"<the story's world/place/era, <=12 words>\",\n"
+            " \"target_seconds\": <int seconds ONLY if the brief explicitly states a length, else 0>,\n"
+            " \"narrator_profile\": \"<voice direction, <=8 words, e.g. 'deep warm unhurried male, reverent'>\"}"
+        )}], json_mode=True, max_tokens=200, model_tier="fast")
+        data = llm.json_loads_lenient(res) or {}
+        out = {
+            "world_style": str(data.get("world_style") or "").strip()[:120],
+            "world_setting": str(data.get("world_setting") or "").strip()[:120],
+            "narrator_profile": str(data.get("narrator_profile") or "").strip()[:80],
+        }
+        try:
+            ts = int(data.get("target_seconds") or 0)
+            out["target_seconds"] = ts if 0 < ts <= 600 else 0
+        except (TypeError, ValueError):
+            out["target_seconds"] = 0
+        return out
+    except Exception as e:
+        print(f"[Canvas] plan suggestions skipped ({e})")
+        return {}
