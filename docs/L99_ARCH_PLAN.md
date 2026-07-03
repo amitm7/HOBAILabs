@@ -35,6 +35,7 @@
 | S23 | *(same logs)* Safety **Gate B2 vision QC silently skipped** — jpeg/png media-type mismatch in the API call (image is PNG, declared JPEG) | ✅ fixed (B1) |
 | S24 | Per-frame **static image overlays** before Final Cut — speaker insets, memory/flashback panels, comic thought/emotion devices, operator-sized/placed | 📋 planned → **T14** — see `docs/FRAME_COMPOSER_PLAN.md` (red-teamed; presets-only v1, PIL+ffmpeg, zero model spend) |
 | S25 | Proper **language choice** for the story (Hindi etc.) | 📋 planned → **T13** — see `docs/FRAME_COMPOSER_PLAN.md` Part B (author-in-language + version-after-render flows; fonts, voices, mandatory translated-script review gate) |
+| S26 | **Library section** — a folder per story where the operator can browse and DOWNLOAD every asset that was created (portraits, keyframes, clips, storyboard panels, music, final cuts) | 📋 planned → **T15** — assets already exist on disk per run dir and `/export/<run_id>` zip already ships; the gap is purely the browsing surface |
 
 ---
 
@@ -84,7 +85,20 @@ Also observed (not yet incident-causing): **canvas state read-modify-write races
 - ✅ **T12 · Motion presets for action beats** — SHIPPED: physics negatives in `DEFAULT_KLING_NEGATIVE` (floating/hovering/sliding/unnatural gravity) + keyword-routed presets (strain/kneel/walk/rise-divine); operator `motion_override` always wins; ambient default preserved. *Verified offline: routing, override precedence, default intact.*
 - ✅ **T4 · Per-character voices** — SHIPPED (pulled forward from P1): `voice_id` on the character sheet (dropdown per cast row, stock voices only), `_canvas_render_data` builds `voice_map`, VO track resolves per-frame via the pre-existing `cast.voice_for_frame`. *Verified offline: bhima/hanuman voices resolve, unassigned → narrator.*
 
-### P1c — repurposing & enrichment (S24/S25, planned 2026-07-03)
+### P1c — repurposing & enrichment (S24/S25/S26, planned 2026-07-03)
+- **T15 · Story Asset Library** *(S-M)* — a **📚 Library** page: list of stories (canvas
+  title, date, shot count, thumbnail) → per-story asset browser grouped by type —
+  **Characters** (portraits), **Key Frames** (stills incl. upright/restored/upscaled),
+  **Clips**, **Storyboard panels**, **Audio** (music bed / VO), **Final cuts** (incl.
+  language versions when T13 lands). Each asset: thumbnail, filename, size, ⬇ download;
+  per-story "⬇ Download all" reuses the existing `/export/<run_id>` zip. Backend = one
+  read-only listing endpoint walking `RUNS_DIR/<canvas_id>/` + the linked render dir
+  (path-confined via `_path_allowed`, served via existing `/media`). Zero model spend,
+  zero pipeline changes. *Red-team notes:* (a) don't list half-written files — filter by
+  mtime-stable + min size; (b) render dirs can hold superseded takes — group by frame_id,
+  newest first, older takes collapsed (synergy with T5 take history); (c) deletion is NOT
+  in v1 (the canvas 🗑 already deletes whole runs; per-asset delete invites cache
+  corruption).
 - **T13 · Language versions** *(M + config)* — language-first authoring AND
   version-after-render repurposing (same clips/music, new captions+VO); Noto serif
   fonts per script; mandatory translated-script review gate. `docs/FRAME_COMPOSER_PLAN.md` Part B.
@@ -114,6 +128,50 @@ Also observed (not yet incident-causing): **canvas state read-modify-write races
 - **T7 uncanny/cost risk (highest of any ticket):** lip-synced mythological faces can *lower* perceived quality below the no-lipsync baseline while costing the most. → Hard cap (3 shots), dev-tier preview mandatory before prod lip-sync, and a kill criterion: if 2 consecutive stories ship 0 lip-sync shots after preview, deprioritize T7. 
 - **Plan-level bias check:** this plan over-weights last-72h incidents (recency bias) and under-weights unaudited areas (auth, path traversal, test coverage). → Explicitly scheduled as a separate security-review loop rather than pretending this pass cleared them.
 - **Sequencing check:** is P0 really before Hanuman? T2 yes (more async features = growing race window). T1 arguably parallel — Hanuman can start on Dev tier today; T1 must land before the *CEO-facing* comparison render. → Sequencing: T2 → (Hanuman Dev iterations ∥ T1) → T3/T4/T5 → Hanuman Prod + comparison.
+
+## 4b. MASTER EXECUTION ORDER (2026-07-03 — three-role scoring: CEO × Product × VP-Eng, value ÷ effort)
+
+Single source of truth going forward; supersedes per-section ordering. Inputs: this plan +
+`docs/L99_EXECUTION_AUDIT.md` (A-actions) + `docs/FRAME_COMPOSER_PLAN.md` (T13/T14) + owner asks.
+
+**NOW (this week, order strict):**
+| # | Item | Effort | Why it wins the value/effort ratio |
+|---|---|---|---|
+| 1 | **A0 · Commit the working tree** | XS | CEO: the week's entire value is unprotected. Nothing outranks not-losing-it. |
+| 2 | **A1 · Doc-truth pass** (BRAND_PLAN header, PARITY_BACKLOG refresh, Status: headers) — skills/CLAUDE.md/audit portions DONE | XS | Eng: audits/agents mislead until docs stop lying. |
+| 3 | **A2 · Route the dead story-review gate** (module already built+tested) | S | Product: a pre-spend quality gate at zero build cost — it exists, wire it. |
+| 4 | **A3 · C1 cast-before-match reorder + description-cache bump** | S | Product/moat: role-blind matching is a core-quality defect in the REAL-story flow (HOB's actual business). |
+| 5 | **T3 · Plan-time auto-fill** (world/length/voice, fill-if-empty) | S | CEO: removes the "needs Amit's prompting skill" dependency — the succession/SaaS story. |
+| 6 | **T10 · Screenshot smoke harness** | S | Eng: every UI regression this week was caught by hand; automate before more UI work lands. |
+
+**NEXT (feature block, order strict — canvas-first per owner 2026-07-03):**
+| # | Item | Effort | Rationale |
+|---|---|---|---|
+| 7 | **T13 · Language versions** (fonts → flow → voices) | M | CEO: the single biggest value multiplier — 1 story → N language reels at caption+VO cost. Product: mandatory-review gate keeps trust. |
+| 8 | **T15 · Story Asset Library** (📚 per-story browse + download) | S-M | Product: every generated asset becomes reusable/handable to editors & social team; zero spend, mostly UI over existing disk layout + `/export`. |
+| 9 | **T5 · Take history + regenerate-from-prompt** | M | Product: stops losing paid-for good takes; honest iteration. Feeds T15 (takes browsable). |
+| 10 | **T14 · Frame Composer v1** (speaker chips / memory panels / bubbles) | M | Product: HOB-native storytelling devices, zero model spend, differentiator galleri5 lacks. |
+| 11 | **T6 · Remotion caption wiring** | M | Product: typography ceiling (JioStar look). After T13 so the font work lands once. |
+| — | **Ops (parallel): S3 artifact backup (T0.1/T0.6)** | S | Eng: data-loss exposure grows with every render — and T15 makes the library worth protecting. |
+
+*Canvas-centricity note (owner-confirmed):* A2/A3 in NOW are the only Story-mode/CLI items,
+kept solely because they're S-effort engine-wide wins; every feature ticket (T3, T5, T6,
+T13, T14, T15) is canvas-first.
+
+**DECISION-GATED (owner call, then slot into NOW if CEO content is planned):**
+- **A4 · CEO-likeness enforcement trio** — 5.2 script moderation (S) → 5.3 photo_spec flip on real-face edit (M) → 5.1 provenance burn-in (M). If no CEO/partner content is planned, mark CEO_LIKENESS_PLAN `Status: BLOCKED` instead — but it must be one or the other, never silently open.
+
+**LATER:** T9 theme scoping (S-M) · T7 selective lip-sync (L, kill-criterion stands) · T8 beat→asset ladder (L).
+
+**DEFERRED — with explicit revisit triggers (not forgotten):**
+| Item | Effort | Trigger to revisit |
+|---|---|---|
+| **LoRA-per-character** (AI_FICTION P3 — owner-flagged 2026-07-03) | L (GPU training infra + per-character train cost/latency) | If, AFTER the Hanuman prod rerun with locked portraits + T11 invariants + the B2 identity fix, face consistency still fails on ≥~30% of a character's shots — OR when a recurring multi-episode series character becomes a product need. Until then, ref-conditioning is the cheaper 80%. |
+| CLIP embeddings / top-K matching (P4/C5/STR-7) | L | Asset library grows past what LLM matching handles (~hundreds of assets/story) |
+| Batch production mode | M | A second daily-volume operator exists |
+| Multi-platform reframe | M | A platform other than 9:16/16:9/1:1 is actually requested |
+| Virality scoring (wire real predictor or delete placeholder) | M | Performance-feedback data accumulates enough to validate any predictor |
+| Redis/queue (INFRA Phase 1) | L | Its own documented trigger: >1 worker or >1 host |
 
 ## 5. Verify criteria (per ticket, summarized)
 Every ticket: compile/`node --check` → offline unit (the new logic in isolation) → live smoke on 7860 → headless-Chrome visual check (T10 harness once it exists) → docs-sync (LLD + guides + this plan's checkboxes) — then red-team the diff.

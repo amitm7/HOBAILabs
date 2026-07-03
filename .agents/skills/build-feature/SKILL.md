@@ -128,3 +128,24 @@ Report results honestly: if a step was skipped (no key), say so. Don't claim
   verbatim, placed by the creator (BRAND_PLAN §5).
 - Don't serve arbitrary filesystem paths — `/media` and asset paths are confined
   to `RUNS_DIR` / `ASSETS_BROWSE_ROOT` (`web_app._path_allowed`).
+
+## Conventions added 2026-07-03 (L99 hardening — see docs/L99_ARCH_PLAN.md)
+
+12. **Redo ≠ cache hit.** Every operator-facing "Generate/Re-roll" affordance MUST accept
+    a `variant` (or `force`) that participates in the cache key: `variant=0` = reuse a
+    prior identical result (bulk flows); any other value = fresh sample. Content-hash
+    caches guarantee "same input, no re-spend" — operators expect "click = new sample".
+    (The portrait-redo bug was this convention not existing.)
+13. **Degradation must be reported, never silent.** Any new best-effort/fallback site
+    calls `agents/degradation.report(step, severity, msg)` (`info` = quality-neutral
+    substitution, `warn` = output may differ from intent, `alert` = operator must see
+    before judging output). The graceful-degradation rule (#4) is only safe WITH this —
+    a silent fallback is how the silent-reel and lost-identity incidents shipped.
+14. **Plan docs carry a dated `Status:` header** (PLAN / IN-PROGRESS / PARTIAL / SHIPPED /
+    BLOCKED), updated in the same unit of work as the code — same hard gate as rule 11.
+    A stale plan doc misleads audits and agents (see docs/L99_EXECUTION_AUDIT.md §2).
+15. **Canvas is a light-themed page on a dark-theme global stylesheet.** Any new canvas
+    UI element must set its own colors/display explicitly (or use the page's scoped
+    tokens); `[hidden]{display:none!important}` is load-bearing — don't remove it.
+16. **Long-running jobs write state via `_canvas_mutate` (narrow merge), never by saving
+    a state object they've held across work** — wholesale saves clobber operator edits.

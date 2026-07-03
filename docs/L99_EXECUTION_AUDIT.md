@@ -91,10 +91,16 @@ canvas JS (~1.4k lines), pipeline end-to-end, UI regressions (found by hand-scre
 this week). No CI gate — tests only run when someone remembers. T10 (screenshot harness)
 + a pre-commit pytest hook are the cheap fixes.
 
-### 🟡 F8 · Repo hygiene
-`memory.md` (pointer-only) and `SKILL.md` (generic template, wrong home) are strays;
-`CLAUDE_PLAN.md` is informational, fine. 17 plan docs with overlapping items and no single
-index — L99_ARCH_PLAN §0 ledger is now the de-facto index; keep it that way.
+### 🟡 F8 · Repo hygiene — RESOLVED 2026-07-03
+- `memory.md`: **KEPT** — on inspection it's an intentional compatibility pointer to
+  CLAUDE.md (the agent's original "remove" call was wrong; corrected here).
+- `SKILL.md`: **MOVED** → `docs/reference/AI_REEL_SKILL_REFERENCE.md` (generic unmapped
+  template; even referenced a FastAPI architecture this repo doesn't have).
+- `build-feature` skill (both copies, kept in sync): **UPDATED** with conventions 12–16
+  (variant/redo cache semantics, degradation-report duty, plan-doc Status headers,
+  canvas theme-scope rule, `_canvas_mutate` job-write rule).
+- 17 plan docs with overlapping items and no single index — L99_ARCH_PLAN §0 ledger is
+  now the de-facto index; keep it that way.
 
 ## 4. Consolidated NOT-BUILT list (deduplicated, decision per item)
 
