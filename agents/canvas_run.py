@@ -751,6 +751,9 @@ def public_state(state: dict) -> dict:
         # T1 Degradation Ledger: the last render's quality receipt — every fallback/
         # QC event that fired ({step, severity: info|warn|alert, msg, ts}).
         "render_report": state.get("render_report", []),
+        # A2 story-review contract gate: deterministic plan-time warnings
+        # ({id, severity, frame_id, message, fix}) — shown in the board report.
+        "plan_review": state.get("plan_review", []),
     }
 
 

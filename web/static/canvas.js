@@ -734,7 +734,14 @@
     updateCostBanner(canvas);
     // A silent finished reel is a defect, not a footnote — show it in the error strip.
     if (canvas.audio_warning) err("🔇 " + canvas.audio_warning);
-    renderReport(canvas.render_report || []);
+    // One report panel, two sources: plan-time contract warnings (A2) + render-time
+    // degradation events (T1). Both are "things the operator should know before judging".
+    const planEvents = (canvas.plan_review || []).map((w) => ({
+      step: "story-review",
+      severity: w.severity === "warn" ? "warn" : "info",
+      msg: `${w.frame_id || ""}: ${w.message || ""}${w.fix ? " → " + w.fix : ""}`,
+    }));
+    renderReport([...(canvas.render_report || []), ...planEvents]);
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
   }
 

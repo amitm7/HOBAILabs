@@ -421,6 +421,13 @@ def api_canvas_plan():
             state["characters"] = canvas_run.derive_characters(state)
         except Exception as e:
             print(f"[Canvas] auto cast derivation skipped ({e})")
+    # Story-review contract gate at Plan time (A2): free deterministic checks on the
+    # fresh shot list; warnings ride public_state.plan_review into the board report.
+    try:
+        from agents.story_review import contract_validate
+        state["plan_review"] = contract_validate(state.get("frames") or []).get("warnings", [])
+    except Exception as e:
+        print(f"[StoryReview] canvas plan gate skipped ({e})")
     _canvas_save(run_id, state)
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
@@ -1832,6 +1839,14 @@ def story_intake():
         tone=data.get("tone", ""),
         audience=data.get("audience", ""),
     )
+    # STORY_REVIEW P2 (audit action A2): the contract gate existed with passing tests
+    # but was never routed — run it on every draft so known defect classes (symbolic-
+    # person mismatch, missing pivot quote, truncated notes…) surface BEFORE any spend.
+    try:
+        from agents.story_review import contract_validate
+        draft["review"] = contract_validate(draft.get("frames") or [])
+    except Exception as e:
+        print(f"[StoryReview] intake gate skipped ({e})")
     return jsonify(draft)
 
 
