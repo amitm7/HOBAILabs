@@ -717,6 +717,8 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
         "transition": state.get("transition") or "crossfade",   # crossfade | cut | …
         "session_id": render_id, "operator_id": operator,
         "likeness_consent": {"face": True, "voice": True}, "canvas_run_id": "",
+        # T14: characters ride along so overlay "@char:<id>" specs resolve to portraits.
+        "characters": state.get("characters", []),
         # T4 per-character voices: cast-sheet voice assignments, resolved per spoken
         # frame by cast.voice_for_frame (speaker_id → voice). Narrator default wins
         # for anyone unassigned. Stock voices only — cloning stays behind governance.
@@ -1974,6 +1976,124 @@ def api_canvas_restill(run_id: str, operator: str):
         except Exception:
             pass
         return jsonify({"error": str(e)}), 500
+
+
+_OV_KINDS = {"speaker", "memory", "thought", "sticker"}
+_OV_STYLES = {"chip", "polaroid", "rounded", "bubble", "sticker"}
+_OV_POS = {"tl", "tc", "tr", "ml", "mr", "bl", "bc", "br"}
+
+
+def _clean_overlays(raw, state) -> list[dict]:
+    """Validate + clamp an overlays list (T14): ≤2, enum fields only, images must be
+    path-allowed or @char refs that exist."""
+    out = []
+    for o in (raw or [])[:2]:
+        if not isinstance(o, dict):
+            continue
+        img = str(o.get("image") or "").strip()
+        if img.startswith("@char:"):
+            cid = img[6:]
+            if not any(c.get("id") == cid and c.get("ref_path")
+                       for c in state.get("characters") or []):
+                continue
+        elif img and not (_path_allowed(img) and os.path.exists(img)):
+            continue
+        kind = o.get("kind") if o.get("kind") in _OV_KINDS else "memory"
+        out.append({
+            "id": str(o.get("id") or f"ov{len(out)+1}"),
+            "kind": kind,
+            "image": img,
+            "style": o.get("style") if o.get("style") in _OV_STYLES
+                     else ("chip" if kind == "speaker" else "sticker" if not img else "rounded"),
+            "pos": o.get("pos") if o.get("pos") in _OV_POS else "tr",
+            "size": o.get("size") if o.get("size") in ("s", "m", "l") else "m",
+            "when": o.get("when") if o.get("when") in ("all", "first-half", "second-half") else "all",
+        })
+    return out
+
+
+@app.route("/api/canvas/<run_id>/overlays", methods=["POST"])
+@auth.require_operator()
+def api_canvas_overlays(run_id: str, operator: str):
+    """T14 — set one shot's overlays (≤2, presets only). Free; applied at Final Cut."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    fid = (body.get("frame_id") or "").strip()
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == fid), None)
+    if not f:
+        return jsonify({"error": "Unknown shot"}), 400
+    f["overlays"] = _clean_overlays(body.get("overlays"), state)
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "overlays": f["overlays"],
+                    "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/overlay-preview", methods=["POST"])
+@auth.require_operator()
+def api_canvas_overlay_preview(run_id: str, operator: str):
+    """T14 — free PIL preview: the shot's still with its overlays composited, so the
+    operator approves the look BEFORE any clip pass."""
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    fid = (body.get("frame_id") or "").strip()
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == fid), None)
+    if not f:
+        return jsonify({"error": "Unknown shot"}), 400
+    ovs = _clean_overlays(body.get("overlays"), state) if body.get("overlays") is not None \
+        else (f.get("overlays") or [])
+    still = f.get("visual_path") or ""
+    if not (still and os.path.exists(still)):
+        return jsonify({"error": "No key frame yet — generate Key Frames first."}), 400
+    from agents import overlays as overlays_mod
+    from PIL import Image
+    run_dir = str(RUNS_DIR / run_id)
+    od = os.path.join(run_dir, "overlays")
+    os.makedirs(od, exist_ok=True)
+    base = Image.open(still).convert("RGBA")
+    W, H = base.size
+    for ov in ovs[:2]:
+        img = overlays_mod._resolve_image(ov.get("image", ""), state.get("characters"))
+        px = max(64, int(W * overlays_mod._SIZES.get(ov.get("size", "m"), 0.26)))
+        tile_p = overlays_mod.style_overlay(img, ov.get("style") or "rounded", px, od)
+        tile = Image.open(tile_p).convert("RGBA")
+        x, y = overlays_mod._xy(ov.get("pos", "tr"), W, H, *tile.size)
+        base.alpha_composite(tile, (x, y))
+    out = os.path.join(od, f"preview_{fid}.png")
+    base.convert("RGB").save(out, quality=90)
+    return jsonify({"frame_id": fid, "preview": f"/media?path={out}", "overlays": ovs})
+
+
+@app.route("/api/canvas/<run_id>/speaker-chips", methods=["POST"])
+@auth.require_operator()
+def api_canvas_speaker_chips(run_id: str, operator: str):
+    """T14 — one-click toggle: a speaker chip on every non-narrator spoken shot
+    (uses each speaker's locked portrait). enabled=false removes ONLY chips."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    enabled = bool((request.json or {}).get("enabled", True))
+    chars = {c.get("id"): c for c in state.get("characters") or []}
+    n = 0
+    for f in state.get("frames", []):
+        ovs = [o for o in (f.get("overlays") or []) if o.get("kind") != "speaker"]
+        sid = f.get("speaker_id") or ""
+        if enabled and sid and sid != "narrator" and chars.get(sid, {}).get("ref_path") \
+                and (f.get("caption") or "").strip() and len(ovs) < 2:
+            ovs.append({"id": "ovspk", "kind": "speaker", "image": f"@char:{sid}",
+                        "style": "chip", "pos": "br", "size": "s", "when": "all"})
+            n += 1
+        f["overlays"] = ovs
+    state["board"] = canvas_run.board_cards(state["frames"])
+    _canvas_save(run_id, state)
+    return jsonify({"enabled": enabled, "chipped": n,
+                    "canvas": canvas_run.public_state(state)})
 
 
 @app.route("/api/canvas/<run_id>/chat", methods=["POST"])
@@ -3882,6 +4002,33 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         output_path = str(run_dir / "output.mp4")
         # A post-pass is needed for a brand overlay OR an IP watermark; otherwise
         # assemble straight to the final output (one encode).
+        # T14 Frame Composer: composite per-shot overlays (speaker chips / memory
+        # insets / bubbles / stickers) onto the clips — cached by clip+spec so an
+        # overlay edit re-composites in seconds and never re-renders the base clip.
+        _ov_frames = {f["frame_id"]: f for f in frames if f.get("overlays")}
+        if _ov_frames:
+            from agents import overlays as overlays_mod
+            _chars = data.get("characters") or []
+            for c in clips:
+                f = _ov_frames.get(c.get("segment_id"))
+                if not f:
+                    continue
+                try:
+                    key = overlays_mod.overlays_cache_key(c["clip_path"], f["overlays"], _chars)
+                    out = str(run_dir / "overlays" / f"composited_{f['frame_id']}_{key}.mp4")
+                    if not (os.path.exists(out) and os.path.getsize(out) > 10_000):
+                        os.makedirs(os.path.dirname(out), exist_ok=True)
+                        overlays_mod.composite_clip(c["clip_path"], f["overlays"], out,
+                                                    run_dir=str(run_dir), characters=_chars,
+                                                    duration=c.get("actual_duration", 0.0))
+                    c["clip_path"] = out
+                    print(f"[Composer] {f['frame_id']}: {len(f['overlays'])} overlay(s) composited")
+                except Exception as e:
+                    from agents import degradation
+                    degradation.report("overlays", "warn",
+                                       f"{f['frame_id']}: overlay composite failed ({str(e)[:80]}) "
+                                       f"— shot rendered WITHOUT its overlays")
+
         # CEO_LIKENESS §5.1 (audit A4): when the reel contains an AI likeness of a real
         # person, the disclosure must be BURNED INTO the video — a provenance.json
         # sidecar is invisible to the audience (an undisclosed deepfake, legally).

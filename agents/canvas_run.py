@@ -157,6 +157,7 @@ def board_cards(frames: list[dict]) -> list[dict]:
         real_path = (f.get("visual_path") or f.get("photo_spec") or "") if kind == ASSET_REAL else ""
         cards.append({
             "frame_id":   f.get("frame_id"),
+            "overlays":   f.get("overlays") or [],   # T14 Frame Composer spec per shot
             "caption":    f.get("caption", ""),
             "shot_size":  f.get("shot_size") or "",
             "camera":     scene.get("camera_angle") or "",

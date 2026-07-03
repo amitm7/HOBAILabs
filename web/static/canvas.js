@@ -541,11 +541,56 @@
             <button class="btn-secondary ai-gen" data-frame="${fid}">🎭 Use AI generic</button>
           </div>
         </div>
+
+        <div style="border-top:1px solid #f1f5f9;padding-top:10px">
+          <div class="inspector-label" style="margin-bottom:6px">Overlays — comic devices (max 2, applied at Final Cut)</div>
+          <div id="ov-list" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+            ${(c.overlays || []).map((o, i) => `
+              <span style="background:#eef2f7;border:1px solid #e2e8f0;border-radius:999px;padding:3px 8px;font-size:10px">
+                ${o.kind} · ${o.style} · ${o.pos}/${o.size}
+                <a href="#" class="ov-x" data-frame="${fid}" data-i="${i}" style="color:#dc2626;text-decoration:none;font-weight:700;margin-left:4px">✕</a>
+              </span>`).join("") || `<span class="muted">none</span>`}
+          </div>
+          ${(c.overlays || []).length < 2 ? `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px">
+            <select id="ov-kind" class="fid-sel"><option value="memory">📷 Memory inset</option><option value="speaker">🗣 Speaker chip</option><option value="thought">💭 Thought bubble</option><option value="sticker">✨ Thinking sticker</option></select>
+            <select id="ov-src" class="fid-sel">
+              <option value="">(no image — sticker)</option>
+              ${((lastCanvas && lastCanvas.characters) || []).filter((ch) => ch.ref_path)
+                 .map((ch) => `<option value="@char:${ch.id}">👤 ${escapeHtml(ch.role || ch.name || ch.id)}</option>`).join("")}
+            </select>
+            <select id="ov-style" class="fid-sel"><option value="rounded">Rounded</option><option value="polaroid">Polaroid</option><option value="chip">Circle chip</option><option value="bubble">Thought bubble</option></select>
+            <select id="ov-pos" class="fid-sel"><option value="tr">Top right</option><option value="tl">Top left</option><option value="tc">Top centre</option><option value="ml">Mid left</option><option value="mr">Mid right</option><option value="bl">Bottom left</option><option value="br">Bottom right</option></select>
+            <select id="ov-size" class="fid-sel"><option value="s">Small</option><option value="m" selected>Medium</option><option value="l">Large</option></select>
+            <select id="ov-when" class="fid-sel"><option value="all">Whole shot</option><option value="first-half">First half</option><option value="second-half">Second half</option></select>
+          </div>
+          <div class="inspector-actions">
+            <button class="btn-secondary ov-preview" data-frame="${fid}">👁 Preview on still</button>
+            <button class="btn-primary ov-add" data-frame="${fid}">＋ Add overlay</button>
+          </div>
+          <img id="ov-preview-img" style="width:100%;border-radius:8px;margin-top:6px;border:1px solid #e2e8f0" hidden>
+          ` : ""}
+        </div>
       </div>
     `;
-    
+
     $("inspector-content").innerHTML = html;
     loadTakes(fid);   // T5: previous clips for this shot, restorable without re-spend
+  }
+
+  // ── T14 Frame Composer: build the overlay spec from the inspector form ────────
+  function ovFromForm() {
+    return {
+      kind: $("ov-kind").value, image: $("ov-src").value,
+      style: $("ov-style").value, pos: $("ov-pos").value,
+      size: $("ov-size").value, when: $("ov-when").value,
+    };
+  }
+  async function ovSave(fid, overlays) {
+    const d = await api(`/api/canvas/${runId}/overlays`, { frame_id: fid, overlays });
+    render(d.canvas);
+    selectFrame(fid);
+    $("match-hint").textContent = "✓ overlays saved — they composite onto the clip at Final Cut";
   }
 
   // ── T5 take history: list + restore previous clips (a good take is never lost) ──
@@ -1158,7 +1203,42 @@
     const rr = ev.target.closest(".revert-real");
     if (rr) { ev.preventDefault(); revertReal(rr.getAttribute("data-frame")); return; }
     const fs = ev.target.closest(".fid-suggest");
-    if (fs) { ev.preventDefault(); setFidelity(fs.getAttribute("data-frame"), fs.getAttribute("data-rung")); }
+    if (fs) { ev.preventDefault(); setFidelity(fs.getAttribute("data-frame"), fs.getAttribute("data-rung")); return; }
+    // T14 Frame Composer controls
+    const oa = ev.target.closest(".ov-add");
+    if (oa) {
+      ev.preventDefault();
+      const fid2 = oa.getAttribute("data-frame");
+      const card = (lastCanvas.board || []).find((x) => x.frame_id === fid2) || {};
+      ovSave(fid2, [...(card.overlays || []), ovFromForm()]).catch((e) => err(e.message));
+      return;
+    }
+    const ox = ev.target.closest(".ov-x");
+    if (ox) {
+      ev.preventDefault();
+      const fid2 = ox.getAttribute("data-frame");
+      const idx = parseInt(ox.getAttribute("data-i"), 10);
+      const card = (lastCanvas.board || []).find((x) => x.frame_id === fid2) || {};
+      const ovs = (card.overlays || []).filter((_, i) => i !== idx);
+      ovSave(fid2, ovs).catch((e) => err(e.message));
+      return;
+    }
+    const op = ev.target.closest(".ov-preview");
+    if (op) {
+      ev.preventDefault();
+      const fid2 = op.getAttribute("data-frame");
+      const card = (lastCanvas.board || []).find((x) => x.frame_id === fid2) || {};
+      op.disabled = true;
+      api(`/api/canvas/${runId}/overlay-preview`,
+          { frame_id: fid2, overlays: [...(card.overlays || []), ovFromForm()] })
+        .then((d) => {
+          const img = $("ov-preview-img");
+          if (img) { img.src = d.preview + "&t=" + Date.now(); img.hidden = false; }
+        })
+        .catch((e) => err(e.message))
+        .finally(() => { op.disabled = false; });
+      return;
+    }
   }
 
   $("board").addEventListener("click", handleBoardOrInspectorClick);
@@ -1213,6 +1293,24 @@
 
   $("board").addEventListener("change", handleBoardOrInspectorChange);
   $("inspector").addEventListener("change", handleBoardOrInspectorChange);
+
+  // T14: one-click speaker chips across every dialogue shot.
+  $("chips-btn") && $("chips-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    const btn = $("chips-btn");
+    const enable = btn.dataset.on !== "1";
+    err(""); btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/speaker-chips`, { enabled: enable });
+      btn.dataset.on = enable ? "1" : "";
+      btn.textContent = `🗣 Speaker chips: ${enable ? "on" : "off"}`;
+      $("match-hint").textContent = enable
+        ? `🗣 chips on ${d.chipped} dialogue shot(s) — lock cast faces first if 0`
+        : "🗣 speaker chips removed";
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+    finally { btn.disabled = false; }
+  });
 
   // Auto-match a whole folder of the operator's real photos/videos to the shots
   // (the moat: real media, not synthetic portraits of a real person).
