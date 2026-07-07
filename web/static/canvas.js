@@ -107,6 +107,15 @@
       const opt = [...$("length").options].find((o) => o.value === String(sug.target_seconds));
       if (opt) { $("length").value = String(sug.target_seconds); }
     }
+    // Reel-level mood (auto-fill slice 1): saved value wins; else ✨-fill the
+    // suggestion into the EMPTY field only. Per-shot emotion stays on the cards.
+    if ($("mood") && document.activeElement !== $("mood")) {
+      if (canvas.mood) { $("mood").value = canvas.mood; }
+      else if (sug.mood && !$("mood").value.trim()) {
+        $("mood").value = sug.mood;
+        $("mood").title = "✨ suggested from your story — edit freely";
+      }
+    }
     _settingsReady = true;
   }
   $("world-save") && $("world-save").addEventListener("click", async () => {
@@ -134,14 +143,15 @@
     };
     try {
       const d = await api(`/api/canvas/${runId}/settings`,
-        { caption_style, orientation: $("orientation").value, ip: $("ip").value });
+        { caption_style, orientation: $("orientation").value, ip: $("ip").value,
+          mood: $("mood") ? $("mood").value : "" });
       $("settings-hint").textContent = "✓ saved";
       setTimeout(() => { $("settings-hint").textContent = ""; }, 1500);
       if (d.canvas) render(d.canvas);  // orientation may re-lock stages or invalidate stills
     } catch (e) { err(e.message); }
   }
   ["cap-enabled", "cap-position", "cap-font", "cap-size", "cap-color", "cap-lines",
-   "cap-engine", "orientation", "ip"]
+   "cap-engine", "orientation", "ip", "mood"]
     .forEach((id) => { const el = $(id); if (el) el.addEventListener("change", saveSettings); });
   // Populate the IP/watermark dropdown from the server (HOB properties).
   (async function loadIPs() {

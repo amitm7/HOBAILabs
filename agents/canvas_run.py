@@ -819,6 +819,12 @@ def public_state(state: dict) -> dict:
         # A2 story-review contract gate: deterministic plan-time warnings
         # ({id, severity, frame_id, message, fix}) — shown in the board report.
         "plan_review": state.get("plan_review", []),
+        # Item 8 slideshow-risk gate (plan_qc): {total: 0-5, risk: low|medium|high} —
+        # the board's pre-spend "will this feel like a slideshow?" chip.
+        "plan_qc": state.get("plan_qc", {}),
+        # Reel-level mood (auto-fill slice 1): saved operator value; the mood input
+        # ✨-fills from suggestions.mood only while this is empty.
+        "mood": state.get("mood", ""),
         # T3 plan-time auto-fill: SUGGESTED world/length/voice derived from the brief.
         # The UI fills only empty fields (marked ✨); nothing applies without the operator.
         "suggestions": state.get("suggestions", {}),
@@ -856,13 +862,18 @@ def plan_suggestions(brief: str, story_type: str = "real") -> dict:
             "{\"world_style\": \"<art direction, <=12 words, e.g. 'epic cinematic photorealism, warm golden filmic grade'>\",\n"
             " \"world_setting\": \"<the story's world/place/era, <=12 words>\",\n"
             " \"target_seconds\": <int seconds ONLY if the brief explicitly states a length, else 0>,\n"
-            " \"narrator_profile\": \"<voice direction, <=8 words, e.g. 'deep warm unhurried male, reverent'>\"}"
-        )}], json_mode=True, max_tokens=200, model_tier="fast")
+            " \"narrator_profile\": \"<voice direction, <=8 words, e.g. 'deep warm unhurried male, reverent'>\",\n"
+            " \"mood\": \"<overall emotional tone, <=6 words, e.g. 'bittersweet, quietly hopeful'>\"}"
+        )}], json_mode=True, max_tokens=220, model_tier="fast")
         data = llm.json_loads_lenient(res) or {}
         out = {
             "world_style": str(data.get("world_style") or "").strip()[:120],
             "world_setting": str(data.get("world_setting") or "").strip()[:120],
             "narrator_profile": str(data.get("narrator_profile") or "").strip()[:80],
+            # Reel-level mood suggestion (auto-fill slice 1). Per-shot EMOTION stays
+            # operator-owned (owner carve-out); like every suggestion the UI fills the
+            # field only when EMPTY, marked ✨ — the operator always decides.
+            "mood": str(data.get("mood") or "").strip()[:60],
         }
         try:
             ts = int(data.get("target_seconds") or 0)

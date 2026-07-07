@@ -93,5 +93,6 @@ pytest tests/                                         # tests
 - `GUIDE.md` — full user guide (behaviour source of truth).
 - `docs/HLD.md` / `docs/LLD.md` — high- / low-level design.
 - `docs/PRODUCT_IDEAS.md` + `ROADMAP.md` — backlog + roadmap.
-- `docs/BRAND_PLAN.md`, `docs/MODE3_PLAN.md`, `docs/SCALE_PLAN.md`, `docs/WORK_PLAN.md` — plans.
+- `docs/BRAND_PLAN.md`, `docs/MODE3_PLAN.md`, `docs/SCALE_PLAN.md`, `docs/WORK_PLAN.md`,
+  `docs/PRESENTER_PLAN.md` (S29 podcast/presenter format — agreed, not started) — plans.
 - `.agents/skills/build-feature/SKILL.md` — how to build & verify a change here.

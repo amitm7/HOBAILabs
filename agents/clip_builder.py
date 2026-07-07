@@ -706,9 +706,15 @@ def build_clips(assignments: list[dict], temp_dir: str,
 
             except Exception as e:
                 print(f"[ClipBuilder] {prov} poll failed for {item['segment_id']} ({e}) — Ken Burns fallback")
+                from agents import degradation
+                degradation.report("video", "warn",
+                                   f"{item['segment_id']}: {prov} failed — Ken Burns fallback ({str(e)[:80]})",
+                                   frame_id=item["segment_id"])
                 _kenburns(item["_media"], item["actual_duration"],
                           item["_clip_path"], width, height, fps)
-                return {**item, "clip_path": item["_clip_path"]}
+                # Mark the truth for the decision log / credential: this clip was NOT
+                # made by _model_id — it degraded to a Ken Burns pan of the still.
+                return {**item, "clip_path": item["_clip_path"], "_fallback": "kenburns"}
 
         # Throttle to the strictest concurrency among the models actually in use
         # (e.g. Higgsfield 4, Veo 2) so we never exceed a provider's limit.

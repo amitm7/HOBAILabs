@@ -213,6 +213,41 @@ def validate_likeness_consent(data: dict) -> list[str]:
     return missing
 
 
+def consent_evidence(data: dict) -> dict | None:
+    """The recorded consent trail for this subject+project, shaped for the
+    Content Credential's consent assertion (PROVENANCE_PLAN Slice B, Item 5).
+
+    Pure read. Returns None when no subject or no rows — the caller falls back
+    to the in-payload grant. Aggregates the DB rows so the credential carries
+    *evidence* (record ids, who confirmed, when) rather than a client-supplied
+    boolean: face/voice = any recorded grant; confirmed_by/confirmed_at from the
+    most recent row that granted anything.
+    """
+    subject = (data.get("subject_name") or "").strip()
+    if not subject:
+        return None
+    rows = _conn().execute(
+        "SELECT id, mode, confirmed_by, created_at, face, voice FROM consent_records "
+        "WHERE subject_key=? AND project_key=? ORDER BY id",
+        (subject, project_key(data)),
+    ).fetchall()
+    if not rows:
+        return None
+    latest = rows[-1]
+    return {
+        "subject": subject,
+        "face": any(r["face"] for r in rows),
+        "voice": any(r["voice"] for r in rows),
+        "confirmed_by": latest["confirmed_by"] or "",
+        "confirmed_at": int(latest["created_at"] or 0),
+        "mode": latest["mode"] or "story",
+        # String ids, deliberately: c2pa's CBOR encoder collapses an array of
+        # small ints into a byte string (round-trips as base64 garbage).
+        "record_ids": [str(r["id"]) for r in rows],
+        "source": "governance_db",
+    }
+
+
 def record_likeness_consent(data: dict, *, confirmed_by: str = "") -> int | None:
     """Persist a face/voice consent grant supplied in the request. Idempotent-ish:
     only writes the modalities both *needed* and *granted* in this payload."""

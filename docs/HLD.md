@@ -301,6 +301,11 @@ order-dependent (each depends on keys the previous wrote) but internally
   (`agents/content_credential.py`; external standard: C2PA via `c2pa-python`). Surfaced
   at `/credential/<run_id>` and in the export zip. Best-effort with a degradation-ledger
   warn on failure; one outbound RFC-3161 timestamp call per signing (`HOB_C2PA_TSA`).
+  The credential is *evidence-backed*: `source_media_review.json` (pre-generation sha256 +
+  probe of every real source file), `decisions.jsonl` (per-shot model/cache/fallback log,
+  merged into the per-frame rows), consent from the governance DB (`consent_evidence` —
+  record ids, who confirmed, when), and a jsonschema contract
+  (`schemas/provenance.schema.json`) that rejects path leaks at finalize.
 - **Font bundling.** Montserrat OFL TTFs bundled in `deploy/fonts/`, installed via
   Dockerfile + `fc-cache`. Satoshi is unlisted (commercial license) — drop-in only.
 - **IP/property watermarking.** Every reel can be tagged with one HOB IP (HOB Originals,

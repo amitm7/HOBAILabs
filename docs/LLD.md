@@ -45,6 +45,12 @@ agents/
                           + per-frame rows (classify_frames) feeding the C2PA credential
   content_credential.py   C2PA signing: embeds the provenance truth into output.mp4
                           (extractable: stdlib + c2pa-python only — see PROVENANCE_PLAN)
+  plan_qc.py              slideshow-risk scorer (Item 8): pure/deterministic 6-dimension
+                          score of the shot plan BEFORE spend; advisory plan_review gate
+  source_media_review.py  pre-generation hash+probe of every real source file →
+                          source_media_review.json (the "never AI-regenerated" evidence)
+  ../schemas/             provenance.schema.json — the credential's data contract
+                          (jsonschema-validated at finalize; HOB_SCHEMA_STRICT=1 raises)
   product_surface.py      SQLite stand-ins for assets, approvals, project versions,
                           + Studio identity library (talents, products) CRUD
   suggestions.py          fast-tier batch → camera/edit/note chips per frame
@@ -657,7 +663,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/products/<id>` | DELETE | Delete a product |
 | `/api/studio/plan` | POST | `shot_planner.plan(brief, scope, talent, product)` → editable `frames[]` |
 | `/canvas` | GET | Director Canvas board page (`canvas.html` + `canvas.js`) |
-| `/api/canvas/plan` | POST | `canvas_run.new_canvas(brief, …, story_type)` → new canvas (runs free Script stage); returns `run_id` + `public_state`. **`story_type`** = `real` (HOB — match/passthrough real media) \| `ai` (fiction — everything generated; UI hides the real-media folder tools, characters defined on the sheet). A mode flag into the shared engine (no fork); invalid → `real`. **Characters-first (AI stories):** when `story_type=ai`, Plan also runs `derive_characters` (free cast detection) so the sheet is populated before any spend; the board auto-renders it, a bulk "🎨 Generate all faces" drives `/character-portrait` per unlocked character (sequential, spend-gated each), and the Key Frames Generate button soft-warns (`confirm`) when non-narrator characters lack `ref_path` — warn-not-block, narrator excluded (voice-only). |
+| `/api/canvas/plan` | POST | `canvas_run.new_canvas(brief, …, story_type)` → new canvas (runs free Script stage); returns `run_id` + `public_state`. **`story_type`** = `real` (HOB — match/passthrough real media) \| `ai` (fiction — everything generated; UI hides the real-media folder tools, characters defined on the sheet). A mode flag into the shared engine (no fork); invalid → `real`. **Characters-first (ALL story types — auto-fill slice 1, was AI-only):** Plan runs `derive_characters` (free cast detection; tags `frames[].speaker_id`) so the sheet is populated before any spend — for real stories it's the anchor list for photo matching + consent; the board auto-renders it, a bulk "🎨 Generate all faces" drives `/character-portrait` per unlocked character (sequential, spend-gated each), and the Key Frames Generate button soft-warns (`confirm`) when non-narrator characters lack `ref_path` — warn-not-block, narrator excluded (voice-only). **Slideshow-risk gate (Item 8):** `plan_qc.score_plan(frames)` — 6 structural dimensions (repetition, motion/duration monotony, static ratio, caption wall, coverage), advisory only: warnings appended to `plan_review` as "Slideshow risk — …" with fixes, `{total, risk}` exposed as `public_state.plan_qc`, high risk also ledgered (`degradation.report("plan","warn",…)`). **Auto-fill carve-outs (owner):** music, per-shot image assignment, and per-shot emotion are never auto-filled; `plan_suggestions` now also returns a reel-level `mood`, consumed by the canvas `#mood` input (✨-fills only while empty; saved via `/settings` `mood` key, capped 60 chars, absent-key never clobbers; exposed as `public_state.mood`; threads into re-plans + the render payload). |
 | `/api/canvas/<run_id>/state` | GET | Current board state (`canvas_run.public_state`) |
 | `/api/canvas/<run_id>/advance` | POST (operator) | Run a stage. Free stages execute in-process; **paid stages return a per-stage cost + `check_spend_cap` result *before* any spend** (the anti-wallet-drain), then dispatch to the render pipeline. 409 if the stage is locked |
 | `/api/canvas/<run_id>/approve` | POST (operator) | Approve a finished stage → unlocks the next stage's Generate |
@@ -710,7 +716,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/clip/<run_id>/<frame_id>` | GET | Serve ONE finished clip for progressive reveal during a render |
 | `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
 | `/redo-motion` | POST | Rebuild one frame's motion from the approved still; returns a refreshed clip preview |
-| `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4` (C2PA-signed when signing succeeded), `edit_list.json`, `provenance.json`, `content_credential.json`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
+| `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4` (C2PA-signed when signing succeeded), `edit_list.json`, `provenance.json`, `content_credential.json`, `source_media_review.json`, `decisions.jsonl`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
 | `/performance/<run_id>` | POST | Post-publish feedback (Gap #3): `{views, likes, note}` for a finished run → `run_store.save()` writes `runs.performance_views`/`performance_likes` (nullable INT) / `performance_note` (TEXT) / `performance_by` (verified operator). 404 on unknown run; `get_json(silent=True)` + int coercion + note cap so a bad body never 500s; upsert. **Gated by `auth.require_operator`.** |
 | `/performance` | GET | Completed feedback loop (Gap #3): leaderboard (`run_store.list_performance()`, best-performing first) + roll-up summary. Gated. |
 | `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). Since the C2PA slice, the artifact carries a per-frame `frames` array (tier/face/voice/duration + effective start/end + real-source basename) — written provisionally at dispatch, **rewritten at finalize** in `_run_inner` from the RESOLVED frames + `frame_timecodes`. |
@@ -738,6 +744,27 @@ key), else a self-signed dev CA+leaf chain is generated once via openssl into `H
 **signing makes one outbound HTTP call** (fallback list `HOB_C2PA_TSA`, kill-switch
 `HOB_C2PA_DISABLED=1`). Artifacts: signed `output.mp4` (replaced atomically via temp +
 `os.replace`) + `content_credential.json`; both in the export zip; served by `/credential`.
+
+**Slice B (evidence layer, same plan).** (a) **Decision log:** `degradation.decision(stage,
+frame_id, model, …)` + `drain_decisions(run_id)` (companion channel to the ledger;
+`report()` also takes `frame_id=`). Image decisions recorded at the `select_model` site in
+`_generate_stills`; video truth harvested at finalize from the clip items (`_model_id`,
+`cached`, and the new `_fallback:"kenburns"` marker set in `clip_builder`'s poll-failure
+branch). Written per-run as `decisions.jsonl`; per-frame models/fallbacks are merged into
+`provenance.json`'s `frames` rows (segment `f03_2` → frame `f03`; PASSTHROUGH skipped) so
+the credential attests *which model made each shot*. Caveat: the image row is the routed
+*selection* — a cross-vendor fallback inside `_generate_image` is still an axis-level event.
+(b) **Source-media review:** `source_media_review.write_review(run_dir, frames)` runs in
+`_run_inner` right before `_generate_stills` — sha256 + ffprobe/PIL probe of every real
+`visual_path` → `source_media_review.json` (basenames only). Best-effort: probe errors →
+ledger warn, never a block. (c) **Schema gate:** `schemas/provenance.schema.json` validated
+at finalize (invalid → ledger warn; `HOB_SCHEMA_STRICT=1` raises — used by tests). The
+schema REJECTS absolute paths in `frames[].source` (privacy leak = validation failure).
+(d) **Consent evidence:** `governance.consent_evidence(data)` aggregates the
+`consent_records` rows (face/voice grants, confirmed_by, confirmed_at, `record_ids` as
+**strings** — c2pa's CBOR encoder mangles small-int arrays into byte strings) and replaces
+the Slice-A payload stub in the credential's consent assertion; falls back to the payload
+grant (`source:"payload"`) when no DB rows exist. All three artifacts ship in the export zip.
 
 **Vendor fallbacks (Gap #8).** `config/models.json` `fallbacks` + `model_router.{candidates,run_with_fallback}` give each generation axis an independent cross-vendor failover chain.
 | `/posting-kit` | POST | Story-mode-only posting kit: IG caption seed, hashtags, cover-frame id |

@@ -378,7 +378,7 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <li><b>Text Card:</b> choose <b>Text Card</b> on a frame, or write <code>[layout: text_card]</code>, for a full-screen bold statement card.</li>
 <li><b>Posting kit:</b> story mode can generate hashtags and pick a cover frame from the <code>Caption:</code> block. Brand copy remains operator-supplied.</li>
 <li><b>Export clips + edit list:</b> after a completed run, download a zip with clips and <code>edit_list.json</code> for a human editor.</li>
-<li><b>Content Credential (C2PA):</b> the finished MP4 is signed with an embedded, verifiable credential stating — per shot — what is real footage vs AI, whether a real person's AI likeness appears, and the recorded consent (the machine-readable AI disclosure platforms and the EU AI Act expect). The export zip includes <code>content_credential.json</code>. If signing can't complete, the reel still renders unsigned and the degradation report notes it.</li>
+<li><b>Content Credential (C2PA):</b> the finished MP4 is signed with an embedded, verifiable credential stating — per shot — what is real footage vs AI, whether a real person's AI likeness appears, and the recorded consent (the machine-readable AI disclosure platforms and the EU AI Act expect). The export zip includes <code>content_credential.json</code> plus its evidence: <code>source_media_review.json</code> (your real photos/videos hashed &amp; probed before generation — proof of untouched passthrough) and <code>decisions.jsonl</code> (which model made each shot, cache hits, fallbacks). If signing can't complete, the reel still renders unsigned and the degradation report notes it.</li>
 <li><b>Did this reel perform?</b> after a completed run, the output panel has an optional <b>views / likes / note</b> capture — fill it in once the reel is posted and click <b>Save</b>. It's stored with the run as the seed of a performance-feedback loop.</li>
 <li><b>Redo motion:</b> retry only the motion for one approved still without regenerating the image.</li>
 </ul>
@@ -618,7 +618,14 @@ so you see and approve everything before it spends.</p>
 <ol>
   <li><b>Write the brief / story</b> in the box, pick <b>scope</b> (Story or Commerce)
   and <b>Dev</b> (cheap test) or <b>Prod</b>, then <b>Plan ✨</b>. You get an editable
-  shot list — the <b>Script &amp; Shots</b> stage goes <b>Done</b>.</li>
+  shot list — the <b>Script &amp; Shots</b> stage goes <b>Done</b>. The board arrives
+  <b>pre-filled</b>: the cast is auto-derived for every story type (characters + who
+  speaks each line — free), world style/setting, narrator voice and a reel-level
+  <b>mood</b> (new box next to World Context — edit or clear freely) are ✨-suggested
+  from the brief, and a free <b>slideshow-risk check</b> posts warnings in the board
+  report (repetitive framing, same-length shots, unanimated stills, caption walls)
+  before anything spends. Music, per-shot photos, and per-shot emotion stay yours
+  to set.</li>
   <li><b>Review &amp; edit the shots.</b> On each card you can edit the caption, the
   camera move, and (after Storyboard) the actual <b>image prompt</b>. Use the bottom
   <b>command box</b> to refine in plain English ("make it darker, add a rain shot") —

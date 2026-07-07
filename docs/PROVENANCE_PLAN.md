@@ -1,9 +1,16 @@
 # PROVENANCE_PLAN — C2PA Content Credentials & the Trust Layer
 
-**Status:** PARTIAL · 2026-07-07 · owner: Amit — **Slice A SHIPPED** (per-frame provenance
-rows + finalize-rewrite + C2PA signing via `agents/content_credential.py` + `/credential`
-route + export-zip artifacts; verified offline + round-trip + route-E2E). Slice B (decision
-log, source-media review, schema, governance-consent mapping) not started.
+**Status:** SHIPPED (Slices A+B) · 2026-07-07 · owner: Amit — **Slice A:** per-frame
+provenance rows + finalize-rewrite + C2PA signing (`agents/content_credential.py`) +
+`/credential` route + export-zip artifacts. **Slice B:** decision log
+(`degradation.decision` + `decisions.jsonl` + per-frame model enrichment incl. the
+clip-builder Ken-Burns-fallback marker), `agents/source_media_review.py`
+(pre-generation sha256+probe evidence), `schemas/provenance.schema.json` (jsonschema
+gate at finalize; rejects path leaks; `HOB_SCHEMA_STRICT=1` raises), and
+`governance.consent_evidence` (DB record ids/confirmed_by/confirmed_at in the
+credential; **record_ids are strings** — c2pa's CBOR encoder mangles small-int arrays
+into byte strings). All verified offline + full sign/read-back chain. Remaining:
+live-render smoke (needs credits) and Phase-2 durability (hosted manifest).
 
 ## Context
 

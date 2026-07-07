@@ -241,6 +241,14 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **You approve each stage before the next one runs.** Nothing paid happens until
   you click **Generate** on that stage's card — and the card shows the **exact cost
   first** (no surprise charges, no one-click wallet drain).
+- **The board arrives pre-filled.** Plan now auto-derives the **cast** for every
+  story type (characters + who speaks each line, free, before any spend) and
+  ✨-suggests world style/setting, narrator voice, and a reel-level **mood** (the
+  new mood box next to World Context — edit or clear it freely; it guides pacing
+  and grade) from your brief — you correct, not compose. Music, per-shot photos,
+  and per-shot emotion are deliberately left to you. A free **slideshow-risk check** also scores the fresh plan (repetitive
+  framing, same-length shots, unanimated stills, caption walls) and posts fix-it
+  warnings in the board report *before* you spend a rupee on generation.
 - **The Storyboard stage** lays out every shot as a card with its framing, a
   **motion arrow** (which way the camera moves), the emotion/beat, and a colour
   badge for the asset: 🟢 **Real** (your real photo, untouched), 🟡 **AI** (a
@@ -1242,7 +1250,10 @@ The app caches aggressively to avoid re-spending credits on identical content.
   Content Credential stating — per shot — what is real footage, what is AI, whether
   a real person's AI face/voice likeness appears, and the recorded consent. This is
   the machine-readable AI disclosure platforms (TikTok/YouTube/Meta) surface and the
-  EU AI Act requires. The export zip includes `content_credential.json`;
+  EU AI Act requires. The export zip includes `content_credential.json`, plus the
+  evidence behind it: `source_media_review.json` (every real photo/video you supplied,
+  hashed and probed before generation — proof it passed through untouched) and
+  `decisions.jsonl` (which model made each shot, cache hits, fallbacks).
   `GET /credential/<run_id>` returns the summary. If signing can't complete (e.g.
   offline), the reel still renders unsigned and the degradation report notes it.
 - **Redo motion:** after preview/render, redo only a frame's motion while keeping

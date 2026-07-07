@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veristory.ai/schemas/provenance.schema.json",
+  "title": "Veristory provenance summary",
+  "description": "Contract for provenance.json and the com.veristory.provenance C2PA assertion (PROVENANCE_PLAN Slice B). Shaped to map 1:1 onto the credential: aggregate label/tier, per-frame truth rows, optional consent evidence. additionalProperties stays true for forward-compatible enrichment (decision-log models, source hashes).",
+  "type": "object",
+  "required": ["label", "tier", "real_person_ai", "counts", "frames"],
+  "additionalProperties": true,
+  "properties": {
+    "label": {"type": "string", "minLength": 1},
+    "tier": {"enum": ["real", "ai_symbolic", "ai_portrait"]},
+    "real_person_ai": {"type": "boolean"},
+    "modalities": {"type": "array", "items": {"enum": ["face", "voice"]}},
+    "subject": {"type": "string"},
+    "counts": {
+      "type": "object",
+      "required": ["real", "ai_symbolic", "ai_portrait"],
+      "properties": {
+        "real": {"type": "integer", "minimum": 0},
+        "ai_symbolic": {"type": "integer", "minimum": 0},
+        "ai_portrait": {"type": "integer", "minimum": 0}
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["frame_id", "tier", "face", "voice"],
+        "additionalProperties": true,
+        "properties": {
+          "frame_id": {"type": "string", "minLength": 1},
+          "tier": {"enum": ["real", "ai_symbolic", "ai_portrait"]},
+          "face": {"type": "boolean"},
+          "voice": {"type": "boolean"},
+          "duration": {"type": "number", "minimum": 0},
+          "start": {"type": "number", "minimum": 0},
+          "end": {"type": "number", "minimum": 0},
+          "source": {
+            "type": "string",
+            "pattern": "^[^/\\\\]*$",
+            "description": "Basename only — rows are embedded in the public credential; a local path here is a privacy leak and MUST fail validation."
+          },
+          "image_model": {"type": "string"},
+          "video_model": {"type": "string"},
+          "video_fallback": {"type": "string"}
+        }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "required": ["subject", "face", "voice"],
+      "additionalProperties": true,
+      "properties": {
+        "subject": {"type": ["string", "null"]},
+        "face": {"type": "boolean"},
+        "voice": {"type": "boolean"},
+        "confirmed_by": {"type": "string"},
+        "confirmed_at": {"type": "integer"},
+        "record_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Governance consent_records row ids as STRINGS — c2pa's CBOR encoder mangles small-int arrays into byte strings."
+        },
+        "source": {"enum": ["governance_db", "payload"]}
+      }
+    }
+  }
+}

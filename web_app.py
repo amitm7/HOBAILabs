@@ -476,14 +476,14 @@ def api_canvas_plan():
                                   quality=data.get("quality", "dev"),
                                   target_seconds=target_seconds,
                                   story_type=data.get("story_type", "real"))
-    # Characters-first for AI stories (galleri5's stage-2 lesson): auto-derive the cast
-    # at Plan time so the sheet is on screen BEFORE any scene spend — consistency is a
-    # step in the flow, not operator diligence. Free (cast detection only, no portraits).
-    if state.get("story_type") == "ai":
-        try:
-            state["characters"] = canvas_run.derive_characters(state)
-        except Exception as e:
-            print(f"[Canvas] auto cast derivation skipped ({e})")
+    # Characters-first for EVERY story type (auto-fill slice 1 — was AI-only): cast
+    # detection at Plan time tags frames[].speaker_id (voices, dialogue) and puts the
+    # sheet on screen BEFORE any scene spend — for real stories it's the anchor list
+    # for photo matching + consent. Free (cast detection only, no portraits).
+    try:
+        state["characters"] = canvas_run.derive_characters(state)
+    except Exception as e:
+        print(f"[Canvas] auto cast derivation skipped ({e})")
     # Story-review contract gate at Plan time (A2): free deterministic checks on the
     # fresh shot list; warnings ride public_state.plan_review into the board report.
     try:
@@ -491,6 +491,22 @@ def api_canvas_plan():
         state["plan_review"] = contract_validate(state.get("frames") or []).get("warnings", [])
     except Exception as e:
         print(f"[StoryReview] canvas plan gate skipped ({e})")
+    # Slideshow-risk gate (Item 8, plan_qc): free structural score of the shot plan —
+    # warns BEFORE spend when the plan will feel like a slideshow. Advisory only.
+    try:
+        from agents import plan_qc
+        qc = plan_qc.score_plan(state.get("frames") or [])
+        state["plan_qc"] = {"total": qc["total"], "risk": qc["risk"]}
+        for w in qc["warnings"]:
+            state.setdefault("plan_review", []).append(
+                {"frame_id": "", "message": f"Slideshow risk — {w['message']}",
+                 "fix": w["fix"]})
+        if qc["risk"] == "high":
+            degradation.report("plan", "warn",
+                               f"slideshow risk HIGH ({qc['total']}/5) on the fresh plan",
+                               run_id=run_id)
+    except Exception as e:
+        print(f"[PlanQC] slideshow gate skipped ({e})")
     # T3 plan-time auto-fill: derive SUGGESTED world/length/voice from the brief (one
     # fast-tier call). UI fills only EMPTY fields, marked ✨ — operator always decides.
     try:
@@ -830,6 +846,10 @@ def api_canvas_settings(run_id: str, operator: str):
                 canvas_run.invalidate_from(state, "keyframes")
     if "ip" in body:
         state["ip"] = str(body.get("ip") or "")               # watermark IP (applied at Final Cut)
+    if "mood" in body:
+        # Reel-level emotional tone (auto-fill slice 1): threads into re-plans and the
+        # render payload (pacing/grade). Per-shot emotion stays on the cards (carve-out).
+        state["mood"] = str(body.get("mood") or "").strip()[:60]
     if body.get("transition") in ("crossfade", "cut", "fade", "dissolve"):
         state["transition"] = body["transition"]
     _canvas_save(run_id, state)
@@ -2990,7 +3010,8 @@ def export_run(run_id: str):
         # Importable timeline + standard captions for the editor's own NLE,
         # plus the provenance/authenticity summary (Gap #5) for disclosure.
         for extra in ("timeline.fcpxml", "captions.srt", "provenance.json",
-                      "content_credential.json"):
+                      "content_credential.json", "source_media_review.json",
+                      "decisions.jsonl"):
             p = run_dir / extra
             if p.exists():
                 z.write(p, extra)
@@ -3519,6 +3540,14 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
         img_model = model_router.select_model(
             "image", f, cost_tier, override=f.get("image_model_override", ""))
         mid = "" if img_model == model_router.PASSTHROUGH else img_model
+        # Decision log (Slice B): the model routed for this shot's still. This is the
+        # routed *selection*; a cross-vendor fallback inside _generate_image is logged
+        # at axis level by run_with_fallback (threading frame_id there is a later pass).
+        try:
+            from agents import degradation as _deg
+            _deg.decision("image", f.get("frame_id", ""), img_model)
+        except Exception:
+            pass
         sid = f.get("speaker_id", "narrator")
         # Studio Mode: an explicit locked Talent reference wins over the auto
         # per-speaker face_ref, so every shot locks to the same chosen face.
@@ -3902,6 +3931,12 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         f["image_model_override"] = f.get("image_model_override") or global_img_model
         f["video_model_override"] = f.get("video_model_override") or global_vid_model
 
+    # Source-media review (Slice B, Item 3): hash + probe every real file BEFORE any
+    # paid generation — the pre-pipeline evidence that "tier: real" frames passed
+    # through untouched. Best-effort; a probe failure warns, never blocks.
+    from agents import source_media_review
+    source_media_review.write_review(run_dir, frames)
+
     assets_dir = str(run_dir / "assets")
     frames = _generate_stills(frames, assets_dir, subject_name, subject_description,
                               mood, cost_tier=cost_tier,
@@ -4212,17 +4247,61 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         try:
             from agents import provenance as _prov
             prov_summary = _prov.summarize({**data, "frames": frames}, frame_times)
-            (run_dir / "provenance.json").write_text(json.dumps(prov_summary, indent=2))
-            print("[Provenance] finalized per-frame provenance.json")
             from agents import content_credential, degradation
-            # Slice-A consent stub: the operator-confirmed likeness grant from the
-            # payload. Item 5 replaces this with the governance DB record.
+            # Decision log (Slice B, Item 2): image decisions recorded at routing time
+            # + the video truth harvested from the clip items (_model_id / cached /
+            # _fallback survive build_clips). Written as decisions.jsonl and used to
+            # enrich the credential's per-frame rows with the model that made them.
+            decisions = degradation.drain_decisions(run_id)
+            for c in clips:
+                decisions.append({k: v for k, v in {
+                    "stage": "video", "frame_id": c.get("segment_id", ""),
+                    "model": ("kenburns" if c.get("_fallback") == "kenburns"
+                              else c.get("_model_id") or "kenburns"),
+                    "fell_back_from": c.get("_model_id", "") if c.get("_fallback") else "",
+                    "cached": bool(c.get("cached")),
+                }.items() if v not in ("", False)})
+            (run_dir / "decisions.jsonl").write_text(
+                "\n".join(json.dumps(d) for d in decisions) + ("\n" if decisions else ""))
+            by_frame: dict = {}
+            for d in decisions:
+                fid = (d.get("frame_id") or "").split("_")[0]   # segment f03_2 → frame f03
+                if fid:
+                    by_frame.setdefault(fid, {}).update(
+                        {f"{d['stage']}_model": d.get("model", "")}
+                        | ({"video_fallback": d["fell_back_from"]}
+                           if d.get("stage") == "video" and d.get("fell_back_from") else {}))
+            for row in prov_summary.get("frames", []):
+                for k, v in (by_frame.get(row["frame_id"]) or {}).items():
+                    if v and v != model_router.PASSTHROUGH:
+                        row[k] = v
+            # Schema gate (Slice B, Item 4): the credential's data contract. Invalid →
+            # warn + still ship (strict mode: HOB_SCHEMA_STRICT=1 raises, for tests/dev).
+            try:
+                import jsonschema
+                schema = json.loads((Path(__file__).parent / "schemas"
+                                     / "provenance.schema.json").read_text())
+                jsonschema.validate(prov_summary, schema)
+            except Exception as se:
+                if os.environ.get("HOB_SCHEMA_STRICT") == "1":
+                    raise
+                degradation.report("provenance", "warn",
+                                   f"provenance schema check failed ({str(se)[:120]})",
+                                   run_id=run_id)
+            (run_dir / "provenance.json").write_text(json.dumps(prov_summary, indent=2))
+            print("[Provenance] finalized per-frame provenance.json (+models)")
+            # Consent evidence (Slice B, Item 5): the governance DB trail (record ids,
+            # who confirmed, when) — falls back to the in-payload grant if no rows.
             consent = None
             if prov_summary.get("real_person_ai"):
-                lk = data.get("likeness_consent") or {}
-                consent = {"subject": prov_summary.get("subject"),
-                           "face": bool(lk.get("face")), "voice": bool(lk.get("voice")),
-                           "confirmed_by": data.get("operator_id", "")}
+                from agents import governance as _gov
+                consent = _gov.consent_evidence(data)
+                if not consent:
+                    lk = data.get("likeness_consent") or {}
+                    consent = {"subject": prov_summary.get("subject"),
+                               "face": bool(lk.get("face")), "voice": bool(lk.get("voice")),
+                               "confirmed_by": data.get("operator_id", ""),
+                               "source": "payload"}
             res = content_credential.sign_reel(output_path, prov_summary, consent)
             if res.get("ok"):
                 summary = content_credential.read_credential(output_path)

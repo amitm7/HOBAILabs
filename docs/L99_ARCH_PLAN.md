@@ -38,6 +38,7 @@
 | S26 | **Library section** — a folder per story where the operator can browse and DOWNLOAD every asset that was created (portraits, keyframes, clips, storyboard panels, music, final cuts) | ✅ shipped (T15) — /library page + per-story grouped listing + downloads + zip |
 | S27 | *(found during T3 verify)* **Plan-stage degradation is silent** — shot_planner fell back to 3 generic shots + narrator-only cast with NO visible log and NO ledger entry (T1 binds at render time only) | ✅ fixed — plan route binds the ledger; shot_planner fallbacks report 'plan' alerts into the board report |
 | S28 | **Dual-mode requirement (owner, 2026-07-03):** the tool must support BOTH story forms as first-class — (1) NARRATED reels (VO carries the story; today's strength) and (2) CINEMATIC dialogue (characters speak in-scene, story moves through performance). Verified today: script→plan already handles mode 2 (dialogue→speaker-tagged shots, correct character focus per line — tested on the Yamraj script); the gaps are all in the PERFORMANCE layer | 🚧 track started — **step 0 SHIPPED** (form detect→declare: per-shot dialogue/narration/silent tags + story verdict badge + voice warning; deterministic, override-able) · **T4 SHIPPED** (owner's own commit 06e9b5b — voice picker + voice_map; functionally verified). Remaining: location anchoring → D5 → T7 → SFX. Original:  T4 per-character voice UI (small — dropped from the executed order, first up), location/scene anchoring (M — the 'character sheet for places'), D5 two-character identity refs (M), T7 selective lip-sync on dialogue close-ups (L, kill-criterion stands), SFX/atmosphere layer (M, new). Narrated mode stays the default; cinematic is a per-story choice, one engine (no fork). |
+| S29 | **Podcast/presenter format (owner, 2026-07-08):** script + owner's photo → 16:9 podcast episode — presenter (owner's animated face, lip-sync) speaks to camera, edit cuts to beat-matched B-roll; canvas scope selector grows (podcast, education) with per-scope controls | 📋 planned → **docs/PRESENTER_PLAN.md** (agreed decision record + phases: golden-face spike gates all build → scope registry + aspect param → `podcast` scope w/ dual-tier Hedra/fal avatar routing → `education` prompt pack). Extends S28's form axis with `presenter`; T7's preview-gate discipline inherited, its 3-beat cap replaced by spend cap. |
 
 ---
 
@@ -78,6 +79,14 @@ Also observed (not yet incident-causing): **canvas state read-modify-write races
 
 ### P1 — operator velocity & the Hanuman/Mahabharat bar
 - **T3 · Plan-time auto-fill (S12).** Plan LLM additionally returns `{world_style, world_setting, target_seconds?, narrator_profile}`; UI fills **only empty fields**, marked "✨ suggested — edit freely". Never overwrites operator input. *(S)*
+  - **Slice 2 shipped 2026-07-07 (review-not-form direction):** (a) `derive_characters` now
+    runs at Plan for **all** story types (was AI-only) — cast + `speaker_id` tags arrive free,
+    pre-spend; (b) `plan_suggestions` adds reel-level `mood` — consumed by the new canvas `#mood`
+    input (✨-fill while empty; persisted via `/settings`; per-shot emotion untouched); (c) **NEW `agents/plan_qc.py`
+    slideshow-risk scorer** — free 6-dimension structural gate on the fresh plan; warnings ride
+    `plan_review`, `{total,risk}` at `public_state.plan_qc`, high risk ledgered. Owner
+    carve-outs (never auto-filled): music, per-shot image assignment, per-shot emotion.
+    Governance clicks never automated.
 - **T4 · Per-character voices (S13a).** Voice dropdown per cast row (from `/voices` + `config/voices.json` roles); `speaker_id`-aware `generate_voiceover_track` picks each line's voice; narrator default unchanged. Real-person voice *cloning* stays behind existing likeness governance — stock voices only here. *(M)*
 - **T5 · Shot iteration honesty (S11+S15).** (a) Inspector button "↻ Regenerate still from prompt" (explicit, replaces the hidden prompt-edit→Re-roll dance); (b) **take history**: keep last N=4 stills/clips per shot, thumbnail strip in inspector, click to restore (no re-spend). *(M)*
 - **T6 · Remotion caption engine P1 (S16).** Wire per REMOTION_CAPTIONS_PLAN: `config/captions.json` seam, overlay render + composite, libass auto-fallback, prod-tier default-off. *(M)*
