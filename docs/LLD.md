@@ -42,6 +42,9 @@ agents/
   db.py                   Gap #2 storage switch: SQLite default / Postgres via HOB_DB_URL
   auth.py                 Gap #1 operator identity: operators table, HS256 JWT, require_operator, CLI
   provenance.py           Gap #5 authenticity tiers (real / ai_symbolic / real-person AI)
+                          + per-frame rows (classify_frames) feeding the C2PA credential
+  content_credential.py   C2PA signing: embeds the provenance truth into output.mp4
+                          (extractable: stdlib + c2pa-python only — see PROVENANCE_PLAN)
   product_surface.py      SQLite stand-ins for assets, approvals, project versions,
                           + Studio identity library (talents, products) CRUD
   suggestions.py          fast-tier batch → camera/edit/note chips per frame
@@ -643,7 +646,9 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/` | GET | Story mode UI shell |
+| `/` | GET | Veristory marketing landing page (`landing.html`) — the public front door. Static brand surface, no pipeline access. Styled solely by the Veristory design system (`web/static/veristory/styles.css` → `tokens/*.css`), not by `style.css`. The app-shell `:root` tokens in `style.css` are value-swapped to the same palette (token names unchanged; `--on-accent`, `--seal`, `--seal-soft`, `--font-mono` added). |
+| `/story` | GET | Story mode UI shell (the operator app's home; formerly served at `/`) |
+| `/landing` | GET | 301 → `/` (legacy alias from when the landing first shipped there) |
 | `/brand` | GET | Brand / Ad mode UI shell |
 | `/studio` | GET | Studio mode UI shell (prompt → reel + identity library) |
 | `/api/talents` | GET/POST | List talents / register a talent (name + descriptor + reference photo) |
@@ -705,10 +710,11 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/clip/<run_id>/<frame_id>` | GET | Serve ONE finished clip for progressive reveal during a render |
 | `/redo-still` | POST | Regenerate the still for ONE frame synchronously (per-frame redo); cache-aware, `force_regen_ids` busts that frame's cached still |
 | `/redo-motion` | POST | Rebuild one frame's motion from the approved still; returns a refreshed clip preview |
-| `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4`, `edit_list.json`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
+| `/export/<run_id>` | GET | Editor hand-off zip: **`timeline.fcpxml`** (importable timeline for Premiere/Resolve/FCP), **`captions.srt`** (standard subs), `clips/`, `output.mp4` (C2PA-signed when signing succeeded), `edit_list.json`, `provenance.json`, `content_credential.json`. FCPXML/SRT written in `_run_inner` via `agents/fcpxml.py`; clips back-to-back (crossfades flattened), captions kept separate so a caption quirk can't break the clip-timeline import. |
 | `/performance/<run_id>` | POST | Post-publish feedback (Gap #3): `{views, likes, note}` for a finished run → `run_store.save()` writes `runs.performance_views`/`performance_likes` (nullable INT) / `performance_note` (TEXT) / `performance_by` (verified operator). 404 on unknown run; `get_json(silent=True)` + int coercion + note cap so a bad body never 500s; upsert. **Gated by `auth.require_operator`.** |
 | `/performance` | GET | Completed feedback loop (Gap #3): leaderboard (`run_store.list_performance()`, best-performing first) + roll-up summary. Gated. |
-| `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). |
+| `/provenance/<run_id>` | GET | Authenticity/provenance summary (Gap #5): real vs ai_symbolic vs AI-likeness-of-a-real-person, from the per-run `provenance.json` artifact (else recomputed from the stored payload via `agents/provenance.py`). Since the C2PA slice, the artifact carries a per-frame `frames` array (tier/face/voice/duration + effective start/end + real-source basename) — written provisionally at dispatch, **rewritten at finalize** in `_run_inner` from the RESOLVED frames + `frame_timecodes`. |
+| `/credential/<run_id>` | GET | The reel's embedded **Content Credential (C2PA)** summary: validation state, assertion labels, per-frame provenance the signature attests. Reads `content_credential.json`, else reads the credential straight off the signed `output.mp4` via `content_credential.read_credential`. 404 if the reel was never signed. |
 | `/login` , `/logout` , `/me` | POST / POST / GET | Operator auth (Gap #1): `authenticate()` → HS256 JWT in an httpOnly cookie; `/me` reports the current operator. Seed operators with `python -m agents.auth add-operator`. |
 
 **Auth (Gap #1).** Money/rights routes — `/run`, `/preview`, `/retry/<id>`, `/performance*`, `/project-version`, `/api/canvas/<id>/{advance,approve,frame,chat,asset,keyframes,video,render,rendered,reroll,match-photos,assets,rematch,restore,recreate,upscale,storyboard-art,settings,world,redistribute,character-portrait,characters,character,fidelity,fidelity-suggest,check-matches,ai-source,delete}`, and `/brand-approval` (requires the `approver` role) — are wrapped by `agents/auth.require_operator(*roles)`, which validates the cookie/Bearer JWT and injects the *verified* `operator` (handlers no longer trust a client-supplied `operator_id`). `HOB_AUTH_DISABLED=1` bypasses for local dev; `HOB_AUTH_SECRET` signs tokens in prod.
@@ -716,6 +722,22 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 **Storage (Gap #2).** `agents/db.py` selects SQLite (default) or Postgres from `HOB_DB_URL`; new stores (`auth`) route through it dialect-neutrally. The legacy per-store SQLite bridges migrate onto it for the RDS cutover (SCALE_PLAN Phase 2).
 
 **Likeness consent (Gap #4).** `agents/governance.{likeness_modalities,validate_likeness_consent,record_likeness_consent}` gate AI face/voice of a *named real person* on `/run`, recorded against `consent_records.{face,voice}` and the verified operator.
+
+**Content Credentials (C2PA — PROVENANCE_PLAN Slice A).** `agents/content_credential.py`:
+`sign_reel(mp4, prov_summary, consent) -> {ok, signed_path, issuer, tsa} | {ok:False, error}`,
+`read_credential(mp4)`, `build_manifest(prov, consent)` (pure). Called at the tail of
+`_run_inner` right after the provenance finalize-rewrite; **best-effort** — any failure →
+`degradation.report("provenance","warn",…)` and the reel ships unsigned (never a failed
+render). `provenance.classify_frames(frames, frame_times)` supplies the per-frame rows
+(source = **basename only** — rows are embedded verbatim in the public credential, so local
+paths must not leak). Signer material: `HOB_C2PA_CERT`/`HOB_C2PA_KEY` (PEM chain + PKCS#8
+key), else a self-signed dev CA+leaf chain is generated once via openssl into `HOB_C2PA_DIR`
+(structurally Valid, untrusted issuer). Sharp edges baked into the module (from the
+2026-07-07 de-risk): package is `c2pa-python` not `c2pa`; key MUST be PKCS#8; cert MUST be a
+2-cert chain (bare self-signed leaf rejected); `ta_url` MUST be a real RFC-3161 TSA — so
+**signing makes one outbound HTTP call** (fallback list `HOB_C2PA_TSA`, kill-switch
+`HOB_C2PA_DISABLED=1`). Artifacts: signed `output.mp4` (replaced atomically via temp +
+`os.replace`) + `content_credential.json`; both in the export zip; served by `/credential`.
 
 **Vendor fallbacks (Gap #8).** `config/models.json` `fallbacks` + `model_router.{candidates,run_with_fallback}` give each generation axis an independent cross-vendor failover chain.
 | `/posting-kit` | POST | Story-mode-only posting kit: IG caption seed, hashtags, cover-frame id |
@@ -728,7 +750,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/brand-approval` | POST | Store a lightweight brand approval/audit record |
 | `/project-version` | POST | Store a lightweight project/reel version record |
 | `/guide` | GET | Serve `docs/OPERATOR_GUIDE.html` |
-| `/media` | GET | Serve asset thumbnails (validates path via `_path_allowed`) |
+| `/media` | GET | Serve asset thumbnails (validates path via `_path_allowed`; `@safe_paths("path", source="args")` enforces it at the boundary) |
 | `/upload-photo` | POST | Accept file upload; save to session assets dir |
 
 ### Editor iteration features (per-frame redo, progressive reveal, approval gate)
@@ -786,6 +808,19 @@ only the streamed log was affected.
 **Security:** `/media` validates all paths against `RUNS_DIR` and `ASSETS_BROWSE_ROOT` via
 `_path_allowed()`. Only image/video MIME types allowed. `ASSETS_BROWSE_ROOT` env var scopes
 the server folder browser.
+
+**`safe_paths(*fields, source="json", required=False)`** ([web_app.py](../web_app.py)) — the
+route-boundary choke point for filesystem safety (L99 "one seam, enforced"). A route declares
+which request fields carry a client-supplied path; any present value resolving outside
+`RUNS_DIR` / `ASSETS_BROWSE_ROOT` is rejected with **403 before the handler runs**, so a new
+route can't silently skip the check. `source="json"` reads the body, `"args"` the query string.
+Fail-closed on a disallowed path; absent/empty fields are skipped unless `required=True` (→400).
+Additive — it sits *below* `@auth.require_operator()` and leaves existing inline `_path_allowed`
+checks (friendlier route-specific errors) in place as defense-in-depth. Applied so far to `/media`
+(`source="args"`) and `/api/canvas/<run_id>/render` (`music_path`, `bg_music_path`); the
+convention (build-feature rule 17) is to add it to every new route that consumes a client path.
+Note `_path_allowed` uses `Path.resolve()`, which follows symlinks — a symlink inside an allowed
+root pointing outside is rejected because the *resolved target* is checked (no symlink escape).
 
 **`_build_frames_from_payload`** ([web_app.py:314](../web_app.py#L314)) converts UI frame
 cards into `frames[]`; carries `speaker_id`, `product_beat` from the payload.

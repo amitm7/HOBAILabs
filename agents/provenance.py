@@ -33,8 +33,43 @@ def classify_frame(frame: dict) -> str:
     return REAL                      # explicit filename pin or matched real media
 
 
-def summarize(data: dict) -> dict:
-    """Provenance summary + label for a whole reel payload."""
+def classify_frames(frames: list[dict], frame_times: list | None = None) -> list[dict]:
+    """Per-frame provenance rows — the granular truth a Content Credential attests.
+
+    One row per shot: tier (real/ai_symbolic/ai_portrait), whether an AI face
+    likeness or a synthetic-voice pass touched it, and — when effective timecodes
+    are supplied (assembler.frame_timecodes, crossfade-aware) — its start/end in
+    the finished reel. `source` is the basename only: rows are embedded verbatim
+    in the signed public credential, so local filesystem paths must not leak.
+    """
+    import os as _os
+    rows = []
+    for i, f in enumerate(frames):
+        tier = classify_frame(f)
+        row = {
+            "frame_id": f.get("frame_id") or f"f{i + 1:02d}",
+            "tier": tier,
+            "face": tier == AI_PORTRAIT,
+            "voice": bool(f.get("lipsync")),
+            "duration": round(float(f.get("duration") or 0), 2),
+        }
+        if tier == REAL:
+            src = f.get("visual_path") or f.get("photo_spec") or ""
+            row["source"] = _os.path.basename(str(src)) if src else ""
+        if frame_times and i < len(frame_times):
+            start, end = frame_times[i][0], frame_times[i][1]
+            row["start"] = round(float(start), 2)
+            row["end"] = round(float(end), 2)
+        rows.append(row)
+    return rows
+
+
+def summarize(data: dict, frame_times: list | None = None) -> dict:
+    """Provenance summary + label for a whole reel payload.
+
+    Pass `frame_times` (effective timecodes) at finalize so the per-frame rows
+    carry start/end in the finished reel; the dispatch-time call omits them.
+    """
     frames = data.get("frames") or []
     subject = (data.get("subject_name") or "").strip()
     counts = {REAL: 0, AI_SYMBOLIC: 0, AI_PORTRAIT: 0}
@@ -66,6 +101,7 @@ def summarize(data: dict) -> dict:
         "modalities": modalities,
         "subject": subject,
         "counts": counts,
+        "frames": classify_frames(frames, frame_times),
     }
 
 

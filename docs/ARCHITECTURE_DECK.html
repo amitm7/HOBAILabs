@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOBAILabs — Architecture Deck (HLD + LLD)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#26221c; --ink-soft:#4a443a; --muted:#6e675c;
+    --green:#1f6b4a; --green-deep:#123f2d; --green-tint:#e9f2ed;
+    --bronze:#a9803f; --bronze-tint:#f4ecdd;
+    --paper:#ffffff; --panel:#f7f5f1; --line:#e3ded5;
+    --mono:'IBM Plex Mono',monospace; --sans:'Hanken Grotesk',system-ui,sans-serif;
+    --serif:'Cormorant Garamond',Georgia,serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#181511;font-family:var(--sans);color:var(--ink)}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  #scaler{width:1280px;height:720px;position:relative;transform-origin:center center}
+  .slide{position:absolute;inset:0;width:1280px;height:720px;background:var(--paper);
+    padding:56px 72px;display:none;flex-direction:column;overflow:hidden}
+  .slide.active{display:flex}
+  .slide.dark{background:linear-gradient(135deg,#123f2d 0%,#1f6b4a 78%,#2a7d58 100%);color:#f4f1ea}
+  .kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--bronze);margin-bottom:10px}
+  .dark .kicker{color:#d8b877}
+  h1{font-family:var(--serif);font-size:64px;font-weight:600;line-height:1.05}
+  h2{font-size:34px;font-weight:800;line-height:1.1;margin-bottom:22px}
+  h3{font-size:17px;font-weight:700;margin-bottom:6px}
+  p,li{font-size:15.5px;line-height:1.45;color:var(--ink-soft)}
+  .dark p{color:#e6e0d2}
+  .cols{display:flex;gap:36px;flex:1;min-height:0}
+  .col{flex:1;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .mono{font-family:var(--mono)}
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:99px;background:var(--green-tint);color:var(--green-deep);margin-right:6px}
+  .tag.bz{background:var(--bronze-tint);color:#7a5a24}
+  table{border-collapse:collapse;width:100%}
+  th{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:6px 10px;border-bottom:2px solid var(--line)}
+  td{font-size:13.5px;padding:7px 10px;border-bottom:1px solid var(--line);color:var(--ink-soft);vertical-align:top}
+  td.mono,th.mono{font-family:var(--mono);font-size:12.5px}
+  .foot{position:absolute;bottom:20px;left:72px;right:72px;display:flex;justify-content:space-between;
+    font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .dark .foot{color:#bcd3c6}
+  #nav{position:fixed;bottom:14px;right:18px;z-index:10;font-family:var(--mono);font-size:13px;color:#cfc8ba;
+    display:flex;gap:10px;align-items:center;user-select:none}
+  #nav button{background:#2e2a23;border:1px solid #4a443a;color:#e6e0d2;border-radius:6px;
+    padding:4px 12px;font-family:var(--mono);font-size:14px;cursor:pointer}
+  #nav button:hover{background:#3c372e}
+  svg text{font-family:var(--sans)}
+  svg .m{font-family:var(--mono)}
+  @media print{
+    html,body{background:#fff;height:auto}
+    #stage{position:static;display:block}
+    #scaler{width:1280px;height:auto;transform:none!important}
+    .slide{display:flex;position:relative;page-break-after:always;margin:0 auto}
+    #nav{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div id="scaler">
+
+<!-- ═══════════ SLIDE 1 · TITLE ═══════════ -->
+<section class="slide dark active">
+  <div style="flex:1;display:flex;align-items:center;gap:70px">
+    <div style="flex:1.4">
+      <div class="kicker">HOBAILabs · Veristory · Architecture Overview</div>
+      <h1 style="font-size:76px;margin-bottom:24px">Story → Reel<br>Engine</h1>
+      <p style="font-size:20px;max-width:560px">A raw story script + a folder of real photos and videos, turned into a finished, captioned, scored <b style="color:#fff">9:16 reel</b> — one shared engine behind four front doors.</p>
+      <p class="mono" style="font-size:13px;margin-top:28px;color:#bcd3c6">HLD.md + LLD.md · main branch · creative.kevat.ai · AWS ap-south-1</p>
+    </div>
+    <div style="flex:.7;display:flex;justify-content:center">
+      <svg width="240" height="430" viewBox="0 0 240 430">
+        <rect x="10" y="10" width="220" height="410" rx="28" fill="none" stroke="#d8b877" stroke-width="2.5"/>
+        <rect x="26" y="26" width="188" height="378" rx="16" fill="rgba(255,255,255,.07)"/>
+        <circle cx="120" cy="170" r="34" fill="none" stroke="#f4f1ea" stroke-width="2"/>
+        <polygon points="110,152 110,188 142,170" fill="#f4f1ea"/>
+        <rect x="46" y="330" width="148" height="9" rx="4.5" fill="#d8b877"/>
+        <rect x="66" y="352" width="108" height="9" rx="4.5" fill="rgba(244,241,234,.5)"/>
+        <text x="120" y="70" text-anchor="middle" fill="#bcd3c6" font-size="13" class="m">9:16 MP4</text>
+      </svg>
+    </div>
+  </div>
+  <div class="foot"><span>Amit · July 2026</span><span>1 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 2 · FOUR DOORS, ONE ENGINE ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §1 · Purpose &amp; Scope</div>
+  <h2>Four front doors. One engine. Never fork the pipeline.</h2>
+  <div class="cols">
+    <div class="col" style="flex:.9">
+      <p style="margin-bottom:14px">Every mode builds the <b>same <span class="mono">frames[]</span> data model</b> and calls the same <span class="mono">agents/*</span> stages. Modes are thin hook layers and flags into <span class="mono">_run_inner</span> — parallel pipelines are forbidden by design.</p>
+      <div class="card" style="margin-bottom:12px">
+        <h3 style="color:var(--green)">Defining principle</h3>
+        <p><b>Realism preservation</b> — real user media is never AI-regenerated — plus <b>test-cheap / finish-expensive</b>: cheap models in Dev, premium only for final renders.</p>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--bronze)">Out of scope (today)</h3>
+        <p>Multi-tenant accounts · persistent job DB · batch/queue production · kinetic motion-graphics (B2) · CLIP scoring — all on the roadmap.</p>
+      </div>
+    </div>
+    <div class="col" style="flex:1.1;display:flex;align-items:center">
+      <svg width="100%" height="400" viewBox="0 0 560 400">
+        <g font-size="14" font-weight="600">
+          <rect x="10" y="18" width="200" height="56" rx="9" fill="#e9f2ed" stroke="#1f6b4a"/>
+          <text x="110" y="42" text-anchor="middle" fill="#123f2d">/story · Story mode</text>
+          <text x="110" y="60" text-anchor="middle" fill="#6e675c" font-size="11.5" font-weight="400">HOB personal story reels</text>
+          <rect x="10" y="108" width="200" height="56" rx="9" fill="#e9f2ed" stroke="#1f6b4a"/>
+          <text x="110" y="132" text-anchor="middle" fill="#123f2d">/brand · Ad mode (B1)</text>
+          <text x="110" y="150" text-anchor="middle" fill="#6e675c" font-size="11.5" font-weight="400">paid brand collabs</text>
+          <rect x="10" y="198" width="200" height="56" rx="9" fill="#e9f2ed" stroke="#1f6b4a"/>
+          <text x="110" y="222" text-anchor="middle" fill="#123f2d">/studio · Studio (MODE3)</text>
+          <text x="110" y="240" text-anchor="middle" fill="#6e675c" font-size="11.5" font-weight="400">prompt → reel + identity library</text>
+          <rect x="10" y="288" width="200" height="56" rx="9" fill="#f4ecdd" stroke="#a9803f"/>
+          <text x="110" y="312" text-anchor="middle" fill="#7a5a24">/canvas · Director Canvas</text>
+          <text x="110" y="330" text-anchor="middle" fill="#6e675c" font-size="11.5" font-weight="400">stage-gated board, per-stage cost gate</text>
+        </g>
+        <g stroke="#a9803f" stroke-width="2" fill="none">
+          <path d="M210 46 C 265 46 265 178 318 182"/>
+          <path d="M210 136 C 260 136 262 180 318 187"/>
+          <path d="M210 226 C 260 226 262 200 318 193"/>
+          <path d="M210 316 C 265 316 265 202 318 198"/>
+        </g>
+        <rect x="318" y="120" width="232" height="146" rx="12" fill="#123f2d"/>
+        <text x="434" y="164" text-anchor="middle" fill="#fff" font-size="17" font-weight="700">One shared engine</text>
+        <text x="434" y="190" text-anchor="middle" fill="#bcd3c6" font-size="13" class="m">_run_inner + agents/*</text>
+        <text x="434" y="214" text-anchor="middle" fill="#bcd3c6" font-size="13" class="m">frames[] data model</text>
+        <text x="434" y="238" text-anchor="middle" fill="#d8b877" font-size="12.5">modes = flags + hooks, not forks</text>
+        <text x="280" y="300" text-anchor="middle" fill="#6e675c" font-size="12.5">+ <tspan class="m">/</tspan> — static Veristory marketing landing (no pipeline, no spend)</text>
+      </svg>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>2 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 3 · SYSTEM CONTEXT ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §2 · System Context (C4 Level 1)</div>
+  <h2>Everything external is pluggable — and allowed to fail</h2>
+  <div style="flex:1;display:flex;align-items:center">
+    <svg width="100%" height="470" viewBox="0 0 1136 470">
+      <rect x="0" y="150" width="150" height="90" rx="10" fill="#f7f5f1" stroke="#e3ded5"/>
+      <text x="75" y="188" text-anchor="middle" font-size="15" font-weight="700" fill="#26221c">Creator</text>
+      <text x="75" y="208" text-anchor="middle" font-size="12" fill="#6e675c">browser / CLI</text>
+      <g stroke="#a9803f" stroke-width="2" fill="none">
+        <path d="M150 180 L 216 180" marker-end="url(#ar)"/>
+        <path d="M216 215 L 150 215" marker-end="url(#ar2)"/>
+      </g>
+      <text x="183" y="170" text-anchor="middle" font-size="11" fill="#6e675c">script+assets</text>
+      <text x="183" y="233" text-anchor="middle" font-size="11" fill="#6e675c">9:16 MP4</text>
+      <defs>
+        <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a9803f"/></marker>
+        <marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a9803f"/></marker>
+        <marker id="ag" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1f6b4a"/></marker>
+      </defs>
+      <rect x="218" y="30" width="440" height="404" rx="14" fill="#e9f2ed" stroke="#1f6b4a" stroke-width="2"/>
+      <text x="438" y="62" text-anchor="middle" font-size="17" font-weight="800" fill="#123f2d">HOBAILabs</text>
+      <rect x="242" y="84" width="180" height="120" rx="9" fill="#fff" stroke="#1f6b4a"/>
+      <text x="332" y="110" text-anchor="middle" font-size="13.5" font-weight="700" fill="#123f2d">Web UI (Flask)</text>
+      <text x="332" y="132" text-anchor="middle" font-size="12" fill="#4a443a">parse · preview · estimate</text>
+      <text x="332" y="150" text-anchor="middle" font-size="12" fill="#4a443a">SSE progress · download</text>
+      <text x="332" y="172" text-anchor="middle" font-size="12" fill="#4a443a">story / brand / studio / canvas</text>
+      <rect x="452" y="84" width="182" height="120" rx="9" fill="#123f2d"/>
+      <text x="543" y="118" text-anchor="middle" font-size="13.5" font-weight="700" fill="#fff">Render pipeline</text>
+      <text x="543" y="140" text-anchor="middle" font-size="12.5" fill="#bcd3c6" class="m">agents/*</text>
+      <text x="543" y="164" text-anchor="middle" font-size="11.5" fill="#bcd3c6">parse → design → generate</text>
+      <text x="543" y="182" text-anchor="middle" font-size="11.5" fill="#bcd3c6">→ animate → assemble</text>
+      <path d="M422 144 L 452 144" stroke="#1f6b4a" stroke-width="2" marker-end="url(#ag)"/>
+      <rect x="242" y="228" width="392" height="82" rx="9" fill="#fff" stroke="#e3ded5"/>
+      <text x="438" y="254" text-anchor="middle" font-size="12.5" font-weight="700" fill="#7a5a24">Config seams (JSON, no code edits)</text>
+      <text x="438" y="276" text-anchor="middle" font-size="11.5" fill="#4a443a" class="m">models · pricing · llm · music · voices · watermarks</text>
+      <text x="438" y="294" text-anchor="middle" font-size="11.5" fill="#6e675c">vendor-pluggable on independent axes</text>
+      <rect x="242" y="330" width="392" height="80" rx="9" fill="#fff" stroke="#e3ded5"/>
+      <text x="438" y="356" text-anchor="middle" font-size="12.5" font-weight="700" fill="#26221c">Content-hash caches <tspan class="m" fill="#6e675c">~/.hob_cache/*</tspan></text>
+      <text x="438" y="378" text-anchor="middle" font-size="11.5" fill="#6e675c">clips · scene designs · stills · lip-sync · descriptions</text>
+      <text x="438" y="396" text-anchor="middle" font-size="11.5" fill="#6e675c">re-renders never re-spend</text>
+      <g stroke="#1f6b4a" stroke-width="2" fill="none">
+        <path d="M658 120 L 716 120" marker-end="url(#ag)"/>
+        <path d="M658 220 L 716 220" marker-end="url(#ag)"/>
+        <path d="M658 330 L 716 330" marker-end="url(#ag)"/>
+      </g>
+      <g font-size="12" fill="#4a443a">
+        <rect x="718" y="82" width="196" height="76" rx="9" fill="#f7f5f1" stroke="#e3ded5"/>
+        <text x="816" y="104" text-anchor="middle" font-weight="700" font-size="13" fill="#26221c">LLM brain</text>
+        <text x="816" y="124" text-anchor="middle" font-size="11.5">OpenAI · Anthropic · Bedrock · Gemini</text>
+        <text x="816" y="142" text-anchor="middle" fill="#6e675c" font-size="11.5">3 tiers: reasoning / vision / fast</text>
+        <rect x="718" y="176" width="196" height="90" rx="9" fill="#f7f5f1" stroke="#e3ded5"/>
+        <text x="816" y="200" text-anchor="middle" font-weight="700" font-size="13" fill="#26221c">Image + Video gen</text>
+        <text x="816" y="220" text-anchor="middle">Flux / fal / gpt-image · upscalers</text>
+        <text x="816" y="238" text-anchor="middle">Kling · Higgsfield · Seedance</text>
+        <text x="816" y="256" text-anchor="middle">Veo · Hailuo</text>
+        <rect x="718" y="286" width="196" height="90" rx="9" fill="#f7f5f1" stroke="#e3ded5"/>
+        <text x="816" y="310" text-anchor="middle" font-weight="700" font-size="13" fill="#26221c">Audio + Safety</text>
+        <text x="816" y="330" text-anchor="middle">ElevenLabs · Lyria 3 | Suno</text>
+        <text x="816" y="348" text-anchor="middle">Hedra / SyncLabs lip-sync</text>
+        <text x="816" y="366" text-anchor="middle">OpenAI Moderation</text>
+      </g>
+      <rect x="944" y="120" width="184" height="200" rx="10" fill="#f4ecdd" stroke="#a9803f"/>
+      <text x="1036" y="150" text-anchor="middle" font-size="13" font-weight="700" fill="#7a5a24">Graceful degradation</text>
+      <text x="1036" y="176" text-anchor="middle" font-size="11.5" fill="#4a443a">fallback chains + per-endpoint</text>
+      <text x="1036" y="193" text-anchor="middle" font-size="11.5" fill="#4a443a">circuit breaker (circuit.py)</text>
+      <text x="1036" y="222" text-anchor="middle" font-size="11.5" fill="#4a443a">premium → fallback →</text>
+      <text x="1036" y="239" text-anchor="middle" font-size="11.5" fill="#4a443a">Kling → Ken Burns (free)</text>
+      <text x="1036" y="272" text-anchor="middle" font-size="12" font-weight="600" fill="#123f2d">a render rarely</text>
+      <text x="1036" y="290" text-anchor="middle" font-size="12" font-weight="600" fill="#123f2d">hard-fails</text>
+    </svg>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>3 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 4 · RUNTIME PIECES ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §3 · Containers (C4 Level 2)</div>
+  <h2>Runtime pieces</h2>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;flex:1;align-content:start">
+    <div class="card"><h3><span class="tag">UI</span>Web UI</h3><p>Flask + server-rendered templates + SSE. Shared shell <span class="mono">_base.html</span>: step wizard, preview phone, sticky action bar, cost chip.</p></div>
+    <div class="card"><h3><span class="tag">UI</span>Mode layers</h3><p><span class="mono">brand.js</span> / <span class="mono">studio.js</span> hook into <span class="mono">main.js</span> — brief panel, brand kit, identity library. No engine fork.</p></div>
+    <div class="card"><h3><span class="tag">UI</span>CLI</h3><p><span class="mono">run_caption.py</span> — headless render, dry-run cost plan, every flag the UI exposes.</p></div>
+    <div class="card"><h3><span class="tag bz">CORE</span>Render pipeline</h3><p><span class="mono">agents/*</span> — parse → treatment → scene design → cast → visuals → lip-sync → animate → caption → assemble → brand post-pass.</p></div>
+    <div class="card"><h3><span class="tag bz">CORE</span>Model router</h3><p>Pure logic: shot type + cost tier + overrides → model id from <span class="mono">config/models.json</span>. Unit-testable, no API calls.</p></div>
+    <div class="card"><h3><span class="tag bz">CORE</span>LLM brain</h3><p>One <span class="mono">chat()</span> entry for every reasoning / vision / fast call, 4 providers, JSON-schema enforced outputs.</p></div>
+    <div class="card"><h3><span class="tag">$</span>Cost engine</h3><p><span class="mono">pricing.estimate()</span> walks <span class="mono">frames[]</span> and mirrors the router exactly — the quote matches the bill.</p></div>
+    <div class="card"><h3><span class="tag">STATE</span>Caches + stores</h3><p><span class="mono">~/.hob_cache/*</span> content-hash caches; SQLite bridges for runs, governance, assets, identity library.</p></div>
+    <div class="card"><h3><span class="tag">STATE</span>What's absent</h3><p>No job DB, no message broker, no multi-tenant accounts. Web run state is in-process per <span class="mono">run_id</span>; operator JWT auth guards spend routes.</p></div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>4 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 5 · FRAME DICT ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §4 · Core Data Model</div>
+  <h2>The <span class="mono" style="font-size:30px">frame</span> dict — the only currency of the pipeline</h2>
+  <div class="cols">
+    <div class="col" style="flex:1.25">
+      <div class="card mono" style="font-size:12.8px;line-height:1.75;padding:18px 20px;background:#1d1a15;color:#e6e0d2;border-color:#1d1a15">
+        frame = {<br>
+        &nbsp;&nbsp;<span style="color:#8fd0ae">"frame_id" "caption" "duration" "director_note"</span> <span style="color:#8a8374"># identity / text</span><br>
+        &nbsp;&nbsp;<span style="color:#8fd0ae">"photo_spec" "visual_path" "*_model_override"</span> <span style="color:#8a8374"># source selection</span><br>
+        &nbsp;&nbsp;<span style="color:#d8b877">"scene"{emotion, image_prompt, motion_prompt}</span> <span style="color:#8a8374"># direction</span><br>
+        &nbsp;&nbsp;<span style="color:#d8b877">"speaker_id" "cast"[…voice_id]</span> <span style="color:#8a8374"># cast / speakers</span><br>
+        &nbsp;&nbsp;<span style="color:#e8a0a0">"lipsync" "voice_override" "lipsync_clip_path"</span> <span style="color:#8a8374"># lip-sync</span><br>
+        &nbsp;&nbsp;<span style="color:#e8a0a0">"product_beat" "suggestions"</span> <span style="color:#8a8374"># brand mode</span><br>
+        &nbsp;&nbsp;<span style="color:#a8c6e8">"talent_id" "product_id" "continuity_lock"</span> <span style="color:#8a8374"># studio mode</span><br>
+        &nbsp;&nbsp;<span style="color:#a8c6e8">"caption_position" "caption_max_lines"</span> <span style="color:#8a8374"># per-frame captions</span><br>
+        }
+      </div>
+      <p style="margin-top:14px;font-size:14px;color:var(--muted)">Whole-reel plan (arc, motif, shot-size rhythm) rides on <span class="mono">frames[0]["_treatment"]</span>.</p>
+    </div>
+    <div class="col" style="flex:.75">
+      <div class="card" style="margin-bottom:14px;background:var(--green-tint);border-color:var(--green)">
+        <h3 style="color:var(--green-deep)">Pipeline = transformations</h3>
+        <p>Each stage <b>reads some keys and writes others</b> over the same mutable list. Stages are order-dependent…</p>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h3>…but internally parallel</h3>
+        <p>Per-frame work fans out in <span class="mono">ThreadPoolExecutor</span>s, throttled by the strictest provider concurrency cap in flight.</p>
+      </div>
+      <div class="card" style="background:var(--bronze-tint);border-color:var(--bronze)">
+        <h3 style="color:#7a5a24">Why it matters</h3>
+        <p>One schema shared by all four modes is <i>the</i> mechanism that keeps Story, Brand, Studio and Canvas on a single engine.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>5 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 6 · END-TO-END FLOW ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §5 · End-to-End Flow</div>
+  <h2>Script in, reel out — with gates before every spend</h2>
+  <div style="flex:1;display:flex;align-items:center">
+    <svg width="100%" height="470" viewBox="0 0 1136 470">
+      <defs><marker id="fa" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#6e675c"/></marker></defs>
+      <g font-size="12.5">
+        <!-- row 1 -->
+        <rect x="0" y="20" width="150" height="66" rx="9" fill="#f7f5f1" stroke="#e3ded5"/>
+        <text x="75" y="46" text-anchor="middle" font-weight="700">script + assets</text>
+        <text x="75" y="66" text-anchor="middle" fill="#6e675c">.txt + photos/videos</text>
+        <rect x="178" y="20" width="150" height="66" rx="9" fill="#fdeaea" stroke="#c0392b"/>
+        <text x="253" y="46" text-anchor="middle" font-weight="700" fill="#8c2d22">Gate A</text>
+        <text x="253" y="66" text-anchor="middle" fill="#8c2d22">script moderation</text>
+        <rect x="356" y="20" width="150" height="66" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="431" y="46" text-anchor="middle" font-weight="700">detect cast</text>
+        <text x="431" y="66" text-anchor="middle" fill="#6e675c">speakers · voices</text>
+        <rect x="534" y="20" width="150" height="66" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="609" y="46" text-anchor="middle" font-weight="700">parse → frames[]</text>
+        <text x="609" y="66" text-anchor="middle" fill="#6e675c">annotations · auto-match</text>
+        <rect x="712" y="20" width="150" height="66" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="787" y="46" text-anchor="middle" font-weight="700">treatment pass</text>
+        <text x="787" y="66" text-anchor="middle" fill="#6e675c">whole-reel arc plan</text>
+        <rect x="890" y="20" width="150" height="66" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="965" y="46" text-anchor="middle" font-weight="700">scene design</text>
+        <text x="965" y="66" text-anchor="middle" fill="#6e675c">LLM director / frame</text>
+        <g stroke="#6e675c" stroke-width="1.8" fill="none">
+          <path d="M150 53 L 176 53" marker-end="url(#fa)"/><path d="M328 53 L 354 53" marker-end="url(#fa)"/>
+          <path d="M506 53 L 532 53" marker-end="url(#fa)"/><path d="M684 53 L 710 53" marker-end="url(#fa)"/>
+          <path d="M862 53 L 888 53" marker-end="url(#fa)"/>
+          <path d="M965 86 C 965 120 965 120 930 120 L 110 120 C 75 120 75 120 75 150" marker-end="url(#fa)"/>
+        </g>
+        <!-- row 2 -->
+        <rect x="0" y="152" width="150" height="80" rx="9" fill="#e9f2ed" stroke="#1f6b4a" stroke-width="2"/>
+        <text x="75" y="176" text-anchor="middle" font-weight="700" fill="#123f2d">visual assignment</text>
+        <text x="75" y="196" text-anchor="middle" fill="#123f2d">real → PASSTHROUGH</text>
+        <text x="75" y="214" text-anchor="middle" fill="#123f2d">else AI gen + Gate B</text>
+        <rect x="178" y="152" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="253" y="182" text-anchor="middle" font-weight="700">grounded motion</text>
+        <text x="253" y="202" text-anchor="middle" fill="#6e675c">vision LLM looks at</text>
+        <text x="253" y="219" text-anchor="middle" fill="#6e675c">the actual still</text>
+        <rect x="356" y="152" width="150" height="80" rx="9" fill="#fdeaea" stroke="#c0392b"/>
+        <text x="431" y="182" text-anchor="middle" font-weight="700" fill="#8c2d22">Gate B2</text>
+        <text x="431" y="202" text-anchor="middle" fill="#8c2d22">vision critique of</text>
+        <text x="431" y="219" text-anchor="middle" fill="#8c2d22">every AI still</text>
+        <rect x="534" y="152" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="609" y="182" text-anchor="middle" font-weight="700">lip-sync pass</text>
+        <text x="609" y="202" text-anchor="middle" fill="#6e675c">TTS → Hedra/SyncLabs</text>
+        <text x="609" y="219" text-anchor="middle" fill="#6e675c">audio drives duration</text>
+        <rect x="712" y="152" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="787" y="182" text-anchor="middle" font-weight="700">route video models</text>
+        <text x="787" y="202" text-anchor="middle" fill="#6e675c" class="m">router.select_model</text>
+        <text x="787" y="219" text-anchor="middle" fill="#6e675c">per shot, per tier</text>
+        <rect x="890" y="152" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="965" y="182" text-anchor="middle" font-weight="700">build clips</text>
+        <text x="965" y="202" text-anchor="middle" fill="#6e675c">Kling · Higgsfield · fal</text>
+        <text x="965" y="219" text-anchor="middle" fill="#6e675c">cache → Ken Burns fb</text>
+        <g stroke="#6e675c" stroke-width="1.8" fill="none">
+          <path d="M150 192 L 176 192" marker-end="url(#fa)"/><path d="M328 192 L 354 192" marker-end="url(#fa)"/>
+          <path d="M506 192 L 532 192" marker-end="url(#fa)"/><path d="M684 192 L 710 192" marker-end="url(#fa)"/>
+          <path d="M862 192 L 888 192" marker-end="url(#fa)"/>
+          <path d="M965 232 C 965 266 965 266 930 266 L 110 266 C 75 266 75 266 75 296" marker-end="url(#fa)"/>
+        </g>
+        <!-- row 3 -->
+        <rect x="0" y="298" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="75" y="328" text-anchor="middle" font-weight="700">captions (ASS)</text>
+        <text x="75" y="348" text-anchor="middle" fill="#6e675c">effective timecodes</text>
+        <rect x="178" y="298" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="253" y="328" text-anchor="middle" font-weight="700">voiceover (opt)</text>
+        <text x="253" y="348" text-anchor="middle" fill="#6e675c">per-speaker voices</text>
+        <rect x="356" y="298" width="150" height="80" rx="9" fill="#fff" stroke="#1f6b4a"/>
+        <text x="431" y="322" text-anchor="middle" font-weight="700">assemble</text>
+        <text x="431" y="342" text-anchor="middle" fill="#6e675c">xfade concat · captions</text>
+        <text x="431" y="360" text-anchor="middle" fill="#6e675c">music duck · VO mix</text>
+        <rect x="534" y="298" width="150" height="80" rx="9" fill="#f4ecdd" stroke="#a9803f"/>
+        <text x="609" y="322" text-anchor="middle" font-weight="700" fill="#7a5a24">brand overlay</text>
+        <text x="609" y="342" text-anchor="middle" fill="#7a5a24">disclosure · logo bug</text>
+        <text x="609" y="360" text-anchor="middle" fill="#7a5a24">CTA card · watermark</text>
+        <rect x="712" y="298" width="150" height="80" rx="9" fill="#123f2d"/>
+        <text x="787" y="333" text-anchor="middle" font-weight="700" fill="#fff">OUTPUT</text>
+        <text x="787" y="355" text-anchor="middle" fill="#bcd3c6" class="m">9:16 .mp4</text>
+        <g stroke="#6e675c" stroke-width="1.8" fill="none">
+          <path d="M150 338 L 176 338" marker-end="url(#fa)"/><path d="M328 338 L 354 338" marker-end="url(#fa)"/>
+          <path d="M506 338 L 532 338" marker-end="url(#fa)"/><path d="M684 338 L 710 338" marker-end="url(#fa)"/>
+        </g>
+        <rect x="890" y="298" width="246" height="80" rx="9" fill="#f7f5f1" stroke="#e3ded5"/>
+        <text x="1013" y="322" text-anchor="middle" font-weight="700" fill="#26221c">Dry-run stops after scene design</text>
+        <text x="1013" y="344" text-anchor="middle" fill="#6e675c">prints per-frame plan + cost estimate,</text>
+        <text x="1013" y="362" text-anchor="middle" fill="#6e675c">spends nothing · brand gate blocks /run</text>
+        <text x="20" y="428" font-size="13" fill="#8c2d22" font-weight="600">■ safety gates</text>
+        <text x="160" y="428" font-size="13" fill="#123f2d" font-weight="600">■ realism moat (passthrough)</text>
+        <text x="400" y="428" font-size="13" fill="#7a5a24" font-weight="600">■ brand-only post-pass</text>
+      </g>
+    </svg>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>6 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 7 · ROUTER + BRAIN ═══════════ -->
+<section class="slide">
+  <div class="kicker">LLD §4–5 · Model Router &amp; LLM Brain</div>
+  <h2>Two pure seams decide every model choice</h2>
+  <div class="cols">
+    <div class="col">
+      <h3 style="font-size:19px;margin-bottom:12px;color:var(--green-deep)">model_router.select_model()</h3>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="card" style="display:flex;gap:12px;align-items:center"><span class="mono" style="font-size:20px;font-weight:700;color:var(--bronze)">1</span><p><b>Valid override wins</b> — <span class="mono">[model:]</span> / <span class="mono">[imgmodel:]</span> / <span class="mono">[vidmodel:]</span> annotations.</p></div>
+        <div class="card" style="display:flex;gap:12px;align-items:center;background:var(--green-tint);border-color:var(--green)"><span class="mono" style="font-size:20px;font-weight:700;color:var(--green)">2</span><p><b>Real media → <span class="mono">PASSTHROUGH</span></b> — real photos, videos and product beats are never AI-regenerated.</p></div>
+        <div class="card" style="display:flex;gap:12px;align-items:center"><span class="mono" style="font-size:20px;font-weight:700;color:var(--bronze)">3</span><p><b>Route by shot type + tier</b> — <span class="mono">face · object · real · landscape · hero · dialogue</span> × <span class="mono">draft | premium</span>.</p></div>
+        <div class="card" style="display:flex;gap:12px;align-items:center"><span class="mono" style="font-size:20px;font-weight:700;color:var(--bronze)">4</span><p><b>Catalog default</b> — plus cross-vendor <span class="mono">fallbacks</span> chains per axis (Gap #8).</p></div>
+      </div>
+    </div>
+    <div class="col">
+      <h3 style="font-size:19px;margin-bottom:12px;color:var(--green-deep)">llm.chat() — one brain, three tiers</h3>
+      <table>
+        <tr><th>Tier</th><th>Used for</th><th class="mono">e.g.</th></tr>
+        <tr><td class="mono">reasoning</td><td>treatment, scene design, cast, shot plans</td><td class="mono">sonnet-4-6 / gpt-4.1</td></tr>
+        <tr><td class="mono">vision</td><td>grounded motion, Gate B2, image match</td><td class="mono">gpt-4o / sonnet</td></tr>
+        <tr><td class="mono">fast</td><td>suggestions, descriptions — batch &amp; cheap</td><td class="mono">haiku / 4o-mini</td></tr>
+      </table>
+      <div class="card" style="margin-top:14px">
+        <h3>Provider-neutral by construction</h3>
+        <p>OpenAI · Anthropic direct · Bedrock · Gemini behind one message format. <b>JSON schema enforcement</b>: strict structured outputs on OpenAI; schema directive injected elsewhere — no parse failures.</p>
+      </div>
+      <p style="margin-top:12px;font-size:13.5px;color:var(--muted)">Swap the brain by editing <span class="mono">config/llm.json</span> — callers untouched. Production runs Bedrock Sonnet 4.6.</p>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>7 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 8 · SAFETY & GOVERNANCE ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §6 · LLD §9 · Safety &amp; Governance</div>
+  <h2>Four gates, four different failure classes</h2>
+  <div class="cols">
+    <div class="col" style="flex:1.15">
+      <table>
+        <tr><th>Gate</th><th>When</th><th>Blocks</th></tr>
+        <tr><td><b>A</b> · moderation</td><td>before scene design</td><td>policy-violating script text (non-blocking on API error)</td></tr>
+        <tr><td><b>B</b> · face sanity</td><td>after image gen</td><td>deformed faces, bad files — ≤2 retries then accept</td></tr>
+        <tr><td><b>B2</b> · vision critique</td><td>stills → motion</td><td>blank/abstract image where a real subject was expected</td></tr>
+        <tr><td><b>Brand</b> · mandatories</td><td>top of <span class="mono">/run</span></td><td><b>any spend</b> if logo, CTA or product beat is missing</td></tr>
+      </table>
+      <div class="card" style="margin-top:14px;background:var(--green-tint);border-color:var(--green)">
+        <h3 style="color:var(--green-deep)">Spend governance: reserve → release → settle</h3>
+        <p>Every spend route reserves the estimate before dispatch; append-only <span class="mono">cost_events</span> ledger; stale reservations swept on startup. Consent gates cover AI likeness of real people.</p>
+      </div>
+    </div>
+    <div class="col" style="flex:.85">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card"><h3>🪪 Real media is never AI-regenerated</h3><p>The core realism advantage — real photos/videos pass through untouched (<span class="mono">PASSTHROUGH</span>).</p></div>
+        <div class="card"><h3>✍️ AI never writes brand ad claims</h3><p><span class="mono">extract_brief()</span> is parse-only, verbatim. On-screen/spoken ad copy is operator-supplied.</p></div>
+        <div class="card"><h3>👤 Authenticity caution (HOB)</h3><p>AI portraits / synthetic voices of <i>named real people</i> are a consented, labeled exception — prefer real-photo animation + <span class="mono">ai_symbolic</span>.</p></div>
+        <div class="card"><h3>🧾 Provenance</h3><p><span class="mono">/provenance/&lt;run&gt;</span> labels every asset: real · ai_symbolic · AI-likeness.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>8 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 9 · COST DISCIPLINE ═══════════ -->
+<section class="slide">
+  <div class="kicker">HLD §7 · Cross-Cutting · Cost</div>
+  <h2>Test cheap, finish expensive</h2>
+  <div class="cols">
+    <div class="col">
+      <div style="display:flex;gap:16px;margin-bottom:16px">
+        <div class="card" style="flex:1;text-align:center;padding:20px">
+          <div style="font-size:44px;font-weight:800;color:var(--green)">Dev</div>
+          <p style="margin-top:6px">cheap models · clips capped at 5s · iterate freely</p>
+        </div>
+        <div class="card" style="flex:1;text-align:center;padding:20px;background:var(--bronze-tint);border-color:var(--bronze)">
+          <div style="font-size:44px;font-weight:800;color:var(--bronze)">Prod</div>
+          <p style="margin-top:6px">premium models · final / client renders only</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>One source of cost truth</h3>
+        <p><span class="mono">pricing.estimate()</span> mirrors the router's actual choices, multi-shot aware. Served by <span class="mono">/api/estimate</span> — no client-side cost logic. The 💰 chip and CLI <span class="mono">--dry-run</span> show it before anything is spent.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card"><h3>💳 Live credit visibility</h3><p><span class="mono">balances.py</span> probes vendor wallets concurrently (ElevenLabs, Kling, Suno, fal) — a low wallet is visible <i>before</i> a run, not mid-render.</p></div>
+        <div class="card"><h3>♻️ Cache = never re-pay</h3><p>Content-hash caches at every expensive step mean re-renders and Final Cut reuse stills + clips with zero re-spend.</p></div>
+        <div class="card"><h3>✅ Approval gate</h3><p>Editors tick frames after previewing stills; only approved frames get paid animation — the rest fall back to free Ken Burns, and the quote drops to match.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>9 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 10 · CACHING ═══════════ -->
+<section class="slide">
+  <div class="kicker">LLD §16 · Caching Summary</div>
+  <h2>Every expensive step is content-hash cached</h2>
+  <table style="margin-top:4px">
+    <tr><th>Cache</th><th class="mono">Key</th><th>Location</th><th>Invalidated by</th></tr>
+    <tr><td><b>Animation clips</b></td><td class="mono">MD5(image + motion + duration)</td><td class="mono">~/.hob_cache/kling_clips/</td><td>image, motion, duration or model change</td></tr>
+    <tr><td><b>Scene designs</b></td><td class="mono">MD5(caption, note, type, subject…)</td><td class="mono">~/.hob_cache/scene_designs/</td><td>any of those inputs</td></tr>
+    <tr><td><b>Image descriptions</b></td><td class="mono">image content hash</td><td class="mono">image_descriptions.db</td><td>file content change (rename-safe)</td></tr>
+    <tr><td><b>Lip-sync clips</b></td><td class="mono">MD5(media + audio bytes)</td><td class="mono">~/.hob_cache/lipsync_clips/</td><td>media or audio change</td></tr>
+    <tr><td><b>Lip-sync audio</b></td><td class="mono">MD5(caption + voice_id)</td><td class="mono">~/.hob_cache/lipsync_audio/</td><td>caption or voice change</td></tr>
+    <tr><td><b>Generated stills</b></td><td class="mono">ai_portrait_{fid}_{prompt_hash}.jpg</td><td>the asset folder</td><td>prompt change → new hash → regenerate</td></tr>
+  </table>
+  <div style="display:flex;gap:16px;margin-top:18px">
+    <div class="card" style="flex:1;background:var(--green-tint);border-color:var(--green)">
+      <h3 style="color:var(--green-deep)">Prompt-hash stills fixed a real bug</h3>
+      <p>The old <span class="mono">ai_portrait_{fid}.jpg</span> scheme silently reused stale images after prompt edits. The hash suffix auto-busts on any prompt change.</p>
+    </div>
+    <div class="card" style="flex:1">
+      <h3>BlobCache abstraction</h3>
+      <p>Clip and lip-sync caches sit behind <span class="mono">cache_store.BlobCache</span> — local filesystem today, optional S3 read-through when scale needs it.</p>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>10 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 11 · MODULE MAP ═══════════ -->
+<section class="slide">
+  <div class="kicker">LLD §0 · Module Map — agents/*</div>
+  <h2>~35 modules, grouped by pipeline stage</h2>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;flex:1;align-content:start">
+    <div class="card"><h3 style="color:var(--green-deep)">Intake</h3><p class="mono" style="font-size:12.5px;line-height:1.8">script_parser · image_matcher<br>cast · growth (story intake)</p></div>
+    <div class="card"><h3 style="color:var(--green-deep)">Direction</h3><p class="mono" style="font-size:12.5px;line-height:1.8">scene_intelligence · shot_planner<br>suggestions · coverage · canvas_run</p></div>
+    <div class="card"><h3 style="color:var(--green-deep)">Generation</h3><p class="mono" style="font-size:12.5px;line-height:1.8">image_generator · image_editor<br>upscaler · restore · layout</p></div>
+    <div class="card"><h3 style="color:var(--green-deep)">Motion &amp; Voice</h3><p class="mono" style="font-size:12.5px;line-height:1.8">clip_builder (+kling/higgsfield/fal)<br>lipsync_coordinator (+hedra/synclabs)<br>tts_generator</p></div>
+    <div class="card"><h3 style="color:var(--green-deep)">Assembly</h3><p class="mono" style="font-size:12.5px;line-height:1.8">caption_writer · assembler<br>music_generator · beat_track<br>fcpxml (editor hand-off)</p></div>
+    <div class="card"><h3 style="color:var(--bronze)">Platform &amp; Governance</h3><p class="mono" style="font-size:12.5px;line-height:1.8">llm · model_router · pricing · safety<br>governance · run_store · db · auth<br>provenance · balances · watermark<br>degradation · circuit · _kv · cache_store</p></div>
+  </div>
+  <div class="card" style="margin-top:2px;background:var(--panel)">
+    <p style="font-size:14px"><b>Entry points:</b> <span class="mono">web_app.py</span> (Flask: parse / preview / estimate / run / SSE progress / canvas) · <span class="mono">run_caption.py</span> (canonical CLI pipeline) · <span class="mono">main.py</span> is legacy, unmaintained. <span class="mono">canvas_run.py</span> is an <b>orchestrator</b> over the same agents — sequences and gates only, never re-implements cost, routing or render.</p>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>11 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 12 · CLIP BUILDER + SYNC ═══════════ -->
+<section class="slide">
+  <div class="kicker">LLD §13–14 · Animation &amp; Assembly Internals</div>
+  <h2>The two hardest problems: provider limits &amp; audio drift</h2>
+  <div class="cols">
+    <div class="col">
+      <h3 style="font-size:19px;color:var(--green-deep);margin-bottom:10px">Two-phase clip building</h3>
+      <svg width="100%" height="180" viewBox="0 0 500 180">
+        <defs><marker id="ca" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#6e675c"/></marker></defs>
+        <rect x="0" y="10" width="225" height="70" rx="9" fill="#e9f2ed" stroke="#1f6b4a"/>
+        <text x="112" y="38" text-anchor="middle" font-size="13.5" font-weight="700" fill="#123f2d">Phase 1 — immediate</text>
+        <text x="112" y="60" text-anchor="middle" font-size="11.5" fill="#4a443a">cache hits · Ken Burns · video trims</text>
+        <rect x="275" y="10" width="225" height="70" rx="9" fill="#f4ecdd" stroke="#a9803f"/>
+        <text x="387" y="38" text-anchor="middle" font-size="13.5" font-weight="700" fill="#7a5a24">Phase 2 — capped pool</text>
+        <text x="387" y="60" text-anchor="middle" font-size="11.5" fill="#4a443a">submit + poll paid providers</text>
+        <path d="M225 45 L 273 45" stroke="#6e675c" stroke-width="2" marker-end="url(#ca)"/>
+        <text x="250" y="120" text-anchor="middle" font-size="12.5" fill="#4a443a">pool cap = <tspan class="m">min(max_concurrent)</tspan> (Kling 4 · Veo 2) · retry-on-429</text>
+        <text x="250" y="145" text-anchor="middle" font-size="12.5" fill="#4a443a">any per-frame failure → free Ken Burns for that frame only</text>
+        <text x="250" y="170" text-anchor="middle" font-size="12.5" fill="#4a443a"><tspan class="m">on_clip_ready</tspan> callback → progressive reveal in the UI</text>
+      </svg>
+      <div class="card" style="margin-top:6px"><p><span class="mono">_fit_clip_to_duration()</span> trims or freeze-extends every clip <i>before</i> caching, so cached entries are always the right length.</p></div>
+    </div>
+    <div class="col">
+      <h3 style="font-size:19px;color:var(--green-deep);margin-bottom:10px">Effective timecodes — the sync law</h3>
+      <div class="card mono" style="background:#1d1a15;color:#e6e0d2;border-color:#1d1a15;font-size:13.5px;line-height:1.9;padding:16px 18px">
+        offset[i] = Σ durations[:i] <span style="color:#d8b877">− 0.4·i</span><br>
+        <span style="color:#8a8374"># crossfade overlap per junction</span>
+      </div>
+      <p style="margin:12px 0">Captions, voiceover <span class="mono">adelay</span>, ducking windows and lip-sync placement <b>must all</b> use <span class="mono">effective_timecodes()</span> — raw cumulative durations drift at every crossfade.</p>
+      <div class="card" style="background:var(--green-tint);border-color:var(--green)">
+        <h3 style="color:var(--green-deep)">Beat-aware cutting (anti-slideshow)</h3>
+        <p><span class="mono">beat_track</span> finds music onsets; a cut near a beat becomes a ~0.06s hard cut <i>on</i> the beat, else a 0.4s dissolve. Cuts and captions are computed from the same overlap list — they can never desync.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>12 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 13 · WEB SURFACE + EDITOR LOOP ═══════════ -->
+<section class="slide">
+  <div class="kicker">LLD §15 · web_app.py — Flask Surface</div>
+  <h2>A collaborative draft tool, not a one-shot black box</h2>
+  <div class="cols">
+    <div class="col">
+      <h3 style="font-size:19px;color:var(--green-deep);margin-bottom:10px">The editor iteration loop</h3>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card"><h3>🔁 Per-frame redo</h3><p><span class="mono">/redo-still</span> · <span class="mono">/redo-motion</span> — regenerate one frame's still or clip; spend reserved for <b>that frame only</b>; cache busted for that frame only.</p></div>
+        <div class="card"><h3>📡 Progressive reveal</h3><p>Typed SSE <span class="mono">clip_ready</span> events — each clip appears in its frame card the moment it lands, not when the whole render ends.</p></div>
+        <div class="card"><h3>✅ Approval gate</h3><p>Only approved frames get paid animation (<span class="mono">"kenburns"</span> sentinel forces the rest to the free path); the estimate mirrors the selection.</p></div>
+      </div>
+    </div>
+    <div class="col">
+      <h3 style="font-size:19px;color:var(--green-deep);margin-bottom:10px">Director Canvas: stage-gated spending</h3>
+      <svg width="100%" height="88" viewBox="0 0 520 88">
+        <g font-size="11.5" font-weight="600">
+          <rect x="0" y="18" width="76" height="42" rx="8" fill="#e9f2ed" stroke="#1f6b4a"/><text x="38" y="44" text-anchor="middle" fill="#123f2d">Script</text>
+          <rect x="88" y="18" width="76" height="42" rx="8" fill="#e9f2ed" stroke="#1f6b4a"/><text x="126" y="44" text-anchor="middle" fill="#123f2d">Storyboard</text>
+          <rect x="176" y="18" width="76" height="42" rx="8" fill="#f4ecdd" stroke="#a9803f"/><text x="214" y="44" text-anchor="middle" fill="#7a5a24">Keyframes</text>
+          <rect x="264" y="18" width="76" height="42" rx="8" fill="#f4ecdd" stroke="#a9803f"/><text x="302" y="44" text-anchor="middle" fill="#7a5a24">Audio</text>
+          <rect x="352" y="18" width="76" height="42" rx="8" fill="#f4ecdd" stroke="#a9803f"/><text x="390" y="44" text-anchor="middle" fill="#7a5a24">Video</text>
+          <rect x="440" y="18" width="76" height="42" rx="8" fill="#123f2d"/><text x="478" y="44" text-anchor="middle" fill="#fff">Final Cut</text>
+        </g>
+        <text x="260" y="80" text-anchor="middle" font-size="11.5" fill="#6e675c">per-stage cost + spend-cap check before spend · approval unlocks next</text>
+      </svg>
+      <div class="card" style="margin-top:10px"><p><b>Real-people moat on canvas:</b> <span class="mono">/match-photos</span> content-matches the operator's real folder to shots (passthrough), <span class="mono">/restore</span> cleans real footage non-generatively, <span class="mono">/recreate</span> is identity-safe (refuses any reference containing a person).</p></div>
+      <div class="card" style="margin-top:12px"><p><b>Hand-off, not lock-in:</b> <span class="mono">/export</span> ships <span class="mono">timeline.fcpxml</span> + SRT + clips for Premiere / Resolve / FCP. <span class="mono">/performance</span> closes the loop with post-publish stats.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>13 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 14 · FAILURE & SHARP EDGES ═══════════ -->
+<section class="slide">
+  <div class="kicker">LLD §17 &amp; §19 · Concurrency, Failure &amp; Sharp Edges</div>
+  <h2>Degrade per-frame, never crash the render</h2>
+  <div class="cols">
+    <div class="col" style="flex:.95">
+      <table>
+        <tr><th>Stage</th><th>Pool / cap</th><th>On failure</th></tr>
+        <tr><td>Scene design</td><td>threads ×10</td><td>generic fallback scene</td></tr>
+        <tr><td>Image gen</td><td>serial/frame</td><td>fallback model → Gate B retry ×2</td></tr>
+        <tr><td>Lip-sync</td><td>6 submit / N poll</td><td>clear lipsync → animate normally</td></tr>
+        <tr><td>Clip build</td><td class="mono">min(max_concurrent)</td><td>retry-on-limit → Ken Burns</td></tr>
+        <tr><td>Assembly</td><td>single ffmpeg</td><td>raises — temp dir kept for debug</td></tr>
+      </table>
+      <div class="card" style="margin-top:12px;background:var(--green-tint);border-color:var(--green)">
+        <p><b>Degradation ledger</b> (<span class="mono">degradation.py</span>) records every silent fallback — vendor failovers, gate skips, music failures — surfaced as the 🧾 render report.</p>
+      </div>
+    </div>
+    <div class="col" style="flex:1.05">
+      <h3 style="font-size:19px;color:var(--bronze);margin-bottom:10px">Sharp edges (read before editing)</h3>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:9px">
+        <li class="card" style="padding:10px 14px"><span class="mono">pricing.estimate</span> must mirror <span class="mono">model_router</span> exactly — or the quote diverges from the bill.</li>
+        <li class="card" style="padding:10px 14px">Kling/Higgsfield cache keys are <b>deliberately legacy-formatted</b> — "cleaning them up" throws away paid clips.</li>
+        <li class="card" style="padding:10px 14px">All audio timing goes through <span class="mono">effective_timecodes()</span> — anything else drifts at crossfades.</li>
+        <li class="card" style="padding:10px 14px"><span class="mono">subject_name</span> is always optional — never default a sample person; derive from the story via <span class="mono">cast.subject_descriptor()</span>.</li>
+        <li class="card" style="padding:10px 14px">Every spend route calls <span class="mono">reserve_spend</span> before dispatch — including <span class="mono">/retry</span>; caches don't protect a cold path.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture</span><span>14 / 15</span></div>
+</section>
+
+<!-- ═══════════ SLIDE 15 · RISKS + ROADMAP ═══════════ -->
+<section class="slide dark">
+  <div class="kicker">HLD §8–9 · Risks &amp; Roadmap</div>
+  <h2 style="color:#fff">Where it's headed</h2>
+  <div class="cols">
+    <div class="col">
+      <h3 style="font-size:19px;color:#d8b877;margin-bottom:12px">Top risks (mitigated, not solved)</h3>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2">In-memory web run state — restart loses in-flight runs → durable job store is Scale Phase 0</li>
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2">fal.ai slugs/prices marked VERIFY — Dev is safe; verify before paid runs</li>
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2">Lip-sync media leaves the box (external CDN) — opt-in, documented; signed URLs on roadmap</li>
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2">No automated tests — router / pricing / cast are pure functions, prime unit-test targets</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3 style="font-size:19px;color:#d8b877;margin-bottom:12px">Roadmap</h3>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2"><b style="color:#8fd0ae">Shipped:</b> P0–P2 — gates, cast, treatment, lip-sync, B-roll, voiceover, brand B1, canvas hardening (L99)</li>
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2"><b style="color:#d8b877">Next:</b> Scale Phase 0 durability — persistent runs DB, resume, cost ledger, backups</li>
+        <li style="background:rgba(255,255,255,.08);border-radius:9px;padding:11px 15px;font-size:14.5px;color:#e6e0d2"><b style="color:#d8b877">Then:</b> Phase 1 job queue + multi-worker · B2 kinetic motion-graphics · P3 CLIP scoring</li>
+      </ul>
+      <p class="mono" style="font-size:12px;margin-top:20px;color:#bcd3c6">Canonical docs: GUIDE.md · docs/HLD.md · docs/LLD.md · docs/L99_EXECUTION_AUDIT.md (trust this over plan-doc status claims)</p>
+    </div>
+  </div>
+  <div class="foot"><span>HOBAILabs · Architecture · July 2026</span><span>15 / 15</span></div>
+</section>
+
+</div></div>
+
+<div id="nav">
+  <button id="prev">←</button>
+  <span id="counter">1 / 15</span>
+  <button id="next">→</button>
+</div>
+
+<script>
+const slides=[...document.querySelectorAll('.slide')];let i=0;
+function show(n){i=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+  document.getElementById('counter').textContent=(i+1)+' / '+slides.length;
+  location.hash=i+1;}
+function fit(){const s=Math.min(innerWidth/1300,innerHeight/740);
+  document.getElementById('scaler').style.transform='scale('+s+')';}
+addEventListener('resize',fit);fit();
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' ')show(i+1);
+  if(e.key==='ArrowLeft'||e.key==='PageUp')show(i-1);
+  if(e.key==='Home')show(0);if(e.key==='End')show(slides.length-1);});
+document.getElementById('next').onclick=()=>show(i+1);
+document.getElementById('prev').onclick=()=>show(i-1);
+document.getElementById('stage').addEventListener('click',e=>{if(e.target.closest('#nav'))return;show(i+1);});
+const h=parseInt(location.hash.slice(1));if(h)show(h-1);
+</script>
+</body>
+</html>

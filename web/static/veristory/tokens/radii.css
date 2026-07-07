@@ -1,0 +1,15 @@
+/* ============================================================
+   VERISTORY — Radii
+   Architectural, editorial. Moderate rounding — not pill-heavy.
+   ============================================================ */
+
+:root {
+  --radius-xs:   4px;
+  --radius-sm:   7px;
+  --radius-md:   11px;   /* default card / input */
+  --radius-lg:   16px;
+  --radius-xl:   22px;
+  --radius-2xl:  30px;
+  --radius-reel: 18px;   /* 9:16 media frame */
+  --radius-full: 999px;
+}

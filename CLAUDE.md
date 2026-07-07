@@ -79,6 +79,15 @@ pytest tests/                                         # tests
   ledger + canvas-state write safety; P1 plan-time auto-fill, per-character voices,
   shot take-history, Remotion caption wiring; P2 selective lip-sync + beat→asset ladder.
   Includes the owner-suggestion ledger (S1–S17) — check it before starting canvas work.
+- **Veristory rebrand (2026-07-05):** the web presence is re-signatured to the
+  **Veristory** design system (verified green + antique bronze + Hanken Grotesk /
+  Cormorant Garamond / IBM Plex Mono). Tokens live in `web/static/veristory/`
+  (source of truth: the claude.ai/design "Veristory Design System" project); the
+  app-shell `:root` tokens in `web/static/style.css` are value-swapped to match
+  (names unchanged). The marketing landing page (`landing.html`, static, no
+  pipeline) is the **root `/`**; the Story front door moved to **`/story`**
+  (`/landing` 301s to `/`). Remaining DS deliverables (auth, app shell, Trust
+  Center) are still design-side pending.
 
 ## 10. Canonical docs (start here)
 - `GUIDE.md` — full user guide (behaviour source of truth).

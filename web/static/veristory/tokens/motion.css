@@ -1,0 +1,40 @@
+/* ============================================================
+   VERISTORY — Motion
+   Calm, cinematic, unhurried. Long editorial reveals, quick
+   confident UI feedback. No bounce, no overshoot.
+   ============================================================ */
+
+:root {
+  /* ---- Durations ---- */
+  --dur-instant: 90ms;   /* @kind other */
+  --dur-fast:    160ms;  /* @kind other */
+  --dur-base:    240ms;  /* @kind other */
+  --dur-slow:    420ms;  /* @kind other */
+  --dur-reveal:  720ms;  /* @kind other */
+  --dur-cinema:  1200ms; /* @kind other */
+
+  /* ---- Easing ---- */
+  --ease-out:      cubic-bezier(0.22, 0.61, 0.36, 1);      /* @kind other */
+  --ease-in-out:   cubic-bezier(0.65, 0.05, 0.36, 1);      /* @kind other */
+  --ease-cinema:   cubic-bezier(0.16, 1, 0.3, 1);          /* @kind other */
+  --ease-standard: cubic-bezier(0.4, 0.0, 0.2, 1);         /* @kind other */
+
+  /* ---- Composed transitions ---- */
+  --tr-hover: color var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out),
+              opacity var(--dur-fast) var(--ease-out);
+  --tr-press: transform var(--dur-instant) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms; /* @kind other */
+    --dur-fast: 0ms; /* @kind other */
+    --dur-base: 0ms; /* @kind other */
+    --dur-slow: 0ms; /* @kind other */
+    --dur-reveal: 0ms; /* @kind other */
+    --dur-cinema: 0ms; /* @kind other */
+  }
+}

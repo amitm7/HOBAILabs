@@ -105,6 +105,7 @@
   <li><b>Bottom bar</b> — Back / Next, cost estimate chip, <b>Preview Stills</b>, <b>Generate</b>.</li>
 </ul>
 <p>On each frame card, tap <b>More</b> to expand camera, director note, lip-sync, and other advanced controls.</p>
+<p><b>Veristory brand theme.</b> The app now wears the <b>Veristory</b> design system: warm near-black canvas, <b>verified-green</b> accent on primary buttons and active states, <b>antique-bronze</b> on AI/symbolic badges, and new brand fonts (Hanken Grotesk / IBM Plex Mono). Same layout, same buttons — only the look changed. The site root <code>/</code> is now the buyer-facing <b>marketing landing page</b>; the Story tool you work in lives at <code>/story</code> ("Sign in" on the landing takes you there, and <code>/landing</code> redirects to <code>/</code>). The landing is a static page and can't spend anything.</p>
 
 <h2 id="what">1 · What it does (in one minute)</h2>
 <p>You give it a <b>story written as short lines</b> and a <b>folder of photos/videos</b>. For each line it decides what should be on screen, how the camera moves, and the mood — then builds one <b>9:16 vertical video</b> with captions and music, ready for Reels / Shorts.</p>
@@ -377,6 +378,7 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <li><b>Text Card:</b> choose <b>Text Card</b> on a frame, or write <code>[layout: text_card]</code>, for a full-screen bold statement card.</li>
 <li><b>Posting kit:</b> story mode can generate hashtags and pick a cover frame from the <code>Caption:</code> block. Brand copy remains operator-supplied.</li>
 <li><b>Export clips + edit list:</b> after a completed run, download a zip with clips and <code>edit_list.json</code> for a human editor.</li>
+<li><b>Content Credential (C2PA):</b> the finished MP4 is signed with an embedded, verifiable credential stating — per shot — what is real footage vs AI, whether a real person's AI likeness appears, and the recorded consent (the machine-readable AI disclosure platforms and the EU AI Act expect). The export zip includes <code>content_credential.json</code>. If signing can't complete, the reel still renders unsigned and the degradation report notes it.</li>
 <li><b>Did this reel perform?</b> after a completed run, the output panel has an optional <b>views / likes / note</b> capture — fill it in once the reel is posted and click <b>Save</b>. It's stored with the run as the seed of a performance-feedback loop.</li>
 <li><b>Redo motion:</b> retry only the motion for one approved still without regenerating the image.</li>
 </ul>

@@ -1,0 +1,93 @@
+/* ============================================================
+   VERISTORY — Color System
+   Dark theme primary. Warm near-black canvas, deep archival
+   "verified" green signature, antique bronze for editorial /
+   certification moments. WCAG AA on the dark canvas.
+   ============================================================ */
+
+:root {
+  /* ---- Ink / canvas (warm near-black, faint green undertone) ---- */
+  --ink-1000: #070806;
+  --ink-950:  #0B0D0B;   /* page background */
+  --ink-900:  #101312;   /* base surface */
+  --ink-850:  #141816;   /* subtle raised */
+  --ink-800:  #1A1F1C;   /* card surface */
+  --ink-750:  #202621;
+  --ink-700:  #262E28;   /* raised / hover fill */
+  --ink-600:  #333C36;   /* strong border / divider */
+  --ink-500:  #47524B;   /* disabled outline */
+
+  /* ---- Paper / text (warm off-white, editorial) ---- */
+  --paper-0:   #FBFAF5;
+  --paper-50:  #F2F0E8;  /* primary text */
+  --paper-200: #D6D4C9;
+  --paper-400: #A9AAA0;  /* secondary text */
+  --paper-600: #767A70;  /* tertiary text / captions */
+  --paper-800: #4C514A;  /* faint text on dark */
+
+  /* ---- Verified green (signature) ---- */
+  --verd-950: #08160F;
+  --verd-900: #0E2A1E;
+  --verd-800: #123D2A;
+  --verd-700: #165539;
+  --verd-600: #1E6B49;
+  --verd-500: #2E8B63;   /* brand core */
+  --verd-450: #3AA173;   /* primary button fill (AA w/ dark text) */
+  --verd-400: #58BE8E;   /* links / accent text on dark (AA) */
+  --verd-300: #8CD9B2;
+  --verd-200: #BEEBD5;
+
+  /* ---- Antique bronze / brass (editorial · certification seal) ---- */
+  --bronze-800: #4A3A1E;
+  --bronze-700: #6E552E;
+  --bronze-600: #90723E;
+  --bronze-500: #B4915A;  /* metallic core */
+  --bronze-400: #CBA96C;  /* bronze text on dark (AA) */
+  --bronze-300: #E0C793;
+
+  /* ---- Provenance semantic tiers ---- */
+  --prov-real:      var(--verd-400);   /* real media, untouched */
+  --prov-real-bg:   rgba(88, 190, 142, 0.12);
+  --prov-real-line: rgba(88, 190, 142, 0.34);
+  --prov-ai:        var(--bronze-400); /* AI-generated / synthetic (no named person) */
+  --prov-ai-bg:     rgba(203, 169, 108, 0.12);
+  --prov-ai-line:   rgba(203, 169, 108, 0.34);
+  --prov-likeness:      #E0895F;        /* AI likeness of a real person — consent-gated */
+  --prov-likeness-bg:   rgba(224, 137, 95, 0.12);
+  --prov-likeness-line: rgba(224, 137, 95, 0.36);
+
+  /* ---- Status ---- */
+  --ok:      #58BE8E;
+  --warn:    #D8A24A;
+  --danger:  #E0685A;
+  --danger-bg: rgba(224, 104, 90, 0.12);
+  --info:    #74A0BC;    /* desaturated slate-blue, used sparingly */
+
+  /* ---- Semantic aliases (use these in components) ---- */
+  --bg:              var(--ink-950);
+  --surface:         var(--ink-900);
+  --surface-raised:  var(--ink-800);
+  --surface-overlay: var(--ink-700);
+  --surface-sunken:  var(--ink-1000);
+
+  --border:        rgba(242, 240, 232, 0.09);
+  --border-strong: rgba(242, 240, 232, 0.16);
+  --border-accent: rgba(46, 139, 99, 0.45);
+
+  --text:           var(--paper-50);
+  --text-secondary: var(--paper-400);
+  --text-tertiary:  var(--paper-600);
+  --text-inverse:   #08120D;
+
+  --accent:        var(--verd-500);
+  --accent-hover:  var(--verd-450);
+  --accent-text:   var(--verd-400);   /* for links & accent text on dark */
+  --accent-soft:   rgba(46, 139, 99, 0.14);
+  --on-accent:     #071510;           /* near-black text on green fills */
+
+  --seal:          var(--bronze-400); /* certification / heritage accent text */
+  --seal-soft:     rgba(180, 145, 90, 0.14);
+
+  --focus-ring:    var(--verd-400);
+  --overlay-scrim: rgba(6, 8, 6, 0.68);
+}

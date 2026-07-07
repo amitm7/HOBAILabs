@@ -1,0 +1,36 @@
+/* ============================================================
+   VERISTORY — Spacing & Layout
+   4px base grid. Generous whitespace (Rolex restraint).
+   ============================================================ */
+
+:root {
+  --space-0:   0;
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+  --space-20:  80px;
+  --space-24:  96px;
+  --space-32:  128px;
+  --space-40:  160px;
+  --space-48:  192px;
+
+  /* ---- Layout rails ---- */
+  --content-max:   1200px;   /* marketing content column */
+  --content-wide:  1360px;   /* full sections */
+  --measure:       66ch;     /* editorial reading measure */
+
+  /* ---- App shell ---- */
+  --sidebar-w:      248px;
+  --sidebar-rail-w: 68px;    /* collapsed icon rail */
+  --topbar-h:       60px;
+
+  /* ---- 9:16 vertical reel frame ---- */
+  --reel-ar: 9 / 16;   /* @kind other */
+}

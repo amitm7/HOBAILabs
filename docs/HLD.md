@@ -14,10 +14,11 @@ finished, captioned, scored **9:16 MP4** — for two distinct use cases sharing 
 
 | Mode | Entry point | Audience |
 |---|---|---|
-| **Story / creator mode** | `/` | HOB team creating personal story reels |
+| **Story / creator mode** | `/story` | HOB team creating personal story reels |
 | **Brand / Ad mode (B1)** | `/brand` | Creator + brand partners doing paid collabs |
 | **Studio mode (MODE3)** | `/studio` | Prompt → full reel with a reusable Talent/Product identity library; commerce + general scopes |
 | **Director Canvas (WIP)** | `/canvas` | Stage-gated "board" over the SAME engine: Script → Storyboard → Keyframes → Audio → Video → Final Cut, with a per-stage cost gate + approval. New `canvas_run` *orchestrator* (not a pipeline fork); reuses agents + engine services. See `docs/AGENTIC_CANVAS_PLAN.md`. |
+| **Veristory landing (marketing)** | `/` (root; `/landing` 301s here) | Buyer-facing marketing page for the Veristory brand (the productized engine) — the public front door; "Sign in" leads into the operator app at `/story`. Pure static template — no pipeline, no spend. Styled by the **Veristory design system** (`web/static/veristory/`: token CSS + base), whose palette (verified green / antique bronze / warm ink) now also supplies the app-shell token values in `web/static/style.css`. |
 
 The defining product principle is **realism preservation + test-cheap/finish-expensive**:
 real user media is never AI-regenerated; per-shot routing uses cheap models in Dev and
@@ -268,6 +269,7 @@ order-dependent (each depends on keys the previous wrote) but internally
 | **Effective-timecodes for audio sync** | Raw cumulative durations ignore the 0.4s crossfade overlap per junction; all audio (captions, voiceover, lipsync adelay, ducking windows) must use effective timecodes or they drift. | `assembler.effective_timecodes()` |
 | **Editor iteration loop, not a one-shot black box** | Editors rejected the "wait for the whole video, often unhappy with a few frames" model. Three features turn it into a collaborative draft tool: per-frame redo (regenerate one still), progressive reveal (see each clip as it lands), approval gate (animate only approved frames; rest = free Ken Burns). | `/redo-still`, `build_clips(on_clip_ready=…)`, `approved_frame_ids` |
 | **Everything degrades, never crashes** | Creators lose trust on a hard failure far more than on a cheaper fallback. | every stage's `try/except` |
+| **Finished reels carry a signed Content Credential (C2PA)** | The trust layer is the moat (PROVENANCE_PLAN): we already track real-vs-AI per shot + consent, so we *emit* it as a cryptographically-signed credential in the MP4 — granular, truthful disclosure (EU AI Act Art. 50, platform Content Credentials) that generators without internal provenance can't fake. Signing is best-effort (unsigned reel ≫ failed render); dev = self-signed chain, prod swaps in a trusted cert via env with zero code change. | `agents/content_credential.py`, `provenance.classify_frames`, `_run_inner` finalize |
 
 ---
 
@@ -293,6 +295,12 @@ order-dependent (each depends on keys the previous wrote) but internally
   render continues. Temp dir preserved on whole-pipeline failure for debugging.
 - **Security/secrets.** All API keys in `.env`; `/media` path-containment via
   `_path_allowed()`; `ASSETS_BROWSE_ROOT` env var scopes server folder browser.
+- **Content provenance (C2PA).** At finalize, `provenance.json` is rewritten from the
+  RESOLVED frames (per-frame real/ai tier + effective timecodes) and the reel is signed
+  with an embedded Content Credential carrying that truth + the consent record
+  (`agents/content_credential.py`; external standard: C2PA via `c2pa-python`). Surfaced
+  at `/credential/<run_id>` and in the export zip. Best-effort with a degradation-ledger
+  warn on failure; one outbound RFC-3161 timestamp call per signing (`HOB_C2PA_TSA`).
 - **Font bundling.** Montserrat OFL TTFs bundled in `deploy/fonts/`, installed via
   Dockerfile + `fc-cache`. Satoshi is unlisted (commercial license) — drop-in only.
 - **IP/property watermarking.** Every reel can be tagged with one HOB IP (HOB Originals,

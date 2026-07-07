@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veristory — The real-human story production system</title>
+<link rel="stylesheet" href="/static/veristory/styles.css">
+<style>
+  /* ===== page-local layout for the marketing site ===== */
+  .mk { --gutter: clamp(20px, 5vw, 64px); }
+  .wrap { max-width: var(--content-wide); margin: 0 auto; padding-inline: var(--gutter); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--seal); }
+  .serif { font-family: var(--font-serif); font-weight: 500; letter-spacing: var(--ls-tight); line-height: var(--lh-tight); }
+  section { position: relative; }
+
+  /* ---- top nav ---- */
+  header.nav { position: fixed; inset: 0 0 auto 0; z-index: 50; height: 64px; display: flex; align-items: center;
+    transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); border-bottom: 1px solid transparent; }
+  header.nav.scrolled { background: rgba(11,13,11,0.72); backdrop-filter: blur(14px); border-bottom-color: var(--border); }
+  .nav .wrap { display: flex; align-items: center; gap: 40px; width: 100%; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: 0.1em; font-size: 16px; color: var(--text); }
+  .brand .seal { width: 22px; height: 22px; border-radius: 50%; border: 1.4px solid var(--accent-text); display: grid; place-items: center; }
+  .brand .seal svg { width: 11px; height: 11px; }
+  .brand .ai { color: var(--accent-text); }
+  nav.links { display: flex; gap: 28px; margin-left: 8px; }
+  nav.links a { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
+  nav.links a:hover { color: var(--text); }
+  .nav-cta { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+  .nav-cta .signin { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
+  .nav-cta .signin:hover { color: var(--text); }
+
+  /* ---- buttons ---- */
+  .btn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-sans); font-weight: 600; font-size: 14px;
+    padding: 11px 20px; border-radius: var(--radius-full); cursor: pointer; border: 1px solid transparent; transition: var(--tr-hover); white-space: nowrap; }
+  .btn-primary { background: var(--verd-450); color: var(--on-accent); }
+  .btn-primary:hover { background: var(--verd-400); color: var(--on-accent); box-shadow: var(--glow-accent); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
+  .btn-ghost:hover { border-color: var(--accent-text); color: var(--accent-text); }
+  .btn-lg { padding: 15px 28px; font-size: 15px; }
+
+  /* ---- hero ---- */
+  .hero { min-height: 100vh; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 48px; align-items: center; padding-top: 96px; padding-bottom: 64px; }
+  .hero-copy .eyebrow { display: inline-flex; align-items: center; gap: 8px; }
+  .hero-copy .eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-text); box-shadow: 0 0 10px var(--accent-text); }
+  .hero h1 { font-size: clamp(44px, 6vw, 84px); margin: 22px 0 0; color: var(--text); }
+  .hero h1 em { font-style: italic; color: var(--accent-text); }
+  .hero .sub { font-size: clamp(16px, 1.4vw, 19px); line-height: 1.6; color: var(--text-secondary); max-width: 30em; margin: 26px 0 34px; }
+  .hero-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .hero-actions .micro { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+
+  /* hero reel */
+  .reel-stage { position: relative; justify-self: center; }
+  .reel { position: relative; width: min(340px, 78vw); aspect-ratio: 9/16; border-radius: 22px; overflow: hidden; box-shadow: var(--shadow-xl); border: 1px solid var(--border-strong); }
+  .reel img { width: 100%; height: 100%; object-fit: cover; }
+  .reel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(7,8,6,0.78) 2%, rgba(7,8,6,0) 44%); }
+  .reel .prov { position: absolute; top: 14px; left: 14px; z-index: 3; display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--prov-real);
+    background: rgba(11,13,11,0.55); border: 1px solid var(--prov-real-line); padding: 4px 10px; border-radius: var(--radius-full); backdrop-filter: blur(8px); }
+  .reel .prov .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--prov-real); box-shadow: 0 0 8px var(--prov-real); }
+  .reel .cap { position: absolute; bottom: 20px; left: 18px; right: 18px; z-index: 3; }
+  .reel .cap .line { font-family: var(--font-serif); font-weight: 500; font-size: 25px; line-height: 1.12; color: var(--paper-0); }
+  .reel .play { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; }
+  .reel .play span { width: 58px; height: 58px; border-radius: 50%; background: rgba(11,13,11,0.4); border: 1px solid rgba(255,255,255,0.5); backdrop-filter: blur(6px); display: grid; place-items: center; transition: var(--tr-hover); }
+  .reel:hover .play span { background: var(--verd-450); border-color: var(--verd-450); }
+  .reel .play svg { width: 20px; height: 20px; margin-left: 3px; }
+  .reel-float { position: absolute; z-index: 4; background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 11px 14px; box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 10px; }
+  .reel-float.consent { bottom: 64px; left: -46px; }
+  .reel-float.spend { top: 92px; right: -52px; }
+  .reel-float .ic { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0; }
+  .reel-float .t1 { font-size: 12px; font-weight: 600; color: var(--text); }
+  .reel-float .t2 { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-tertiary); }
+
+  /* ---- logo strip ---- */
+  .strip { padding: 40px 0 8px; border-top: 1px solid var(--border); }
+  .strip .lead { text-align: center; font-size: 13px; color: var(--text-tertiary); margin-bottom: 26px; }
+  .logos { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px 48px; }
+  .logos span { font-family: var(--font-serif); font-size: 23px; font-weight: 600; color: var(--paper-400); opacity: 0.62; letter-spacing: 0.01em; transition: opacity var(--dur-base) var(--ease-out); }
+  .logos span:hover { opacity: 1; }
+
+  /* ---- section shell ---- */
+  .band { padding: clamp(72px, 11vh, 140px) 0; }
+  .band-head { max-width: 40em; }
+  .band-head h2 { font-size: clamp(30px, 4vw, 52px); color: var(--text); margin-top: 16px; }
+  .band-head p { font-size: 17px; line-height: 1.62; color: var(--text-secondary); margin: 20px 0 0; }
+
+  /* ---- how it works (3 steps) ---- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 56px; }
+  .step { position: relative; padding: 28px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: linear-gradient(180deg, var(--surface-raised), var(--surface)); }
+  .step .n { font-family: var(--font-mono); font-size: 12px; color: var(--seal); letter-spacing: 0.1em; }
+  .step .ic { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; margin: 18px 0 18px; border: 1px solid var(--border-strong); background: var(--ink-950); }
+  .step .ic svg { width: 22px; height: 22px; }
+  .step h3 { font-size: 20px; color: var(--text); margin-bottom: 9px; }
+  .step p { font-size: 14.5px; line-height: 1.6; color: var(--text-secondary); }
+  .step .tag { margin-top: 16px; display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 9px; border-radius: var(--radius-full); }
+
+  /* ---- real stays real (rolex treatment) ---- */
+  .rsr { background: radial-gradient(120% 90% at 82% 0%, rgba(46,139,99,0.10), transparent 55%), var(--surface-sunken); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .rsr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(40px, 6vw, 96px); align-items: center; }
+  .audit { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: rgba(8,9,7,0.6); box-shadow: var(--shadow-lg); overflow: hidden; }
+  .audit-top { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .audit-top .ttl { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-secondary); }
+  .audit-seal { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--seal); }
+  .audit-seal .ring { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--seal); display: grid; place-items: center; }
+  .audit-row { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .audit-row:last-child { border-bottom: none; }
+  .audit-row .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .audit-row .desc { font-size: 13.5px; color: var(--text); }
+  .audit-row .desc small { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
+  .audit-row .stat { font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+  .pillars { margin-top: 30px; display: flex; flex-direction: column; gap: 3px; }
+  .pillar { display: flex; gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--border); }
+  .pillar:last-child { border-bottom: none; }
+  .pillar .k { font-family: var(--font-mono); font-size: 12px; color: var(--seal); flex-shrink: 0; width: 34px; padding-top: 3px; }
+  .pillar h4 { font-size: 18px; color: var(--text); margin-bottom: 6px; }
+  .pillar p { font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+
+  /* ---- showcase ---- */
+  .showcase-rail { display: grid; grid-auto-flow: column; grid-auto-columns: 260px; gap: 20px; margin-top: 48px; overflow-x: auto; padding-bottom: 16px; scroll-snap-type: x mandatory; }
+  .showcase-rail::-webkit-scrollbar { height: 6px; }
+  .sc { position: relative; aspect-ratio: 9/16; border-radius: var(--radius-reel); overflow: hidden; border: 1px solid var(--border); scroll-snap-align: start; box-shadow: var(--shadow-md); transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+  .sc:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .sc img { width: 100%; height: 100%; object-fit: cover; }
+  .sc::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(7,8,6,0.8), transparent 48%); }
+  .sc .m { position: absolute; bottom: 14px; left: 14px; right: 14px; z-index: 2; }
+  .sc .m .who { font-family: var(--font-serif); font-size: 19px; color: var(--paper-0); }
+  .sc .m .meta { font-family: var(--font-mono); font-size: 11px; color: var(--paper-400); margin-top: 3px; }
+  .sc .prov { position: absolute; top: 12px; left: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border-radius: var(--radius-full); backdrop-filter: blur(8px); }
+
+  /* ---- pricing teaser ---- */
+  .price-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 52px; }
+  .price { padding: 30px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); display: flex; flex-direction: column; }
+  .price.lead { border-color: var(--border-accent); background: linear-gradient(180deg, rgba(46,139,99,0.08), var(--surface)); box-shadow: var(--glow-accent); }
+  .price .tier { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--seal); }
+  .price .tag { font-size: 14px; color: var(--text-secondary); margin: 14px 0 20px; line-height: 1.5; min-height: 42px; }
+  .price .amt { font-family: var(--font-serif); font-size: 40px; color: var(--text); line-height: 1; }
+  .price .amt small { font-family: var(--font-sans); font-size: 14px; color: var(--text-tertiary); font-weight: 500; }
+  .price ul { list-style: none; padding: 0; margin: 22px 0 26px; display: flex; flex-direction: column; gap: 11px; }
+  .price li { display: flex; gap: 10px; font-size: 14px; color: var(--text-secondary); line-height: 1.4; }
+  .price li svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; color: var(--accent-text); }
+  .price .btn { margin-top: auto; justify-content: center; }
+  .badge-soon { display: inline-block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
+
+  /* ---- closing cta ---- */
+  .closer { text-align: center; padding: clamp(80px,12vh,150px) 0; }
+  .closer h2 { font-size: clamp(34px, 5vw, 68px); color: var(--text); max-width: 16em; margin: 18px auto 0; }
+  .closer h2 em { font-style: italic; color: var(--accent-text); }
+  .closer .actions { display: flex; gap: 14px; justify-content: center; margin-top: 38px; }
+
+  /* ---- footer ---- */
+  footer.ft { border-top: 1px solid var(--border); padding: 60px 0 40px; }
+  .ft-grid { display: grid; grid-template-columns: 1.6fr repeat(3, 1fr); gap: 40px; }
+  .ft .brand { margin-bottom: 16px; }
+  .ft-col h5 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 16px; }
+  .ft-col a { display: block; font-size: 14px; color: var(--text-secondary); margin-bottom: 11px; }
+  .ft-col a:hover { color: var(--text); }
+  .ft-note { font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; max-width: 30em; }
+  .ft-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 52px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-tertiary); }
+
+  /* reveal */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity var(--dur-reveal) var(--ease-cinema), transform var(--dur-reveal) var(--ease-cinema); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } }
+
+  /* responsive */
+  @media (max-width: 940px) {
+    .hero { grid-template-columns: 1fr; text-align: left; padding-top: 110px; }
+    .reel-stage { margin-top: 20px; }
+    .reel-float.consent { left: 8px; } .reel-float.spend { right: 8px; }
+    .steps, .price-grid { grid-template-columns: 1fr; }
+    .rsr-grid, .ft-grid { grid-template-columns: 1fr; }
+    nav.links, .nav-cta .signin { display: none; }
+  }
+</style>
+</head>
+<body class="mk">
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <div class="brand">
+      <span class="seal"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-text)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+      VERISTORY<span class="ai">.ai</span>
+    </div>
+    <nav class="links">
+      <a href="#platform">Platform</a>
+      <a href="#real">Real Stays Real</a>
+      <a href="#showcase">Showcase</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <div class="nav-cta">
+      <a href="/story" class="signin">Sign in</a>
+      <a href="#pricing" class="btn btn-primary">Request access</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero wrap">
+  <div class="hero-copy">
+    <span class="eyebrow">Born inside Humans of Bombay</span>
+    <h1 class="serif">Real people.<br>Real stories.<br><em>Provably real.</em></h1>
+    <p class="sub">Veristory is the real-human story production system. Your authentic photos and video pass through untouched — AI assists only around them, and every likeness and every dollar of spend is governed.</p>
+    <div class="hero-actions">
+      <a href="#pricing" class="btn btn-primary btn-lg">Request access</a>
+      <a href="#real" class="btn btn-ghost btn-lg">See how realness is governed</a>
+    </div>
+    <p class="micro" style="margin-top:22px">No AI-mangled faces. No unconsented likeness. No surprise spend.</p>
+  </div>
+
+  <div class="reel-stage">
+    <div class="reel">
+      <span class="prov"><span class="dot"></span>Real · untouched</span>
+      <div class="v-media-ph v-ph-1" style="position:absolute;inset:0"></div>
+      <div class="play"><span><svg viewBox="0 0 24 24" fill="var(--paper-0)"><path d="M8 5v14l11-7z"/></svg></span></div>
+      <div class="cap"><div class="line">The girl who kept<br>her own face.</div></div>
+    </div>
+    <div class="reel-float consent">
+      <div class="ic" style="background:var(--prov-real-bg);border:1px solid var(--prov-real-line)"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="var(--prov-real)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div><div class="t1">Consent on file</div><div class="t2">CNS-7741-A · signed</div></div>
+    </div>
+    <div class="reel-float spend">
+      <div class="ic" style="background:var(--seal-soft);border:1px solid var(--prov-ai-line)"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="var(--seal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div><div class="t1">Spend gate</div><div class="t2">$1.04 / $5.00 cap</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LOGO STRIP ============ -->
+<section class="strip wrap">
+  <p class="lead">Trusted by publishers, agencies and brands who tell stories about real, named people</p>
+  <div class="logos">
+    <span>Humans&nbsp;of&nbsp;Bombay</span>
+    <span>Meridian</span>
+    <span>The&nbsp;Frontpage</span>
+    <span>Kindred&nbsp;Studios</span>
+    <span>Lokmat</span>
+    <span>Verve&nbsp;&amp;&nbsp;Co</span>
+  </div>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section class="band wrap reveal" id="platform">
+  <div class="band-head">
+    <span class="eyebrow">How it works</span>
+    <h2 class="serif">Three moves from a raw story<br>to a governed reel.</h2>
+    <p>The engine that produced India's most-loved human stories — now a system, with the guardrails a brand needs built into every step.</p>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <div class="n">STEP 01</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="var(--prov-real)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L9 20"/></svg></div>
+      <h3>Real media in</h3>
+      <p>Drop the real photos and video of your real person. Veristory reads what each frame depicts and places it on the right beat.</p>
+      <span class="tag" style="color:var(--prov-real);background:var(--prov-real-bg);border:1px solid var(--prov-real-line)">Passes through untouched</span>
+    </div>
+    <div class="step">
+      <div class="n">STEP 02</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="var(--seal)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.4"/></svg></div>
+      <h3>AI assists around it</h3>
+      <p>Only the gaps get help — a symbolic scene, a caption, a score, a cinematic camera move. Every AI element is provenance-labeled.</p>
+      <span class="tag" style="color:var(--seal);background:var(--prov-ai-bg);border:1px solid var(--prov-ai-line)">Labeled, never hidden</span>
+    </div>
+    <div class="step">
+      <div class="n">STEP 03</div>
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-text)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
+      <h3>Governed reel out</h3>
+      <p>A finished, captioned, scored 9:16 reel — with a consent record, a provenance log, and a spend that never blew its gate.</p>
+      <span class="tag" style="color:var(--accent-text);background:var(--accent-soft);border:1px solid var(--border-accent)">Certified &amp; ready to post</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REAL STAYS REAL ============ -->
+<section class="rsr band" id="real">
+  <div class="wrap rsr-grid">
+    <div class="reveal">
+      <span class="eyebrow">Real Stays Real</span>
+      <h2 class="serif" style="font-size:clamp(30px,4vw,52px);color:var(--text);margin-top:16px">The certificate of<br>authenticity for a face.</h2>
+      <p style="font-size:16px;line-height:1.62;color:var(--text-secondary);margin:20px 0 0;max-width:34em">Rivals prompt a face into existence and hope. We do the opposite: the real person stays real, and everything the AI touched is on the record — the way a Rolex ships with its papers.</p>
+      <div class="pillars">
+        <div class="pillar"><div class="k">01</div><div><h4>Real-media passthrough</h4><p>Real photos and video of a real person are never regenerated. Same face, same moment — just cleaner.</p></div></div>
+        <div class="pillar"><div class="k">02</div><div><h4>Consent gates</h4><p>Every likeness decision needs recorded consent before a single frame renders. No consent, no render.</p></div></div>
+        <div class="pillar"><div class="k">03</div><div><h4>Provenance labels</h4><p>Real, AI-assisted, or AI-likeness — every element is tiered and disclosed, in the reel and in the export.</p></div></div>
+        <div class="pillar"><div class="k">04</div><div><h4>Spend governance</h4><p>A hard cost gate every render must pass. The estimate is shown before a cent is spent.</p></div></div>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="audit">
+        <div class="audit-top">
+          <span class="ttl">Provenance log · PRJ-0291</span>
+          <span class="audit-seal"><span class="ring"><svg viewBox="0 0 24 24" width="10" fill="none" stroke="var(--seal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Certified</span>
+        </div>
+        <div class="audit-row"><span class="dot" style="background:var(--prov-real)"></span><div class="desc">Real footage — subject portrait <small>reel-hero.jpg · untouched · EXIF intact</small></div><span class="stat" style="color:var(--prov-real)">REAL</span></div>
+        <div class="audit-row"><span class="dot" style="background:var(--prov-real)"></span><div class="desc">Real footage — atelier b-roll <small>reel-atelier.mov · untouched</small></div><span class="stat" style="color:var(--prov-real)">REAL ×7</span></div>
+        <div class="audit-row"><span class="dot" style="background:var(--prov-ai)"></span><div class="desc">AI symbolic — empty windowsill <small>no named person · labeled</small></div><span class="stat" style="color:var(--prov-ai)">AI ×2</span></div>
+        <div class="audit-row"><span class="dot" style="background:var(--prov-likeness)"></span><div class="desc">AI likeness <small>none used · consent not required</small></div><span class="stat" style="color:var(--prov-likeness)">0</span></div>
+        <div class="audit-row"><span class="dot" style="background:var(--ok)"></span><div class="desc">Spend gate <small>$1.04 spent · cap $5.00</small></div><span class="stat" style="color:var(--ok)">PASS</span></div>
+      </div>
+      <p style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-tertiary);text-align:center;margin-top:16px">Ships inside every export · editor-ready &amp; audit-ready</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SHOWCASE ============ -->
+<section class="band wrap reveal" id="showcase">
+  <div class="band-head">
+    <span class="eyebrow">Showcase</span>
+    <h2 class="serif">Reels about real people,<br>who still look like themselves.</h2>
+  </div>
+  <div class="showcase-rail">
+    <div class="sc"><span class="prov" style="color:var(--prov-real);background:rgba(11,13,11,0.5);border:1px solid var(--prov-real-line)">Real</span><div class="v-media-ph v-ph-1" style="position:absolute;inset:0"></div><div class="m"><div class="who">The kept flower</div><div class="meta">Portrait · 0:42 · 9 shots</div></div></div>
+    <div class="sc"><span class="prov" style="color:var(--prov-real);background:rgba(11,13,11,0.5);border:1px solid var(--prov-real-line)">Real</span><div class="v-media-ph v-ph-3" style="position:absolute;inset:0"></div><div class="m"><div class="who">Every thread his own</div><div class="meta">Fashion · 0:38 · 7 shots</div></div></div>
+    <div class="sc"><span class="prov" style="color:var(--prov-real);background:rgba(11,13,11,0.5);border:1px solid var(--prov-real-line)">Real</span><div class="v-media-ph v-ph-2" style="position:absolute;inset:0"></div><div class="m"><div class="who">Love, still cutting cake</div><div class="meta">Family · 0:51 · 11 shots</div></div></div>
+    <div class="sc"><span class="prov" style="color:var(--prov-real);background:rgba(11,13,11,0.5);border:1px solid var(--prov-real-line)">Real</span><div class="v-media-ph v-ph-5" style="position:absolute;inset:0"></div><div class="m"><div class="who">The house in Assam</div><div class="meta">Story · 1:04 · 10 shots</div></div></div>
+    <div class="sc"><span class="prov" style="color:var(--prov-real);background:rgba(11,13,11,0.5);border:1px solid var(--prov-real-line)">Real</span><div class="v-media-ph v-ph-4" style="position:absolute;inset:0"></div><div class="m"><div class="who">Before the ramp</div><div class="meta">Archive · 0:33 · 6 shots</div></div></div>
+  </div>
+</section>
+
+<!-- ============ PRICING TEASER ============ -->
+<section class="band wrap reveal" id="pricing">
+  <div class="band-head">
+    <span class="eyebrow">Pricing</span>
+    <h2 class="serif">Start with our team.<br>Self-serve is coming.</h2>
+    <p>Managed production today, with the same governance whether we run it or you do.</p>
+  </div>
+  <div class="price-grid">
+    <div class="price lead">
+      <div class="tier">Managed · Agency</div>
+      <div class="tag">We produce your reels end to end, governed to your brand's standard.</div>
+      <div class="amt">Let's talk</div>
+      <ul>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Dedicated story producer</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Full Trust Center &amp; audit exports</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Consent &amp; likeness handling</li>
+      </ul>
+      <a href="#" class="btn btn-primary">Request access</a>
+    </div>
+    <div class="price">
+      <div class="tier">Studio</div>
+      <div class="tag">Your team, in the Canvas, with governance on by default.</div>
+      <div class="amt">$490<small> /seat·mo</small></div>
+      <ul>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Story, Brand &amp; Cinematic Studios</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>The Canvas cockpit</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Spend caps &amp; provenance log</li>
+      </ul>
+      <a href="#" class="btn btn-ghost">Join the waitlist <span class="badge-soon">soon</span></a>
+    </div>
+    <div class="price">
+      <div class="tier">Enterprise</div>
+      <div class="tag">For publishers running real-people stories at scale.</div>
+      <div class="amt">Custom</div>
+      <ul>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>SSO, roles &amp; workspace controls</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Retention &amp; consent policy</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Custom governance SLAs</li>
+      </ul>
+      <a href="#" class="btn btn-ghost">Talk to us</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CLOSER ============ -->
+<section class="closer wrap reveal">
+  <span class="eyebrow">Authentic media stays real</span>
+  <h2 class="serif">Tell the story only your<br>real person can tell — <em>and prove it.</em></h2>
+  <div class="actions">
+    <a href="#pricing" class="btn btn-primary btn-lg">Request access</a>
+    <a href="#real" class="btn btn-ghost btn-lg">Read the manifesto</a>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="ft">
+  <div class="wrap ft-grid">
+    <div>
+      <div class="brand">
+        <span class="seal"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-text)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        VERISTORY<span class="ai">.ai</span>
+      </div>
+      <p class="ft-note">The real-human story production system. Authentic media stays real, AI assists around it, and every likeness and spend decision is governed.</p>
+    </div>
+    <div class="ft-col">
+      <h5>Platform</h5>
+      <a href="/story">Story Studio</a><a href="/brand">Brand Studio</a><a href="/studio">Cinematic Studio</a><a href="/canvas">The Canvas</a>
+    </div>
+    <div class="ft-col">
+      <h5>Trust</h5>
+      <a href="#real">Real Stays Real</a><a href="#real">Provenance log</a><a href="#real">Consent &amp; likeness</a><a href="#real">Spend governance</a>
+    </div>
+    <div class="ft-col">
+      <h5>Company</h5>
+      <a href="#real">Our story</a><a href="#showcase">Showcase</a><a href="#pricing">Pricing</a><a href="/story">Sign in</a>
+    </div>
+  </div>
+  <div class="wrap ft-bottom">
+    <span>© 2026 Veristory · veristory.ai</span>
+    <span>Born inside Humans of Bombay</span>
+  </div>
+</footer>
+
+<script>
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 24);
+  onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+/* ============================================================
+   VERISTORY — Typography
+   Display serif (Cormorant Garamond) for story / certification
+   moments · modern grotesque (Hanken Grotesk) for UI · mono
+   (IBM Plex Mono) for ledger, audit-trail & provenance numbers.
+   Fonts loaded from Google Fonts (see note in readme.md).
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Hanken+Grotesk:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ---- Families ---- */
+  --font-sans:  "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: "Cormorant Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-mono:  "IBM Plex Mono", ui-monospace, "SF Mono", "Fira Code", monospace;
+
+  /* ---- Type scale (px) — editorial, generous ---- */
+  --text-2xs: 11px;
+  --text-xs:  12px;
+  --text-sm:  13px;
+  --text-base:15px;
+  --text-md:  16px;
+  --text-lg:  18px;
+  --text-xl:  21px;
+  --text-2xl: 26px;
+  --text-3xl: 33px;
+  --text-4xl: 42px;
+  --text-5xl: 56px;
+  --text-6xl: 76px;
+  --text-7xl: 104px;
+  --text-8xl: 140px;
+
+  /* ---- Weights ---- */
+  --fw-light:    300; /* @kind font */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+  --fw-black:    800; /* @kind font */
+
+  /* ---- Line heights ---- */
+  --lh-tight:   1.05;   /* @kind other */
+  --lh-snug:    1.2;    /* @kind other */
+  --lh-normal:  1.5;    /* @kind other */
+  --lh-relaxed: 1.7;    /* @kind other */
+
+  /* ---- Letter spacing ---- */
+  --ls-tighter: -0.03em;  /* @kind other */
+  --ls-tight:   -0.015em; /* @kind other */
+  --ls-normal:  0em;      /* @kind other */
+  --ls-wide:    0.02em;   /* @kind other */
+  --ls-eyebrow: 0.18em;   /* @kind other */
+}
+
+/* ---- Semantic text roles (optional utility classes) ---- */
+.v-display {
+  font-family: var(--font-serif);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tight);
+}
+.v-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--seal);
+}
+.v-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+}
+.v-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ls-normal);
+}

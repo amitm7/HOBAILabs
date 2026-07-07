@@ -1,27 +1,39 @@
-/* HOBAILabs — refined dark UI shell */
+/* HOBAILabs — refined dark UI shell (Veristory brand) */
+
+/* Veristory brand type (see web/static/veristory/tokens/typography.css) */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Hanken+Grotesk:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* App-shell tokens — values drawn from the Veristory design system
+   (web/static/veristory/tokens/). Token NAMES are unchanged; only the
+   values re-signature the brand (warm ink canvas, verified green,
+   antique bronze). */
 :root {
-  --bg: #0c0c0e;
-  --surface-1: #141418;
-  --surface-2: #1c1c22;
-  --surface-3: #26262e;
+  --bg: #0B0D0B;              /* ink-950 */
+  --surface-1: #101312;       /* ink-900 */
+  --surface-2: #1A1F1C;       /* ink-800 */
+  --surface-3: #262E28;       /* ink-700 */
   --surface: var(--surface-1);
   --surface2: var(--surface-2);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
-  --accent: #e8813a;
-  --accent-dim: #c46a28;
-  --accent-soft: rgba(232, 129, 58, 0.12);
-  --text: #ececef;
-  --text-muted: #8b8b95;
+  --border: rgba(242, 240, 232, 0.09);
+  --border-strong: rgba(242, 240, 232, 0.16);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.50);
+  --accent: #3AA173;          /* verd-450 — fills take dark text (--on-accent) */
+  --accent-dim: #2E8B63;      /* verd-500 */
+  --accent-soft: rgba(46, 139, 99, 0.14);
+  --on-accent: #071510;       /* near-black text on green fills (AA) */
+  --seal: #CBA96C;            /* bronze-400 — AI/symbolic tier, certification */
+  --seal-soft: rgba(203, 169, 108, 0.14);
+  --text: #F2F0E8;            /* paper-50 */
+  --text-muted: #A9AAA0;      /* paper-400 */
   --text-dim: var(--text-muted);
-  --green: #4caf7d;
-  --red: #e05252;
-  --blue: #5b9cf6;
-  --radius: 10px;
-  --radius-sm: 6px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --green: #58BE8E;
+  --red: #E0685A;
+  --blue: #74A0BC;
+  --radius: 11px;
+  --radius-sm: 7px;
+  --font: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
   --header-h: 56px;
   --action-bar-h: 64px;
   --editor-max: 640px;
@@ -47,7 +59,7 @@ body {
   top: 0;
   z-index: 100;
   height: var(--header-h);
-  background: rgba(20, 20, 24, 0.92);
+  background: rgba(16, 19, 18, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -179,8 +191,8 @@ body {
   justify-content: center;
 }
 
-.step-pill.active .step-num { background: var(--accent); color: #fff; }
-.step-pill.done .step-num { background: var(--green); color: #fff; }
+.step-pill.active .step-num { background: var(--accent); color: var(--on-accent); }
+.step-pill.done .step-num { background: var(--green); color: var(--on-accent); }
 
 /* ── Two-column body ── */
 .app-body {
@@ -287,7 +299,7 @@ body {
   right: 0;
   z-index: 90;
   height: var(--action-bar-h);
-  background: rgba(20, 20, 24, 0.94);
+  background: rgba(16, 19, 18, 0.94);
   backdrop-filter: blur(14px);
   border-top: 1px solid var(--border);
   display: flex;
@@ -315,7 +327,7 @@ body {
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--accent-soft);
-  border: 1px solid rgba(232, 129, 58, 0.25);
+  border: 1px solid rgba(46, 139, 99, 0.35);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -556,7 +568,7 @@ select:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-textarea { resize: vertical; min-height: 160px; font-size: 13px; font-family: "SF Mono", ui-monospace, monospace; }
+textarea { resize: vertical; min-height: 160px; font-size: 13px; font-family: var(--font-mono); }
 select { cursor: pointer; }
 
 .checkbox-row {
@@ -596,7 +608,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 15px;
   padding: 13px 32px;
   border-radius: 8px;
@@ -783,7 +795,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .frame-id {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 10px;
   font-weight: 700;
   padding: 2px 7px;
@@ -917,7 +929,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 .dur-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
-.dur-preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dur-preset-btn.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 #target-sec { width: 80px !important; font-size: 12px !important; padding: 4px 8px !important; }
 
@@ -994,7 +1006,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   padding: 14px 16px;
   height: 280px;
   overflow-y: auto;
-  font-family: "SF Mono", "Fira Code", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -1049,7 +1061,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 .badge-portrait { background: rgba(91, 156, 246, 0.15); color: var(--blue); }
-.badge-symbolic { background: rgba(232, 129, 58, 0.15); color: var(--accent); }
+.badge-symbolic { background: var(--seal-soft); color: var(--seal); }
 .badge-photo { background: rgba(76, 175, 125, 0.15); color: var(--green); }
 
 /* ── Spinner ── */
@@ -1146,7 +1158,7 @@ audio { width: 100%; margin-top: 8px; }
 .bal-dim .bal-icon, .bal-dim .bal-value { color: var(--text-muted); }
 
 .cost-breakdown {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.8;
 }

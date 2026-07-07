@@ -461,6 +461,16 @@ Studio mode** link in the header. See [docs/MODE3_PLAN.md](docs/MODE3_PLAN.md).
 
 ### App layout (all modes)
 
+> **Veristory brand theme.** The whole app is styled with the **Veristory design
+> system** — warm near-black canvas, **verified-green** accent (primary buttons,
+> active states), **antique-bronze** for AI/symbolic badges, and the Hanken Grotesk /
+> IBM Plex Mono brand fonts (loaded from Google Fonts). Same layout and controls as
+> before — only the look changed. The site root **`/` is now the buyer-facing
+> marketing landing page** (nav → Platform/Real Stays Real/Showcase/Pricing;
+> `/landing` redirects there). "Sign in" on it opens the operator app, whose
+> Story home now lives at **`/story`**. The landing is a static page: nothing
+> on it can spend money.
+
 The web UI uses a **four-step wizard** with a persistent preview panel:
 
 | Area | What it is |
@@ -1228,6 +1238,13 @@ The app caches aggressively to avoid re-spending credits on identical content.
   create a full-screen bold statement card.
 - **Export clips + edit list:** after a completed run, download a zip with the
   final MP4, per-frame clips, and `edit_list.json` for a human editor.
+- **Content Credential (C2PA):** the finished MP4 carries an embedded, verifiable
+  Content Credential stating — per shot — what is real footage, what is AI, whether
+  a real person's AI face/voice likeness appears, and the recorded consent. This is
+  the machine-readable AI disclosure platforms (TikTok/YouTube/Meta) surface and the
+  EU AI Act requires. The export zip includes `content_credential.json`;
+  `GET /credential/<run_id>` returns the summary. If signing can't complete (e.g.
+  offline), the reel still renders unsigned and the degradation report notes it.
 - **Redo motion:** after preview/render, redo only a frame's motion while keeping
   the approved still.
 

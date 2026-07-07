@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>System Design Interview Playbook</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  :root {
+    --ink: #1a2332; --accent: #0f6b4f; --bronze: #8a6d3b; --muted: #5a6472;
+    --line: #d8dde4; --bg-soft: #f4f6f8; --bg-note: #eef5f1;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: var(--ink); line-height: 1.55; font-size: 10.5pt; margin: 0 auto; max-width: 860px; padding: 24px; }
+  h1 { font-size: 26pt; margin: 0 0 4px; color: var(--accent); letter-spacing: -0.5px; }
+  h2 { font-size: 16pt; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 34px; page-break-after: avoid; }
+  h3 { font-size: 12.5pt; color: var(--bronze); margin-top: 22px; page-break-after: avoid; }
+  h4 { font-size: 11pt; margin: 14px 0 4px; page-break-after: avoid; }
+  .subtitle { color: var(--muted); font-size: 12pt; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 9.5pt; page-break-inside: avoid; }
+  th { background: var(--accent); color: #fff; text-align: left; padding: 6px 8px; }
+  td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  code, .mono { font-family: Menlo, Consolas, monospace; font-size: 9pt; background: var(--bg-soft); padding: 1px 4px; border-radius: 3px; }
+  .note { background: var(--bg-note); border-left: 4px solid var(--accent); padding: 10px 14px; margin: 14px 0; page-break-inside: avoid; }
+  .warn { background: #fdf3e7; border-left: 4px solid var(--bronze); padding: 10px 14px; margin: 14px 0; page-break-inside: avoid; }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .step { display: flex; gap: 12px; margin: 12px 0; page-break-inside: avoid; }
+  .step-num { flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: bold; display: flex; align-items: center; justify-content: center; font-family: Menlo, monospace; }
+  .pagebreak { page-break-before: always; }
+  .toc { background: var(--bg-soft); padding: 14px 20px; border-radius: 6px; }
+  .toc ol { margin: 4px 0; }
+  .small { font-size: 9pt; color: var(--muted); }
+  strong { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<h1>System Design Interview Playbook</h1>
+<p class="subtitle">A general approach for any system design question — online serving, batch processing, and stream processing.</p>
+
+<div class="toc">
+<strong>Contents</strong>
+<ol>
+  <li>The Universal Framework (works for every question)</li>
+  <li>Classify the Problem: the three archetypes</li>
+  <li>Numbers &amp; Estimation you must know cold</li>
+  <li>The Building-Blocks Toolbox</li>
+  <li>Deep Dive A — Live Online (Request/Response) Systems</li>
+  <li>Deep Dive B — Batch Processing Systems</li>
+  <li>Deep Dive C — Live Stream Processing Systems</li>
+  <li>Decision Cheat-Tables (SQL vs NoSQL, push vs pull, consistency…)</li>
+  <li>How You Are Graded + Common Failure Modes</li>
+  <li>Question → Archetype Map &amp; Practice Plan</li>
+</ol>
+</div>
+
+<h2>1. The Universal Framework</h2>
+<p>Every system design interview — regardless of the system type — rewards the same disciplined sequence. For a 45-minute interview, budget your time like this:</p>
+
+<div class="step"><div class="step-num">1</div><div>
+<h4>Clarify Requirements — 5 to 8 min</h4>
+<p><strong>Functional:</strong> What exactly must the system do? Pick the 2–3 core features and explicitly de-scope the rest ("I'll focus on posting and reading the feed; I'll skip DMs unless you want them").<br>
+<strong>Non-functional:</strong> Scale (users, QPS, data size), latency targets, availability vs consistency priority, read/write ratio, data retention, geography.<br>
+<strong>Ask, don't assume.</strong> The single most common failure is designing the wrong system. Write requirements down — you'll trace every later decision back to them.</p>
+</div></div>
+
+<div class="step"><div class="step-num">2</div><div>
+<h4>Back-of-Envelope Estimation — 3 to 5 min</h4>
+<p>Compute QPS (average and peak ≈ 2–5× average), storage growth per year, and bandwidth. The goal is not precision — it is deciding <em>which class of design you need</em>: one Postgres box vs a sharded fleet; one worker vs a Spark cluster. State the conclusion out loud: "≈10K writes/sec means a single DB won't hold — we'll need partitioning."</p>
+</div></div>
+
+<div class="step"><div class="step-num">3</div><div>
+<h4>API / Interface Design — 3 to 5 min</h4>
+<p>Define the system's contract: REST/gRPC endpoints for online systems, input/output datasets and schedules for batch, event schemas and topics for streaming. Include request/response shapes, pagination, idempotency keys for writes.</p>
+</div></div>
+
+<div class="step"><div class="step-num">4</div><div>
+<h4>High-Level Design — 10 to 15 min</h4>
+<p>Draw the boxes-and-arrows end-to-end path first: client → LB → services → cache → storage (or source → ingest → process → sink). Walk through the primary read path and the primary write path explicitly. Get interviewer buy-in before going deep: "Does this look reasonable? Where would you like me to zoom in?"</p>
+</div></div>
+
+<div class="step"><div class="step-num">5</div><div>
+<h4>Deep Dives — 10 to 15 min</h4>
+<p>Pick the 2–3 hardest sub-problems (or the ones the interviewer nudges toward): data model &amp; partitioning, the cache strategy, the fan-out choice, exactly-once semantics, the hot-key problem. This is where senior signal lives — trade-offs, not features.</p>
+</div></div>
+
+<div class="step"><div class="step-num">6</div><div>
+<h4>Wrap-Up: Bottlenecks, Failures, Evolution — 3 to 5 min</h4>
+<p>Proactively name single points of failure, what happens at 10× scale, monitoring/alerting, and what you'd build differently with more time. Ending with self-critique is a strong senior signal.</p>
+</div></div>
+
+<div class="note"><strong>The golden rule:</strong> every design choice must be justified by a requirement or a number. "I'll use Cassandra" is worthless; "we have 50K writes/sec, simple key access, and no cross-row transactions, so a leaderless wide-column store like Cassandra fits better than Postgres" is the whole game. Always give the <em>alternative you rejected and why</em>.</div>
+
+<h2>2. Classify the Problem: The Three Archetypes</h2>
+<p>Within the first five minutes, silently classify the question — it determines your vocabulary, your building blocks, and your deep dives. Many real systems combine two or all three.</p>
+
+<table>
+<tr><th></th><th>A. Live Online (Request/Response)</th><th>B. Batch Processing</th><th>C. Stream Processing</th></tr>
+<tr><td><strong>Trigger</strong></td><td>A user/client request, needs an answer <em>now</em></td><td>A schedule or a completed dataset</td><td>Events arriving continuously</td></tr>
+<tr><td><strong>Latency</strong></td><td>ms — p99 matters</td><td>Minutes–hours; throughput matters</td><td>Sub-second–seconds, end-to-end lag matters</td></tr>
+<tr><td><strong>Core question</strong></td><td>How do I serve reads/writes fast &amp; reliably at scale?</td><td>How do I process huge bounded data correctly &amp; rerunnably?</td><td>How do I process unbounded data with correct results despite disorder?</td></tr>
+<tr><td><strong>Canonical examples</strong></td><td>URL shortener, news feed, chat, e-commerce, ride matching, rate limiter</td><td>Analytics warehouse/ETL, search index build, ML training pipeline, billing runs, recommendations precompute</td><td>Metrics/monitoring, fraud detection, trending topics, live leaderboard, ad click counting, uber location updates</td></tr>
+<tr><td><strong>Key vocabulary</strong></td><td>Load balancing, caching, sharding, replication, CAP, CDN</td><td>DAGs, partitioning, shuffle, idempotency, backfill, columnar formats</td><td>Event time vs processing time, windows, watermarks, exactly-once, backpressure</td></tr>
+<tr><td><strong>Typical stack names</strong></td><td>Nginx/Envoy, Redis, Postgres/DynamoDB/Cassandra, Kafka (as buffer), CDN</td><td>S3/HDFS, Spark, Airflow, Parquet, Snowflake/BigQuery</td><td>Kafka/Kinesis, Flink/Spark Streaming, Redis, ClickHouse/Druid/Pinot</td></tr>
+</table>
+
+<div class="note"><strong>Hybrid tell:</strong> "Show trending hashtags" = stream (compute) + online (serve). "Generate monthly invoices users can view" = batch (compute) + online (serve). Say the classification out loud — "this is really a streaming pipeline feeding a low-latency serving layer" — it instantly frames the whole answer.</div>
+
+<h2 class="pagebreak">3. Numbers &amp; Estimation You Must Know Cold</h2>
+
+<h3>3.1 Powers of scale</h3>
+<table>
+<tr><th>Quantity</th><th>Rule of thumb</th></tr>
+<tr><td>1 day</td><td>≈ 86,400 s ≈ <strong>10<sup>5</sup> s</strong> (use 100K for mental math)</td></tr>
+<tr><td>1 million requests/day</td><td>≈ <strong>12 QPS</strong> average → ~25–60 QPS peak</td></tr>
+<tr><td>100 million req/day</td><td>≈ 1,200 QPS avg → ~3–5K peak</td></tr>
+<tr><td>Char / int / UUID</td><td>1 B / 4 B / 16 B; typical small record ≈ 100 B–1 KB</td></tr>
+<tr><td>Photo / video minute</td><td>~200 KB–2 MB / ~50–200 MB (HD)</td></tr>
+<tr><td>1 M users × 1 KB/day</td><td>1 GB/day ≈ 365 GB/yr — single box fine</td></tr>
+<tr><td>Single Postgres node</td><td>~5–20K simple QPS, a few TB comfortably</td></tr>
+<tr><td>Single Redis node</td><td>~100K ops/s, RAM-bound</td></tr>
+<tr><td>Kafka partition</td><td>~1–10 MB/s write; scale by adding partitions</td></tr>
+<tr><td>One web server</td><td>~1–10K RPS for light logic</td></tr>
+</table>
+
+<h3>3.2 Latency ladder (memorize the ratios)</h3>
+<table>
+<tr><th>Operation</th><th>Cost</th></tr>
+<tr><td>L1 cache / main memory reference</td><td>~1 ns / ~100 ns</td></tr>
+<tr><td>Read 1 MB from RAM</td><td>~0.25 ms</td></tr>
+<tr><td>SSD random read / read 1 MB from SSD</td><td>~100 µs / ~1 ms</td></tr>
+<tr><td>Same-DC network round trip</td><td>~0.5 ms</td></tr>
+<tr><td>Read 1 MB over 1 Gbps network</td><td>~10 ms</td></tr>
+<tr><td>Disk seek (HDD)</td><td>~10 ms</td></tr>
+<tr><td>Cross-continent round trip (US↔EU / US↔Asia)</td><td>~80 / ~150 ms</td></tr>
+</table>
+<p class="small">Implications: memory ≫ SSD ≫ HDD ≫ cross-region; batch data instead of chatty calls; never do cross-region calls on a hot path; cache anything read more than it is written.</p>
+
+<h3>3.3 Availability math</h3>
+<table>
+<tr><th>Nines</th><th>Downtime/year</th><th>Meaning</th></tr>
+<tr><td>99% (2 nines)</td><td>~3.65 days</td><td>Hobby tier</td></tr>
+<tr><td>99.9%</td><td>~8.8 hours</td><td>Typical internal service</td></tr>
+<tr><td>99.99%</td><td>~53 minutes</td><td>Serious product SLA — needs redundancy everywhere</td></tr>
+<tr><td>99.999%</td><td>~5 minutes</td><td>Telecom grade — multi-region active-active</td></tr>
+</table>
+
+<h2>4. The Building-Blocks Toolbox</h2>
+<p>Know each block's job, when to add it, and its cost. Introduce a block only when a number or requirement demands it.</p>
+
+<table>
+<tr><th>Block</th><th>Job</th><th>Add it when…</th><th>Cost / trap</th></tr>
+<tr><td><strong>Load balancer</strong> (L4/L7)</td><td>Spread traffic, health-check, TLS termination</td><td>&gt;1 app server</td><td>Itself a SPOF — pair it; sticky sessions limit scaling</td></tr>
+<tr><td><strong>CDN</strong></td><td>Serve static/cacheable content at the edge</td><td>Global users, media, static assets</td><td>Cache invalidation; costs for dynamic content</td></tr>
+<tr><td><strong>Cache</strong> (Redis/Memcached)</td><td>Absorb repeated reads, µs access</td><td>Read-heavy, tolerable staleness, hot keys</td><td>Invalidation, stampede (use TTL jitter + request coalescing), cold start</td></tr>
+<tr><td><strong>Message queue</strong> (Kafka/SQS/RabbitMQ)</td><td>Decouple producers/consumers, absorb bursts, replay</td><td>Spiky writes, async work, fan-out to many consumers</td><td>Adds latency + at-least-once duplicates → consumers must be idempotent</td></tr>
+<tr><td><strong>Relational DB</strong> (Postgres/MySQL)</td><td>Transactions, joins, constraints</td><td>Default choice until proven otherwise</td><td>Vertical limits; sharding is painful — delay it with replicas + caching</td></tr>
+<tr><td><strong>NoSQL wide-column/KV</strong> (Cassandra/DynamoDB)</td><td>Huge write throughput, key-based access, easy horizontal scale</td><td>&gt;~10K writes/s, simple access patterns, no joins needed</td><td>No ad-hoc queries; design tables per query; eventual consistency</td></tr>
+<tr><td><strong>Document DB</strong> (MongoDB)</td><td>Flexible schema, nested objects</td><td>Heterogeneous entities, fast iteration</td><td>Joins/transactions weaker; easy to abuse as junk drawer</td></tr>
+<tr><td><strong>Search index</strong> (Elasticsearch)</td><td>Full-text, fuzzy, faceted search</td><td>Any "search by text" requirement</td><td>Not a source of truth — feed it via CDC/queue</td></tr>
+<tr><td><strong>Object store</strong> (S3)</td><td>Cheap, durable blobs at any scale</td><td>Media, backups, data-lake files</td><td>High per-request latency; no appends</td></tr>
+<tr><td><strong>Columnar warehouse</strong> (BigQuery/Snowflake/ClickHouse)</td><td>Scan billions of rows for analytics</td><td>OLAP, dashboards, ad-hoc aggregation</td><td>Not for point lookups or OLTP</td></tr>
+<tr><td><strong>Coordinator</strong> (ZooKeeper/etcd)</td><td>Leader election, distributed locks, config</td><td>You need consensus (rarely — say why)</td><td>Operational complexity; don't put data through it</td></tr>
+</table>
+
+<h3>4.1 Cross-cutting techniques to name-drop with substance</h3>
+<ul>
+<li><strong>Replication:</strong> leader-follower (simple, read scaling, failover lag), multi-leader (multi-region writes, conflict resolution needed), leaderless/quorum (Dynamo-style, R+W&gt;N).</li>
+<li><strong>Partitioning/Sharding:</strong> hash (uniform, no range scans) vs range (scans, hot spots) vs consistent hashing (smooth resharding). Always discuss the <em>hot-key/celebrity problem</em> and resharding story.</li>
+<li><strong>Idempotency:</strong> client-generated request IDs + dedupe table; the answer to "what about retries/duplicates?" in all three archetypes.</li>
+<li><strong>Rate limiting:</strong> token bucket at the edge; protects everything downstream.</li>
+<li><strong>Circuit breakers, timeouts, retries with exponential backoff + jitter:</strong> the resilience trio for any service-to-service call.</li>
+<li><strong>CDC (change data capture):</strong> stream DB changes (Debezium) to keep caches, search indexes, warehouses in sync without dual writes — dual writes are a classic trap, call it out.</li>
+<li><strong>Observability:</strong> RED metrics (rate, errors, duration), structured logs, tracing; for pipelines: lag, throughput, watermark delay, DLQ depth.</li>
+</ul>
+
+<h2 class="pagebreak">5. Deep Dive A — Live Online (Request/Response) Systems</h2>
+<p><em>Examples: URL shortener, news feed, chat, e-commerce checkout, ride-hailing, rate limiter, notification service.</em></p>
+
+<h3>A.1 The canonical skeleton</h3>
+<p><code>Client → DNS/CDN → Load Balancer → API Gateway (auth, rate-limit) → Stateless services → Cache → Database (replicated, then sharded)</code>, with a <code>queue → async workers</code> branch for anything that doesn't need to happen in-request (emails, thumbnails, fan-out, analytics events).</p>
+
+<h3>A.2 The five questions that always come</h3>
+<ol>
+<li><strong>How do reads scale?</strong> Ladder: add cache (cache-aside is the default; discuss TTL vs explicit invalidation) → add read replicas (mention replication lag and read-your-own-writes) → add CDN for cacheable responses → denormalize/precompute (materialized views, fan-out-on-write feeds).</li>
+<li><strong>How do writes scale?</strong> Ladder: vertical → queue-buffer the spikes → partition/shard the database (pick the shard key by your dominant query; discuss hot keys) → consider an LSM/NoSQL store built for writes.</li>
+<li><strong>Consistency vs availability?</strong> Identify which operations need strong consistency (payments, inventory, usernames — use transactions/conditional writes) and which tolerate eventual (feeds, counters, profiles). Most systems are hybrid; saying that is the senior answer. Mention CAP only in one sentence, then talk in terms of user-visible anomalies.</li>
+<li><strong>How does it fail?</strong> Kill each box in your diagram: LB (redundant pair), service (stateless → just respawn), cache (stampede → jittered TTLs, coalescing; degrade to DB with load shedding), DB leader (failover, possible lag-window data loss), whole region (DNS failover, active-passive vs active-active).</li>
+<li><strong>Real-time delivery?</strong> Polling (simple, wasteful) → long polling → WebSocket/SSE (persistent connection service, needs sticky routing + a pub/sub backbone like Redis pub/sub or Kafka to route messages across connection servers).</li>
+</ol>
+
+<h3>A.3 Classic sub-problems &amp; their standard answers</h3>
+<table>
+<tr><th>Sub-problem</th><th>Standard answer</th></tr>
+<tr><td>Unique ID generation</td><td>Snowflake-style: timestamp + machine ID + sequence (sortable, no coordination); or ticket DB ranges; UUIDs if ordering irrelevant</td></tr>
+<tr><td>Feed fan-out</td><td>Fan-out-on-write (push) for normal users; fan-out-on-read (pull) for celebrities; hybrid is the expected answer</td></tr>
+<tr><td>Counting likes/views at scale</td><td>Don't increment a DB row per event: buffer in Redis / aggregate via stream, flush periodically; accept approximate real-time counts</td></tr>
+<tr><td>Inventory / double-booking</td><td>Conditional write (optimistic concurrency) or short-lived lock/reservation with TTL; never check-then-write without atomicity</td></tr>
+<tr><td>Rate limiter</td><td>Token bucket in Redis (Lua for atomicity); local + global two-tier for scale</td></tr>
+<tr><td>Geo queries (find nearby X)</td><td>Geohash / quadtree index; shard by region; hot-city problem → finer cells</td></tr>
+<tr><td>Distributed transactions</td><td>Avoid 2PC; use sagas (compensating actions) or outbox pattern + CDC for atomically publishing events with DB writes</td></tr>
+</table>
+
+<h3>A.4 What "good" sounds like here</h3>
+<div class="note">"The write path is: client posts → API validates → write to Postgres (source of truth) → outbox event → Kafka → workers update Redis feed caches and Elasticsearch. Reads hit Redis first, ~95% hit rate, fallback to DB with request coalescing. p99 read is a single Redis round-trip, ~2 ms in-region. If Redis dies we shed load at the gateway rather than melt the DB."</div>
+
+<h2 class="pagebreak">6. Deep Dive B — Batch Processing Systems</h2>
+<p><em>Examples: nightly ETL to a warehouse, search index rebuild, ML feature/training pipeline, billing/invoice run, log analytics, recommendation precompute.</em></p>
+
+<h3>B.1 The canonical skeleton</h3>
+<p><code>Sources (OLTP DBs via CDC/dumps, logs, events) → Ingestion/Landing (S3/HDFS, raw zone) → Processing engine (Spark/MapReduce-style, DAG of transforms) → Serving store (warehouse for analysts, KV store for online lookup, index files) </code> — all coordinated by an <strong>orchestrator</strong> (Airflow/Dagster: schedules, dependencies, retries, backfills).</p>
+
+<h3>B.2 The concepts that earn points</h3>
+<ol>
+<li><strong>Idempotency &amp; reruns are the #1 topic.</strong> Jobs fail and get rerun; partial output must never corrupt results. Standard answers: write to a staging location then atomically swap/rename; overwrite <em>partitions</em> (e.g., <code>date=2026-07-06</code>) rather than append; deterministic transforms.</li>
+<li><strong>Partitioning of data</strong> (usually by date/hour + a second key): enables incremental processing, targeted backfills, and pruning at query time.</li>
+<li><strong>Columnar formats</strong> (Parquet/ORC) + compression: 10–100× scan savings for analytics; row formats (Avro) for ingestion.</li>
+<li><strong>The shuffle is the bottleneck.</strong> Wide dependencies (joins, groupBys) move data across the network. Mitigations: broadcast joins for small tables, pre-partitioning/bucketing on join keys, combiners/partial aggregation, and <strong>data-skew handling</strong> (salting hot keys) — mentioning skew is a strong signal.</li>
+<li><strong>Fault tolerance model:</strong> recompute from lineage / retry failed tasks; speculative execution for stragglers; checkpointing for very long DAGs.</li>
+<li><strong>Backfill story:</strong> how do you reprocess 2 years of data after a logic fix without disturbing the daily runs? (Parameterized jobs by partition, separate backfill queue/cluster, priority isolation.)</li>
+<li><strong>Data quality gates:</strong> row-count/null/distribution checks between stages; quarantine bad records to a dead-letter location instead of failing the world.</li>
+<li><strong>SLA math:</strong> "Daily job must finish by 6 am; input is 5 TB; at 200 MB/s/node scan rate, N nodes ≈ …" — sizing the cluster from numbers is exactly the estimation skill they want.</li>
+</ol>
+
+<h3>B.3 Classic sub-problems &amp; standard answers</h3>
+<table>
+<tr><th>Sub-problem</th><th>Standard answer</th></tr>
+<tr><td>Getting OLTP data out without hurting prod</td><td>Read replicas for dumps, or CDC (Debezium→Kafka→lake) for continuous, low-impact sync</td></tr>
+<tr><td>Late-arriving / corrected source data</td><td>Reprocess affected partitions; keep raw immutable zone so everything is re-derivable</td></tr>
+<tr><td>Small-files problem</td><td>Compaction jobs; write fewer, larger files (~128 MB–1 GB)</td></tr>
+<tr><td>Schema evolution</td><td>Schema registry, additive-only changes, versioned datasets</td></tr>
+<tr><td>Serving batch output online</td><td>Bulk-load into KV store (e.g., build immutable files, hot-swap pointers) — never row-by-row inserts into the serving DB</td></tr>
+<tr><td>Orchestration failure semantics</td><td>Retries with backoff, alerts on SLA miss, task-level idempotency so retries are safe</td></tr>
+</table>
+
+<div class="warn"><strong>Trap to avoid:</strong> designing batch as "a big cron + a for-loop". Show the DAG, the partition layout, the rerun/backfill story, and the staging-then-swap output pattern — that's what separates batch answers.</div>
+
+<h2 class="pagebreak">7. Deep Dive C — Live Stream Processing Systems</h2>
+<p><em>Examples: real-time metrics/monitoring, fraud detection, trending topics, live leaderboards, ad-click counting, driver location tracking, real-time recommendations.</em></p>
+
+<h3>C.1 The canonical skeleton</h3>
+<p><code>Producers → Ingestion log (Kafka/Kinesis: partitioned, replayable, retention window) → Stream processor (Flink / Kafka Streams / Spark Structured Streaming: stateful operators, windows) → Sinks (Redis for live serving, ClickHouse/Druid for real-time analytics, S3 for archive) </code></p>
+<p>The <strong>partitioned log</strong> is the heart: it decouples producers from consumers, absorbs bursts, allows replay after bugs, and its partition key determines parallelism and ordering (order is guaranteed only <em>within</em> a partition — choose the key so that events that must be ordered share one, e.g., <code>user_id</code>).</p>
+
+<h3>C.2 The concepts that earn points</h3>
+<ol>
+<li><strong>Event time vs processing time.</strong> Events arrive late and out of order (mobile clients, retries). Decide which time your results are about. This single distinction drives everything below.</li>
+<li><strong>Windows:</strong> tumbling (fixed, non-overlapping — per-minute counts), sliding/hopping (overlapping — "last 5 min, every 10 s"), session (gap-based — user activity bursts).</li>
+<li><strong>Watermarks:</strong> the system's claim "I've probably seen everything up to time T" — the trigger to close windows. Trade-off: tight watermark = fast results, more dropped/late data; loose = slower, more complete. Late events beyond the watermark → side output / correction path.</li>
+<li><strong>Delivery semantics:</strong> at-most-once (loss ok), at-least-once (duplicates — pair with idempotent sinks; the pragmatic default), exactly-once (checkpointed state + transactional/2-phase sinks, e.g., Flink checkpoints + Kafka transactions — say "effectively-once, within the framework's boundary, at a latency cost").</li>
+<li><strong>Stateful processing:</strong> counts, joins, sessions need state. Where does it live? Local (RocksDB) per operator, checkpointed to S3; recovery = restore checkpoint + replay log from the checkpoint's offsets. This checkpoint/replay pairing is <em>the</em> streaming fault-tolerance answer.</li>
+<li><strong>Backpressure:</strong> when a sink slows, the system must slow consumption rather than OOM; the log absorbs the backlog; monitor <strong>consumer lag</strong> as the #1 health metric. Scale by adding partitions + consumers (up to partition count).</li>
+<li><strong>Hot partitions:</strong> celebrity key overloads one partition → salt the key (split into K sub-keys, aggregate downstream) or two-stage aggregation (local pre-agg then global).</li>
+<li><strong>Serving results:</strong> processor writes aggregates to Redis (live counters/leaderboard: sorted sets) or a real-time OLAP store (Druid/Pinot/ClickHouse) for slice-and-dice queries.</li>
+</ol>
+
+<h3>C.3 Lambda vs Kappa (say this when asked "what about correctness?")</h3>
+<table>
+<tr><th></th><th>Lambda</th><th>Kappa</th></tr>
+<tr><td>Idea</td><td>Stream layer for fast approximate results + batch layer recomputes truth from raw data; serving layer merges</td><td>One streaming pipeline; achieve correction by <em>replaying the log</em> with fixed code into a new output, then switch over</td></tr>
+<tr><td>Pro</td><td>Battle-tested; batch layer catches all streaming errors</td><td>One codebase, one system; simpler ops</td></tr>
+<tr><td>Con</td><td>Two codebases computing the same logic — drift and double maintenance</td><td>Needs long log retention and mature exactly-once streaming</td></tr>
+</table>
+
+<h3>C.4 Classic sub-problems &amp; standard answers</h3>
+<table>
+<tr><th>Sub-problem</th><th>Standard answer</th></tr>
+<tr><td>Top-K / trending in real time</td><td>Two-stage: per-partition count-min sketch / local top-K → merge globally per window; exact counts don't scale, approximate is expected</td></tr>
+<tr><td>Distinct users (cardinality)</td><td>HyperLogLog (~KBs for millions of distinct, ~2% error) — exact requires huge state</td></tr>
+<tr><td>Stream joins (click ↔ impression)</td><td>Windowed join with state + TTL; discuss what happens when one side is late (buffer bounds, emit-and-correct)</td></tr>
+<tr><td>Duplicate events from producers</td><td>Idempotent producer IDs / dedupe by event-ID within a state TTL window</td></tr>
+<tr><td>Reprocessing after a bug</td><td>Replay the log from an earlier offset into a shadow output, validate, swap consumers — the streaming "backfill"</td></tr>
+<tr><td>Alerting/fraud rules</td><td>Keyed state per user/card + pattern detection (CEP); low-latency path bypasses heavy aggregation</td></tr>
+</table>
+
+<div class="note"><strong>What "good" sounds like here:</strong> "Click events keyed by <code>ad_id</code> into Kafka (say 100 partitions for 100K events/s). Flink consumes with 1-minute tumbling windows on event time, watermark 30 s; late clicks go to a side output that issues corrections. State in RocksDB, checkpoints every 30 s to S3 — on crash we restore and replay from checkpoint offsets, giving effectively-once counts in the Redis sink because writes are keyed upserts (idempotent)."</div>
+
+<h2 class="pagebreak">8. Decision Cheat-Tables</h2>
+
+<h3>8.1 SQL vs NoSQL (default to SQL; move for a reason)</h3>
+<table>
+<tr><th>Choose relational when…</th><th>Choose NoSQL when…</th></tr>
+<tr><td>Transactions/constraints matter (money, inventory, bookings)</td><td>Write throughput or dataset exceeds a comfortable single-leader setup (&gt;~10K writes/s, &gt;~5–10 TB hot)</td></tr>
+<tr><td>Access patterns are evolving / ad-hoc queries &amp; joins needed</td><td>Access patterns are few and known → model tables per query</td></tr>
+<tr><td>Data is naturally relational and modest scale</td><td>Need multi-region active-active writes or tunable consistency</td></tr>
+<tr><td colspan="2" class="small">Middle paths worth naming: read replicas + cache before sharding SQL; NewSQL (Spanner/Cockroach) when you need both scale and transactions.</td></tr>
+</table>
+
+<h3>8.2 Push vs Pull (feeds, notifications, dashboards)</h3>
+<table>
+<tr><th>Push (precompute on write)</th><th>Pull (compute on read)</th></tr>
+<tr><td>Fast reads; work ∝ writes × followers</td><td>Cheap writes; work ∝ reads × followees</td></tr>
+<tr><td>Bad for celebrities (fan-out explosion)</td><td>Bad for very active readers / slow reads</td></tr>
+<tr><td colspan="2">Expected answer: hybrid — push for normal users, pull-and-merge for high-fanout accounts.</td></tr>
+</table>
+
+<h3>8.3 Sync vs Async</h3>
+<p>In-request only what the user must see to proceed; everything else (notifications, indexing, analytics, media processing) goes through a queue. Justify with p99: every synchronous downstream call adds its tail latency to yours.</p>
+
+<h3>8.4 Consistency menu (talk anomalies, not acronyms)</h3>
+<table>
+<tr><th>Level</th><th>User-visible promise</th><th>Use for</th></tr>
+<tr><td>Strong / linearizable</td><td>Everyone sees the latest write</td><td>Balances, inventory, unique usernames, locks</td></tr>
+<tr><td>Read-your-own-writes</td><td>You see your own updates immediately</td><td>Profiles, posts (route author reads to leader / session pinning)</td></tr>
+<tr><td>Monotonic reads</td><td>Time never goes backwards for one user</td><td>Feeds, timelines (sticky replica per session)</td></tr>
+<tr><td>Eventual</td><td>Converges, briefly stale</td><td>Counters, likes, recommendations, search freshness</td></tr>
+</table>
+
+<h3>8.5 Compute engine quick-pick</h3>
+<table>
+<tr><th>Need</th><th>Reach for</th></tr>
+<tr><td>Request/response &lt; 100 ms</td><td>Stateless services + cache + OLTP store</td></tr>
+<tr><td>Bounded data, minutes–hours OK</td><td>Spark on object storage, orchestrated DAG</td></tr>
+<tr><td>Unbounded, seconds, stateful correctness</td><td>Flink (or Kafka Streams for lighter jobs)</td></tr>
+<tr><td>Unbounded, sub-minute, simple aggregations</td><td>Spark Structured Streaming (micro-batch) is fine — say why it's acceptable</td></tr>
+<tr><td>Interactive analytics on fresh events</td><td>Real-time OLAP: ClickHouse / Druid / Pinot</td></tr>
+</table>
+
+<h2>9. How You're Graded + Common Failure Modes</h2>
+
+<h3>9.1 What interviewers score</h3>
+<ul>
+<li><strong>Problem structuring:</strong> did you clarify, scope, and drive the conversation with a plan?</li>
+<li><strong>Quantitative grounding:</strong> did numbers drive decisions (or at least accompany them)?</li>
+<li><strong>Breadth then depth:</strong> a complete end-to-end design first, then genuine depth in 2–3 areas.</li>
+<li><strong>Trade-off fluency:</strong> every choice framed against a rejected alternative with the reason.</li>
+<li><strong>Failure thinking:</strong> unprompted discussion of what breaks and what happens then.</li>
+<li><strong>Communication:</strong> thinking out loud, checking in, adapting to hints. An interviewer's hint is a gift — take it immediately.</li>
+</ul>
+
+<h3>9.2 The classic failure modes</h3>
+<table>
+<tr><th>Failure</th><th>Antidote</th></tr>
+<tr><td>Jumping to boxes before requirements</td><td>Force yourself through steps 1–2; write requirements where both can see them</td></tr>
+<tr><td>Buzzword dropping ("we'll use Kafka") without why</td><td>Never name a technology without the property that earns it its place</td></tr>
+<tr><td>Designing for Google scale when they said 10K users (or vice versa)</td><td>Let the estimation dictate the ambition; say "at this scale, a single Postgres + replica is honestly enough"</td></tr>
+<tr><td>Ignoring the write path / focusing only on reads</td><td>Walk both paths explicitly in the high-level design</td></tr>
+<tr><td>Monologuing 15 minutes without check-ins</td><td>Pause after each phase: "shall I go deeper here or move on?"</td></tr>
+<tr><td>No failure story</td><td>Before wrap-up, kill every box in your diagram out loud</td></tr>
+<tr><td>Treating hints as interruptions</td><td>Hints = the rubric leaking; pivot immediately and thank them</td></tr>
+<tr><td>Perfect-memory trivia focus (exact Kafka configs)</td><td>Concepts and trade-offs matter; precise numbers only for estimation</td></tr>
+</table>
+
+<h2>10. Question → Archetype Map &amp; Practice Plan</h2>
+
+<h3>10.1 Common questions mapped</h3>
+<table>
+<tr><th>Question</th><th>Archetype(s)</th><th>The deep dive they're fishing for</th></tr>
+<tr><td>URL shortener</td><td>Online</td><td>ID generation, cache-heavy reads, 100:1 read/write</td></tr>
+<tr><td>News feed / Twitter</td><td>Online + async fan-out</td><td>Push vs pull hybrid, celebrity problem</td></tr>
+<tr><td>Chat / WhatsApp</td><td>Online (stateful connections)</td><td>WebSockets, message ordering, delivery receipts, presence</td></tr>
+<tr><td>YouTube / Netflix</td><td>Online + batch (transcoding)</td><td>CDN, chunked upload, async processing pipeline</td></tr>
+<tr><td>Uber</td><td>Online + stream (locations)</td><td>Geo-indexing, high-frequency location writes, matching</td></tr>
+<tr><td>Rate limiter</td><td>Online infra</td><td>Token bucket, distributed counting, race conditions</td></tr>
+<tr><td>Web crawler</td><td>Batch (+ queue)</td><td>Frontier management, politeness, dedupe at scale</td></tr>
+<tr><td>Search (build + serve)</td><td>Batch build + online serve</td><td>Inverted index pipeline, index swap, query path</td></tr>
+<tr><td>Analytics warehouse / ETL</td><td>Batch</td><td>Partitioning, idempotent reruns, backfills, formats</td></tr>
+<tr><td>Ad click counter / billing</td><td>Stream + batch reconciliation</td><td>Exactly-once vs idempotent sinks, late events, lambda vs kappa</td></tr>
+<tr><td>Trending topics / leaderboard</td><td>Stream + online serve</td><td>Windows, top-K sketches, hot keys, Redis sorted sets</td></tr>
+<tr><td>Metrics/monitoring (Datadog-lite)</td><td>Stream + TSDB</td><td>Ingest fan-in, downsampling/rollups, retention tiers</td></tr>
+<tr><td>Fraud detection</td><td>Stream (stateful)</td><td>Keyed state, CEP rules, latency budget, feature freshness</td></tr>
+<tr><td>Notification system</td><td>Online + queue</td><td>Fan-out, dedupe, rate limiting per channel, retries/DLQ</td></tr>
+</table>
+
+<h3>10.2 A 2-week practice plan</h3>
+<ol>
+<li><strong>Days 1–2:</strong> internalize the framework (§1) and numbers (§3) until estimation is reflexive.</li>
+<li><strong>Days 3–5:</strong> one online-archetype question per day (URL shortener → feed → chat), 45 min on a timer, out loud, diagram on paper/whiteboard.</li>
+<li><strong>Days 6–7:</strong> batch: design an ETL warehouse pipeline and a search-index build; force yourself through the rerun/backfill story.</li>
+<li><strong>Days 8–10:</strong> stream: ad-click counting, trending topics, metrics system; drill windows/watermarks/exactly-once until you can explain them to a non-engineer.</li>
+<li><strong>Days 11–12:</strong> hybrids (Uber, YouTube, notifications) — practice saying the classification out loud and switching vocabularies mid-design.</li>
+<li><strong>Days 13–14:</strong> mock interviews (a friend or record yourself). Grade against §9.1. Fix your single worst habit, not everything.</li>
+</ol>
+
+<div class="note"><strong>The one-paragraph summary:</strong> Clarify and scope → estimate and let numbers set the ambition → define the interface → draw the end-to-end skeleton for the archetype (serve / DAG / log-process-sink) → go deep on the 2–3 hard parts with explicit trade-offs → kill every box and describe the blast radius → wrap with evolution. Justify everything; volunteer failure modes; treat hints as gold.</div>
+
+<p class="small" style="margin-top:28px;">Prepared July 2026 · Print to PDF: open in a browser → Cmd/Ctrl+P → Save as PDF (A4, default margins are pre-set).</p>
+
+</body>
+</html>

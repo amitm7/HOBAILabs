@@ -1,0 +1,91 @@
+/* ============================================================
+   VERISTORY — Base / element defaults
+   Applies the tokens to raw HTML so any page linking styles.css
+   inherits the brand canvas, type, focus states & selection.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--lh-normal);
+  font-weight: var(--fw-regular);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: var(--fw-semibold); }
+
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { color: var(--verd-300); }
+
+::selection { background: var(--accent-soft); color: var(--paper-0); }
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+img, video { display: block; max-width: 100%; }
+
+hr { border: none; border-top: 1px solid var(--border); margin: var(--space-8) 0; }
+
+/* ============================================================
+   Media placeholder — cinematic 9:16 stand-in for reel media.
+   Use where real/generated footage will go. No real people:
+   an abstract, brand-toned "subject glow" + film grain.
+   <div class="v-media-ph v-ph-2"></div>  (variants 1–5)
+   ============================================================ */
+.v-media-ph {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(72% 46% at 50% 30%, rgba(46,139,99,0.30), transparent 62%),
+    radial-gradient(80% 55% at 50% 96%, rgba(180,145,90,0.20), transparent 64%),
+    linear-gradient(178deg, var(--ink-750) 0%, var(--ink-900) 52%, var(--ink-1000) 100%);
+  isolation: isolate;
+}
+.v-media-ph::before { /* soft "subject" volume */
+  content: ""; position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  width: 76%; aspect-ratio: 3/4; border-radius: 46% 46% 40% 40%;
+  background: radial-gradient(60% 60% at 50% 38%, rgba(242,240,232,0.10), rgba(242,240,232,0) 70%);
+  filter: blur(4px); z-index: 0;
+}
+.v-media-ph::after { /* film grain */
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0.5; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.v-media-ph > * { position: relative; z-index: 2; }
+.v-ph-1 { background:
+    radial-gradient(70% 44% at 50% 26%, rgba(46,139,99,0.34), transparent 60%),
+    radial-gradient(90% 60% at 50% 100%, rgba(11,13,11,0.9), transparent 60%),
+    linear-gradient(178deg, #17362a 0%, var(--ink-900) 56%, var(--ink-1000) 100%); }
+.v-ph-2 { background:
+    radial-gradient(66% 42% at 52% 30%, rgba(180,145,90,0.34), transparent 60%),
+    radial-gradient(90% 60% at 50% 100%, rgba(11,13,11,0.9), transparent 60%),
+    linear-gradient(178deg, #3a2f1c 0%, var(--ink-900) 56%, var(--ink-1000) 100%); }
+.v-ph-3 { background:
+    radial-gradient(70% 48% at 46% 40%, rgba(46,139,99,0.26), transparent 62%),
+    radial-gradient(60% 40% at 70% 16%, rgba(180,145,90,0.20), transparent 60%),
+    linear-gradient(178deg, var(--ink-750) 0%, var(--ink-900) 56%, var(--ink-1000) 100%); }
+.v-ph-4 { background:
+    radial-gradient(74% 46% at 50% 34%, rgba(116,160,188,0.22), transparent 60%),
+    radial-gradient(90% 60% at 50% 100%, rgba(11,13,11,0.9), transparent 60%),
+    linear-gradient(178deg, #1a2a2f 0%, var(--ink-900) 56%, var(--ink-1000) 100%); }
+.v-ph-5 { background:
+    radial-gradient(64% 44% at 54% 28%, rgba(224,137,95,0.24), transparent 60%),
+    radial-gradient(70% 46% at 40% 80%, rgba(46,139,99,0.18), transparent 60%),
+    linear-gradient(178deg, #2c2320 0%, var(--ink-900) 56%, var(--ink-1000) 100%); }
+
+/* Thin, dark, unobtrusive scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--ink-700) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--ink-700); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--ink-600); }

@@ -4,6 +4,7 @@ Run: ~/.pyenv/versions/3.12.3/bin/python3.12 web_app.py
 Open: http://localhost:7860
 """
 import contextlib
+import functools
 import json
 import os
 import re
@@ -17,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, make_response, render_template, request, send_file
+from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, send_file
 
 from agents import auth
 
@@ -40,13 +41,56 @@ ASSETS_BROWSE_ROOT = Path(os.environ.get("ASSETS_BROWSE_ROOT", str(Path.home()))
 
 
 def _path_allowed(p: str) -> bool:
-    """True when p resolves inside RUNS_DIR or ASSETS_BROWSE_ROOT."""
+    """True when p resolves inside RUNS_DIR or ASSETS_BROWSE_ROOT.
+
+    `.resolve()` follows symlinks, so a symlink *inside* an allowed root that points
+    outside it is rejected (the resolved target is what's checked) — no symlink escape.
+    """
     try:
         rp = Path(p).resolve()
     except (OSError, ValueError):
         return False
     return any(rp == root or rp.is_relative_to(root)
                for root in (RUNS_DIR.resolve(), ASSETS_BROWSE_ROOT))
+
+
+def safe_paths(*fields: str, source: str = "json", required: bool = False):
+    """Enforce `_path_allowed` on client-supplied path fields at the route boundary.
+
+    This is the choke point for filesystem safety: a route declares which request
+    fields carry a path, and any present value that resolves outside RUNS_DIR /
+    ASSETS_BROWSE_ROOT is rejected with 403 *before the handler runs* — so a new
+    route can't forget the check (the L99 "one seam, enforced" rule).
+
+    - `source="json"` reads the JSON body; `source="args"` reads the query string.
+    - Fail-closed: a present-but-disallowed path → 403. Absent/empty fields are
+      skipped unless `required=True` (→ 400), leaving "is this field mandatory?" to
+      the handler's own business logic.
+    - Additive: existing inline `_path_allowed` checks (which return friendlier,
+      route-specific errors) stay — this is defense-in-depth + the enforced default.
+
+    Order it *below* `@auth.require_operator()` so auth runs first:
+        @app.route(...)
+        @auth.require_operator()
+        @safe_paths("music_path", "bg_music_path")
+        def handler(...): ...
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            getter = (request.args.get if source == "args"
+                      else (request.get_json(silent=True) or {}).get)
+            for field in fields:
+                val = getter(field)
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    if required:
+                        return jsonify({"error": f"{field} required"}), 400
+                    continue
+                if not _path_allowed(str(val).strip()):
+                    return jsonify({"error": f"Path not allowed: {field}"}), 403
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # Startup: release any spend reservations orphaned by a previous process that was
 # killed mid-render, so a crash can't permanently inflate a project's spend cap.
@@ -158,6 +202,18 @@ def whoami():
 
 @app.route("/")
 def index():
+    """Veristory marketing landing page — the public front door.
+
+    Static brand surface, no pipeline access. Styled by the Veristory design
+    system (web/static/veristory/), the brand foundation the app-shell tokens
+    in style.css are drawn from.
+    """
+    return render_template("landing.html")
+
+
+@app.route("/story")
+def story_page():
+    """Story mode UI shell (the operator app's home, formerly served at /)."""
     return render_template("index.html")
 
 
@@ -170,6 +226,12 @@ def brand_page():
 def studio_page():
     """Studio Mode (MODE3): type a brief → full reel, with a reusable identity library."""
     return render_template("studio.html")
+
+
+@app.route("/landing")
+def landing_page():
+    """Legacy alias — the landing page moved to the root."""
+    return redirect("/", code=301)
 
 
 # ── Studio Mode: identity library + shot planning (MODE3_PLAN) ────────────────
@@ -1503,6 +1565,7 @@ def api_canvas_video(run_id: str, operator: str):
 
 @app.route("/api/canvas/<run_id>/render", methods=["POST"])
 @auth.require_operator()
+@safe_paths("music_path", "bg_music_path")
 def api_canvas_render(run_id: str, operator: str):
     """Final Cut — assemble the approved clips + audio + captions into the finished
     reel by dispatching the EXISTING pipeline (`_run_inner`), which reuses the cached
@@ -2413,11 +2476,13 @@ def project_version(operator: str):
 
 
 @app.route("/media")
+@safe_paths("path", source="args")
 def serve_media():
     """
     Serve a matched local photo/video so the UI can show a thumbnail.
     Safety: only serves image/video files inside RUNS_DIR or ASSETS_BROWSE_ROOT —
-    never arbitrary filesystem paths.
+    never arbitrary filesystem paths. `@safe_paths` enforces the root check at the
+    boundary; the inline check below stays for the friendlier 403 body.
     """
     path = request.args.get("path", "")
     if not path or not _path_allowed(path):
@@ -2924,7 +2989,8 @@ def export_run(run_id: str):
         z.write(manifest, "edit_list.json")
         # Importable timeline + standard captions for the editor's own NLE,
         # plus the provenance/authenticity summary (Gap #5) for disclosure.
-        for extra in ("timeline.fcpxml", "captions.srt", "provenance.json"):
+        for extra in ("timeline.fcpxml", "captions.srt", "provenance.json",
+                      "content_credential.json"):
             p = run_dir / extra
             if p.exists():
                 z.write(p, extra)
@@ -2955,6 +3021,29 @@ def provenance_for_run(run_id: str):
     except Exception:
         pass
     return jsonify({"label": None}), 404
+
+
+@app.route("/credential/<run_id>")
+def credential_for_run(run_id: str):
+    """The reel's embedded Content Credential (C2PA) summary — validation state,
+    assertion labels, and the per-frame provenance the signature attests."""
+    cf = RUNS_DIR / run_id / "content_credential.json"
+    if cf.exists():
+        try:
+            return jsonify(json.loads(cf.read_text()))
+        except Exception:
+            pass
+    # Fall back to reading the credential straight off the signed output file.
+    try:
+        from agents import content_credential, run_store
+        stored = run_store.load(run_id) or {}
+        path = stored.get("output_path") or str(RUNS_DIR / run_id / "output.mp4")
+        summary = content_credential.read_credential(path) if os.path.exists(path) else None
+        if summary:
+            return jsonify(summary)
+    except Exception:
+        pass
+    return jsonify({"credential": None}), 404
 
 
 @app.route("/performance", methods=["GET"])
@@ -4114,6 +4203,39 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
         total = sum(f["duration"] for f in frames)
         edit_list_path = _write_edit_list(run_dir, frames, clips, frame_times, transition, output_path)
         print(f"[Export] edit list ready → {edit_list_path}")
+        # Finalize provenance: rewrite provenance.json from the RESOLVED frames with
+        # effective timecodes. The dispatch-time copy (written at /run) is provisional —
+        # pre-matching, pre-generation — so it lacks per-frame truth; this one is what
+        # the Content Credential attests. Then sign the reel with it (C2PA). Both are
+        # best-effort: a provenance/signing failure degrades to an unsigned reel, never
+        # a failed render.
+        try:
+            from agents import provenance as _prov
+            prov_summary = _prov.summarize({**data, "frames": frames}, frame_times)
+            (run_dir / "provenance.json").write_text(json.dumps(prov_summary, indent=2))
+            print("[Provenance] finalized per-frame provenance.json")
+            from agents import content_credential, degradation
+            # Slice-A consent stub: the operator-confirmed likeness grant from the
+            # payload. Item 5 replaces this with the governance DB record.
+            consent = None
+            if prov_summary.get("real_person_ai"):
+                lk = data.get("likeness_consent") or {}
+                consent = {"subject": prov_summary.get("subject"),
+                           "face": bool(lk.get("face")), "voice": bool(lk.get("voice")),
+                           "confirmed_by": data.get("operator_id", "")}
+            res = content_credential.sign_reel(output_path, prov_summary, consent)
+            if res.get("ok"):
+                summary = content_credential.read_credential(output_path)
+                if summary:
+                    (run_dir / "content_credential.json").write_text(
+                        json.dumps(summary, indent=2))
+                print(f"[Credential] reel signed (issuer={res['issuer']}, tsa={res['tsa']})")
+            else:
+                degradation.report("provenance", "warn",
+                                   f"Content Credential not embedded: {res.get('error')}",
+                                   run_id=run_id)
+        except Exception as e:
+            print(f"[Provenance] finalize/sign skipped ({e})")
         # Editor hand-off: an importable FCPXML timeline (Premiere/Resolve/FCP) + a
         # standard SRT, so the operator can finish the last 10% in their own tool.
         try:
