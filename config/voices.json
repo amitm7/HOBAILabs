@@ -9,8 +9,9 @@
     "elderly_female":  ""
   },
   "_language_note": "Native regional voices for multi-language reels (agents/languages.py). Same role keys as 'roles'. When a frame is rendered in a chosen language, its voice is looked up HERE first, then falls back to 'roles', then the global default. LEAVE EMPTY to fall back. Fill with ElevenLabs voice ids from your account that natively speak each language.",
+  "_coverage_2026_07_17": "REALITY CHECK — the account holds 21 voices; exactly 8 are ElevenLabs-verified for Hindi and ZERO for mr/bn/pa. So 'hi' below is now filled from those 8 (every slot was empty, which meant every Hindi reel silently used the accented multilingual default and fired the cast.py T13c degradation). mr/bn/pa CANNOT be filled from this account at all — ElevenLabs has no native voice for them, so those languages stay accented no matter what is typed here. Fixing them needs an Indic-native TTS provider (e.g. Sarvam) behind a config/tts.json seam, which does not exist yet: agents/tts_generator.py hardcodes ElevenLabs. Until then, treat mr/bn/pa in the language picker as best-effort, not native.",
   "language_voices": {
-    "hi": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
+    "hi": {"narrator": "nPczCjzI2devNBz1zQrb", "male_adult": "JBFqnCBsd6RMkjVDRZzb", "female_adult": "EXAVITQu4vr4xnSDxMaL", "child": "", "elderly_male": "nPczCjzI2devNBz1zQrb", "elderly_female": "Xb7hH8MSUJpSbSDYk0k2"},
     "en": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
     "mr": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},
     "pa": {"narrator": "", "male_adult": "", "female_adult": "", "child": "", "elderly_male": "", "elderly_female": ""},

@@ -1,73 +1,65 @@
 {
   "_note": "Update this file when vendor prices change — never hardcode costs in Python.",
   "_updated": "2026-06-04",
-
   "kling": {
     "standard_5s_usd": 0.08,
-    "pro_5s_usd":      0.14,
+    "pro_5s_usd": 0.14,
     "_note": "Cost per 5-second clip. Longer clips billed in 5s blocks."
   },
-
   "image_gen": {
-    "flux_portrait_usd":   0.05,
+    "flux_portrait_usd": 0.05,
     "openai_gpt_image_usd": 0.04,
-    "openai_edit_usd":     0.04,
-    "seedream_usd":        0.01,
-    "nano_banana_usd":     0.06,
-    "storyboard_usd":      0.01,
+    "openai_edit_usd": 0.04,
+    "seedream_usd": 0.01,
+    "nano_banana_usd": 0.06,
+    "storyboard_usd": 0.01,
     "_note": "Per image generated or edited. seedream = cheap draft/test model; nano_banana = premium photoreal (verify on fal.ai)."
   },
-
   "upscale": {
     "aura_sr_usd": 0.02,
     "clarity_usd": 0.05,
     "_note": "Per still upscaled (final-render quality lift). aura_sr = faithful (real footage, no hallucination); clarity = creative (AI stills, adds detail). VERIFY both on fal.ai before the first paid run — fal endpoints + pricing shift monthly."
   },
-
   "scene_intelligence": {
     "gpt_per_frame_usd": 0.01,
     "_note": "GPT-4.1 scene design per captioned frame. Cached after first run (then $0)."
   },
-
   "music": {
     "suno_song_usd": 0.05,
     "lyria_pro_usd": 0.08,
     "lyria_clip_usd": 0.03,
     "_note": "Per AI-generated track. suno = Suno wrapper. lyria_pro = Lyria 3 full song (~3min, Gemini API), lyria_clip = 30s draft. VERIFY Lyria prices on ai.google.dev / OpenRouter (preview pricing shifts)."
   },
-
   "higgsfield": {
-    "generation_5s_usd": 0.10,
+    "generation_5s_usd": 0.1,
     "_note": "Always 5s. Check higgsfield.ai for current pricing."
   },
-
   "seedance": {
-    "generation_5s_usd": 0.40,
+    "generation_5s_usd": 0.4,
     "_note": "ByteDance Seedance via fal.ai, per 5s clip. VERIFY on fal.ai."
   },
-
   "veo": {
-    "generation_5s_usd": 0.50,
+    "generation_5s_usd": 0.5,
     "_note": "Google Veo 3 via fal.ai, per 5s clip (native audio). VERIFY on fal.ai."
   },
-
   "hailuo": {
     "generation_5s_usd": 0.28,
     "_note": "MiniMax Hailuo via fal.ai, per 5s clip. VERIFY on fal.ai."
   },
-
   "synclabs": {
     "per_second_usd": 0.012,
     "_note": "SyncLabs lipsync-2 model. Check app.sync.so for current rates."
   },
-
   "hedra": {
-    "per_generation_usd": 0.10,
+    "per_generation_usd": 0.1,
     "_note": "Hedra character-3 per generation. Check hedra.com for current rates."
   },
-
   "voice": {
     "elevenlabs_chars_per_dollar": 25000,
     "_note": "ElevenLabs Starter plan: ~25k characters per dollar."
+  },
+  "sfx": {
+    "mmaudio_clip_usd": 0.05,
+    "_note": "Per clip, MMAudio-class video->audio atmosphere/foley via fal.ai (S30 Phase 2). VERIFY on fal.ai before the first paid run — placeholder from public pricing."
   }
 }

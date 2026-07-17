@@ -3,21 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}HOBAILabs{% endblock %}</title>
+<title>{% block title %}Veristory.ai{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="app-shell">
 
 <header class="app-header">
-  <a href="/story" class="app-logo">HOBAILabs</a>
-  <nav class="nav-tabs" aria-label="Mode">
-    <a href="/story" class="nav-tab {% if active_mode == 'story' %}active{% endif %}">Story</a>
-    <a href="/studio" class="nav-tab {% if active_mode == 'studio' %}active{% endif %}">Studio</a>
-    <a href="/brand" class="nav-tab {% if active_mode == 'brand' %}active{% endif %}">Brand</a>
-    <a href="/canvas" class="nav-tab {% if active_mode == 'canvas' %}active{% endif %}">Canvas</a>
-    <a href="/library" class="nav-tab {% if active_mode == 'library' %}active{% endif %}">Library</a>
-  </nav>
+  {% include "_nav.html" %}
+  <a href="/canvas" class="app-logo">Veristory<span style="color:var(--text-muted);font-weight:400">.ai</span></a>
+  <span style="flex:1"></span>
   <div class="header-actions">
     <a href="/guide" class="header-link"><i data-lucide="book-open" class="icon"></i> Guide</a>
     <div id="auth-bar"></div>
@@ -93,6 +88,7 @@
 
 {% block hidden %}{% endblock %}
 
+<script src="/static/nav.js"></script>
 <script src="/static/shell.js"></script>
 {% block shell_init %}{% endblock %}
 <script src="/static/main.js"></script>

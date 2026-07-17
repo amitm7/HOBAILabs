@@ -287,7 +287,7 @@ Write your full Instagram caption here. (This does NOT appear in the video.)</pr
 <tr><th>Name</th><th>Plain meaning</th><th>Tier</th></tr>
 <tr><td><b>Kling Standard</b></td><td>Solid animation, great value — the testing default</td><td><span class="pill cheap">draft</span></td></tr>
 <tr><td><b>Kling Pro</b></td><td>Highest-quality Kling motion</td><td><span class="pill prem">premium</span></td></tr>
-<tr><td><b>Higgsfield</b></td><td>Most cinematic camera-move presets</td><td><span class="pill prem">premium</span></td></tr>
+<tr><td><b>Higgsfield</b></td><td>Cinematic camera move, prompt-driven (no presets). <b>Auto-picked for landscape + hero shots</b> since 2026-07-17 — $0.10/5s, cheaper than Kling Pro, and the only video vendor on its own credit</td><td><span class="pill prem">premium</span></td></tr>
 <tr><td><b>Seedance</b></td><td>Cinematic, multi-shot feel</td><td><span class="pill prem">premium</span></td></tr>
 <tr><td><b>Veo</b></td><td>Best built-in audio/dialogue</td><td><span class="pill prem">premium</span></td></tr>
 <tr><td><b>Hailuo</b></td><td>Wide landscapes, realistic motion</td><td><span class="pill prem">premium</span></td></tr>
@@ -640,11 +640,28 @@ so you see and approve everything before it spends.</p>
   <b>real reference photo + consent</b> to each, and every shot where that person speaks
   is anchored to <i>their</i> face — same person, same face, across the whole reel. Leave a
   character without a reference and it stays generic.</li>
+  <li><b>Lock your locations</b>: click <b>🏞 Locations</b> — it reads the story and lists
+  its distinct <b>places</b> (cave interior, chai stall at dawn, …), each editable
+  (name / description / time of day). Click <b>🏞 Generate plate</b> to render one
+  <b>empty establishing view</b> of that place (no people — space is left for your
+  characters), and every shot set there then holds the <i>same</i> set instead of quietly
+  redrawing it between shots. <b>↻ New plate</b> re-rolls a fresh one. Deriving is free;
+  a plate costs one image.
+  <br><i>How far the plate reaches today:</i> every shot set there carries the location's
+  <b>wording</b> in its prompt, and shots with <b>no person in them</b> are generated
+  <i>from the plate itself</i>, so they hold the real set. Shots <b>with a character</b>
+  follow the wording only — the generator takes one reference image and the face has to
+  win it (identity beats place); plate-plus-face arrives with the multi-reference work.
+  If a place drifts on a character shot, sharpen its description.</li>
   <li><b>Approve</b> the Script, then <b>Generate</b> the <b>Storyboard</b> (free) →
   review the framing, motion arrows and beats → <b>Approve</b>.</li>
   <li><b>Generate Key Frames</b> — this renders just the <b>still images</b> (cheaper).
   Review them; hover any card and click <b>↻</b> to <b>re-roll</b> one shot you don't
   like. Only when you're happy do you move on.</li>
+  <li><b>Mark a verdict per shot</b> (optional): in the shot's Inspector set
+  <b>Review</b> — 🔎 Needs review · ✅ Approved · 🏁 Production-ready · ❌ Rejected.
+  It shows as a chip on the card so you can sweep the board at a glance; a label
+  only, it never regenerates anything.</li>
   <li><b>Pick your audio:</b> 🎵 Music (auto) · ⬆ Upload a song · 🎙 Voiceover
   (ElevenLabs — choose a voice) · 🔇 None.</li>
   <li><b>Generate Video</b> (or the top <b>🎬 Render reel</b> button). It <b>reuses the

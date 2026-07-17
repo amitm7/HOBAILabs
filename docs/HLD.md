@@ -69,6 +69,7 @@ CLIP-based scoring — these are on the roadmap (§9).
    · Upscale: fal.ai aura_sr (faithful/real), clarity (creative/AI)             │ fal Upscale  │
    · Video: Kling AI, Higgsfield, fal (Seedance/Veo/Hailuo)                    │ Veo / Hailuo │
    · Lip-sync: Hedra (photo), SyncLabs (video)                                 ├──────────────┤
+   · SFX/atmosphere: fal MMAudio (video→audio, S30) — seam only, not yet mixed
    · Voice: ElevenLabs · Music: Lyria 3 (Gemini) | Suno · Safety: OpenAI Mod    │ Voice/Music/ │
    · CDN for lip-sync uploads: Higgsfield CDN                                  │ Lipsync APIs │
                                                                                 └──────────────┘
@@ -76,9 +77,23 @@ CLIP-based scoring — these are on the roadmap (§9).
 
 **Key context properties**
 
-- **Two front doors, one engine.** `/` (story) and `/brand` (ad) both build the same
-  `frames[]` data model and call the same `agents/*` stages. Brand mode adds a thin
-  mode-hook layer (brand payload, product-beat flag, mandatories gate, post-pass).
+- **Many surfaces, one engine.** `/story`, `/brand` and `/canvas` all build the same
+  `frames[]` model and call the same `agents/*` stages; `/` is the static Veristory
+  landing page and `/studio` is **retired** (301 → `/canvas`, S31 — it was redundant with
+  Canvas's own shot_planner + characters). Brand mode adds a thin mode-hook layer (brand
+  payload, product-beat flag, mandatories gate, post-pass).
+- **Canvas is becoming the one creator mode** (S31, `docs/CANVAS_ENTRY_PLAN.md`): Story
+  and Brand are scheduled to become *scopes* inside it, not doors. Brand mode is already
+  reachable from Canvas — `web_app._canvas_mode(state)` derives it from
+  `state["brand"]` instead of the old hardcoded `"story"`, and `_canvas_brand_gate` runs
+  `brand.validate_mandatories` on **every paid canvas route** before the spend
+  reservation. That gate previously had exactly one caller (`/run`), so an ad built on
+  Canvas skipped it entirely.
+- **Location anchoring** (S30): `derive_locations` tags each frame with a `location_id`
+  and propagates an invariant setting clause; a generated **plate** additionally
+  conditions shots with **no person** in them (image-to-image). Face-bearing shots stay
+  text-anchored — `edit_image` takes ONE reference and identity beats place; plate+face
+  needs the D5 multi-reference work.
 - **Vendor-pluggable on three independent axes:** reasoning/vision/fast LLM
   (`config/llm.json`), image model, video model (`config/models.json`).
 - **Graceful degradation everywhere.** Any external failure falls back to a cheaper
@@ -99,6 +114,8 @@ CLIP-based scoring — these are on the roadmap (§9).
 | **Render pipeline** | `agents/*` Python modules | The actual work: parse → treatment → scene-design → cast → assign visuals → edit → lip-sync → animate → caption → assemble → (brand post-pass). |
 | **Cast module** | `agents/cast.py` | Detect speakers per frame, build cast list, resolve voice priority per speaker. |
 | **Brand module** | `agents/brand.py` | Extract brief (parse-only), validate mandatories, build PIL CTA card, burn disclosure text via ffmpeg. |
+| **SFX module** | `agents/sfx.py` + `config/models.json` (`mmaudio`) | S30 seam: one clip + a text hint → a synced atmosphere/foley WAV (fal video→audio). Content-hash cached; `""` on any failure. **No callers yet** — the Final-Cut mix stem is ticketed (`docs/S30_ADOPTION_PLAN.md`), so nothing in a render reaches it today. |
+| **Posting kit** | `agents/posting_kit.py` | Caption + hashtags + cover pick for a finished reel. Deterministic (no LLM, no spend); refuses brand runs (BRAND_PLAN §5). Serves both `/posting-kit` and `/api/canvas/<id>/posting-kit`. |
 | **Suggestions module** | `agents/suggestions.py` | Batch fast-tier LLM call at parse time → camera/edit/note chips per frame. |
 | **Governance modules** | `agents/governance.py`, `agents/run_store.py`, `agents/product_surface.py` | Thin SQLite bridges for consent/spend gates, restart-safe run metadata, asset records, approval records, and version records before the full DB lands. |
 | **Model router** | `agents/model_router.py` + `config/models.json` | Pure logic: maps each shot to a model id given shot type + cost tier + overrides. |
@@ -106,9 +123,17 @@ CLIP-based scoring — these are on the roadmap (§9).
 | **Cost engine** | `agents/pricing.py` + `config/pricing.json` | Single source of cost figures; whole-pipeline estimate (multi-shot aware). |
 | **Caches** | `~/.hob_cache/*` (filesystem) | Clips, scene designs, image descriptions, lip-sync clips+audio, generated stills (in asset folder, prompt-hash keyed). |
 
-No database, no message broker, no auth layer today. State for a web render lives
-in process memory keyed by `run_id`; durable artifacts are files on disk and the
-content-hash caches.
+No message broker. State for a web render lives in process memory keyed by `run_id`;
+durable artifacts are files on disk plus the content-hash caches. Operator auth exists
+(`agents/auth.py`, `@auth.require_operator` on money/rights routes — including
+`/api/canvas/plan`, since planning is a paid reasoning call).
+
+**Storage.** Media + the run DB default to `~/.hob_runs` (`run_store.DEFAULT_RUNS_DIR`,
+override `HOB_RUNS_DIR` / `HOB_RUNS_DB`) and must share one durable filesystem. They
+previously defaulted under `tempfile.gettempdir()`, which follows `TMPDIR` — capable of
+putting the whole archive on removable storage in an OS-erasable directory, and of
+raising SQLite `disk I/O error`s. `run_store._conn()` probes and reconnects rather than
+caching a dead connection for the life of the process.
 
 ---
 

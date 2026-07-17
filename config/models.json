@@ -2,147 +2,428 @@
   "_note": "Model capability catalog + per-shot routing policy. Keep model FACTS here, costs in pricing.json. The router (agents/model_router.py) reads 'routing'; clip_builder/image_generator read 'models' to dispatch a backend. Add a model by adding an entry under 'models' and listing its id in 'routing'.",
   "_updated": "2026-06-07",
   "_fal_endpoints_warning": "fal.ai endpoint slugs and pricing shift monthly — VERIFY each fal_endpoint on fal.ai before the first paid run.",
-
   "models": {
     "flux": {
-      "kind": "image", "backend": "flux", "tier": "premium",
-      "strengths": ["face", "portrait", "object"],
-      "max_concurrent": 4, "pricing_key": "image_gen.flux_portrait_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "kind": "image",
+      "backend": "flux",
+      "tier": "premium",
+      "strengths": [
+        "face",
+        "portrait",
+        "object"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "image_gen.flux_portrait_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "gpt_image": {
-      "kind": "image", "backend": "openai", "tier": "standard",
-      "strengths": ["object", "symbolic", "text-in-image"],
-      "max_concurrent": 4, "pricing_key": "image_gen.openai_gpt_image_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "kind": "image",
+      "backend": "openai",
+      "tier": "standard",
+      "strengths": [
+        "object",
+        "symbolic",
+        "text-in-image"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "image_gen.openai_gpt_image_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "seedream": {
-      "kind": "image", "backend": "fal", "fal_endpoint": "fal-ai/bytedance/seedream/v4/text-to-image",
+      "kind": "image",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/bytedance/seedream/v4/text-to-image",
       "tier": "draft",
-      "strengths": ["face", "object", "cheap-test"],
-      "max_concurrent": 8, "pricing_key": "image_gen.seedream_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "strengths": [
+        "face",
+        "object",
+        "cheap-test"
+      ],
+      "max_concurrent": 8,
+      "pricing_key": "image_gen.seedream_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "nano_banana": {
-      "kind": "image", "backend": "fal", "fal_endpoint": "fal-ai/nano-banana",
+      "kind": "image",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/nano-banana",
       "tier": "premium",
-      "strengths": ["face", "portrait", "photoreal"],
-      "max_concurrent": 4, "pricing_key": "image_gen.nano_banana_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "strengths": [
+        "face",
+        "portrait",
+        "photoreal"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "image_gen.nano_banana_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
-
     "kling_std": {
-      "kind": "video", "backend": "kling", "kling_mode": "std", "tier": "draft",
-      "strengths": ["face", "motion", "value", "start-frame"],
-      "max_concurrent": 5, "pricing_key": "kling.standard_5s_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "kind": "video",
+      "backend": "kling",
+      "kling_mode": "std",
+      "tier": "draft",
+      "strengths": [
+        "face",
+        "motion",
+        "value",
+        "start-frame"
+      ],
+      "max_concurrent": 5,
+      "pricing_key": "kling.standard_5s_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "kling_pro": {
-      "kind": "video", "backend": "kling", "kling_mode": "pro", "tier": "premium",
-      "strengths": ["face", "motion", "cinematic", "start-frame"],
-      "max_concurrent": 5, "pricing_key": "kling.pro_5s_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "kind": "video",
+      "backend": "kling",
+      "kling_mode": "pro",
+      "tier": "premium",
+      "strengths": [
+        "face",
+        "motion",
+        "cinematic",
+        "start-frame"
+      ],
+      "max_concurrent": 5,
+      "pricing_key": "kling.pro_5s_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "higgsfield": {
-      "kind": "video", "backend": "higgsfield", "tier": "premium",
-      "strengths": ["camera-move", "cinematic"],
-      "max_concurrent": 4, "pricing_key": "higgsfield.generation_5s_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "kind": "video",
+      "backend": "higgsfield",
+      "tier": "premium",
+      "strengths": [
+        "camera-move",
+        "cinematic"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "higgsfield.generation_5s_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "seedance": {
-      "kind": "video", "backend": "fal", "fal_endpoint": "fal-ai/bytedance/seedance/v1/pro/image-to-video",
+      "kind": "video",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/bytedance/seedance/v1/pro/image-to-video",
       "tier": "premium",
-      "strengths": ["cinematic", "multi-shot", "motion", "audio"],
-      "max_concurrent": 4, "pricing_key": "seedance.generation_5s_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "strengths": [
+        "cinematic",
+        "multi-shot",
+        "motion",
+        "audio"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "seedance.generation_5s_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "veo": {
-      "kind": "video", "backend": "fal", "fal_endpoint": "fal-ai/veo3/image-to-video",
+      "kind": "video",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/veo3/image-to-video",
       "tier": "premium",
-      "strengths": ["cinematic", "audio", "dialogue", "lipsync"],
-      "max_concurrent": 2, "pricing_key": "veo.generation_5s_usd",
-      "aspect": ["9:16", "16:9"]
+      "strengths": [
+        "cinematic",
+        "audio",
+        "dialogue",
+        "lipsync"
+      ],
+      "max_concurrent": 2,
+      "pricing_key": "veo.generation_5s_usd",
+      "aspect": [
+        "9:16",
+        "16:9"
+      ]
     },
     "hailuo": {
-      "kind": "video", "backend": "fal", "fal_endpoint": "fal-ai/minimax/hailuo-02/standard/image-to-video",
+      "kind": "video",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/minimax/hailuo-02/standard/image-to-video",
       "tier": "premium",
-      "strengths": ["landscape", "motion-physics", "wide"],
-      "max_concurrent": 4, "pricing_key": "hailuo.generation_5s_usd",
-      "aspect": ["9:16", "16:9", "1:1"]
+      "strengths": [
+        "landscape",
+        "motion-physics",
+        "wide"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "hailuo.generation_5s_usd",
+      "aspect": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ]
     },
     "aura_sr": {
-      "kind": "upscale", "backend": "fal", "fal_endpoint": "fal-ai/aura-sr",
-      "tier": "premium", "upscale_mode": "faithful",
-      "strengths": ["faithful", "real-footage", "no-hallucination"],
-      "max_concurrent": 4, "pricing_key": "upscale.aura_sr_usd",
+      "kind": "upscale",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/aura-sr",
+      "tier": "premium",
+      "upscale_mode": "faithful",
+      "strengths": [
+        "faithful",
+        "real-footage",
+        "no-hallucination"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "upscale.aura_sr_usd",
       "_use": "REAL person/footage — does NOT invent detail, so a real face stays the real face (moat-safe)."
     },
     "clarity_upscaler": {
-      "kind": "upscale", "backend": "fal", "fal_endpoint": "fal-ai/clarity-upscaler",
-      "tier": "premium", "upscale_mode": "creative",
-      "strengths": ["creative", "ai-stills", "detail-add"],
-      "max_concurrent": 4, "pricing_key": "upscale.clarity_usd",
+      "kind": "upscale",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/clarity-upscaler",
+      "tier": "premium",
+      "upscale_mode": "creative",
+      "strengths": [
+        "creative",
+        "ai-stills",
+        "detail-add"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "upscale.clarity_usd",
       "_use": "AI stills / ambient B-roll — adds detail (hallucinates), NEVER route a real person here."
     },
     "nano_banana_edit": {
-      "kind": "edit", "backend": "fal", "fal_endpoint": "fal-ai/nano-banana/edit",
-      "tier": "premium", "ref_input": "image_urls",
-      "strengths": ["face", "identity", "reference", "same-character-new-scene"],
-      "max_concurrent": 4, "pricing_key": "image_gen.nano_banana_usd",
+      "kind": "edit",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/nano-banana/edit",
+      "tier": "premium",
+      "ref_input": "image_urls",
+      "strengths": [
+        "face",
+        "identity",
+        "reference",
+        "same-character-new-scene"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "image_gen.nano_banana_usd",
       "_use": "Reference-conditioned generation — keeps a supplied face/character across a NEW scene. The strong identity path (real face-refs AND fiction characters). VERIFY the fal endpoint before a big run."
     },
     "flux_kontext": {
-      "kind": "edit", "backend": "fal", "fal_endpoint": "fal-ai/flux-pro/kontext",
-      "tier": "premium", "ref_input": "image_url",
-      "strengths": ["identity", "in-context-edit", "consistency"],
-      "max_concurrent": 4, "pricing_key": "image_gen.flux_portrait_usd",
+      "kind": "edit",
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/flux-pro/kontext",
+      "tier": "premium",
+      "ref_input": "image_url",
+      "strengths": [
+        "identity",
+        "in-context-edit",
+        "consistency"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "image_gen.flux_portrait_usd",
       "_use": "In-context edit — holds a subject across scenes. Alternative identity model to nano_banana."
     },
     "gpt_image_edit": {
-      "kind": "edit", "backend": "openai",
-      "tier": "standard", "strengths": ["edit", "text-in-image"],
-      "max_concurrent": 4, "pricing_key": "image_gen.openai_edit_usd",
+      "kind": "edit",
+      "backend": "openai",
+      "tier": "standard",
+      "strengths": [
+        "edit",
+        "text-in-image"
+      ],
+      "max_concurrent": 4,
+      "pricing_key": "image_gen.openai_edit_usd",
       "_use": "OpenAI gpt-image-1 edit — the original identity/edit path, now the FALLBACK."
+    },
+    "mmaudio": {
+      "backend": "fal",
+      "fal_endpoint": "fal-ai/mmaudio-v2",
+      "kind": "video_to_audio",
+      "max_concurrent": 4,
+      "pricing_key": "sfx.mmaudio_clip_usd",
+      "strengths": [
+        "atmosphere",
+        "foley",
+        "video-synced"
+      ],
+      "tier": "dev",
+      "_note": "S30 Phase 2 SFX seam (galleri5-validated: their auto-SFX is what made clips feel finished). Video+text -> a synced atmosphere/foley track for one clip. VERIFY the fal endpoint slug + price before the first paid run (see _fal_endpoints_warning)."
     }
   },
-
   "routing": {
     "_note": "shot_type → cost_tier → ordered preference list of model ids. Router picks the first id that exists in 'models'. 'real' (real photo/video at the video step) and 'passthrough' (real media at the image step) are handled in the router code.",
     "image": {
-      "face":   { "draft": ["seedream"], "premium": ["nano_banana", "flux"] },
-      "object": { "draft": ["seedream"], "premium": ["flux", "nano_banana"] }
+      "face": {
+        "draft": [
+          "seedream"
+        ],
+        "premium": [
+          "nano_banana",
+          "flux"
+        ]
+      },
+      "object": {
+        "draft": [
+          "seedream"
+        ],
+        "premium": [
+          "flux",
+          "nano_banana"
+        ]
+      }
     },
     "video": {
-      "_kling_first_note": "TEMPORARY (2026-07-02): kling_pro (kling-v3 pro) leads EVERY premium lane to burn a prepaid Kling credit balance. Best-fit routing preserved as the 2nd/3rd choices — TO REVERT to auto/best-fit, restore the leads: landscape→hailuo, hero→seedance, dialogue→veo.",
-      "real":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance"] },
-      "face":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance"] },
-      "landscape": { "draft": ["kling_std"], "premium": ["kling_pro", "hailuo", "seedance"] },
-      "hero":      { "draft": ["kling_std"], "premium": ["kling_pro", "seedance", "veo"] },
-      "dialogue":  { "draft": ["kling_std"], "premium": ["kling_pro", "veo"] }
+      "_kling_dead_note": "KLING IS REFUSING WORK (verified live 2026-07-17): POST /v1/videos/image2video -> HTTP 429 {\"code\":1102,\"message\":\"Account balance not enough\"}. The API Platform is PREPAID-PACKS-ONLY — there is no pay-as-you-go tier, so with '2 packages purchased, 0 in effect' every Kling call fails. Both packs were trials (100Units depleted; 1000Units expired 2026-07-04 stranding 258/1000). Top-up is NOT self-serve — the dashboard offers only 'Contact us for purchase', so restoring Kling needs a sales cycle. Consequently the 2026-07-02 'kling_pro leads every premium lane to burn a prepaid Kling balance' hack is not just obsolete, it is actively harmful: it made every premium shot start with a doomed 429. Kling is therefore DEMOTED to last on every lane (kept, not deleted, so restoring a pack re-activates it with no code change). This restores the best-fit routing the hack's own revert note prescribed: landscape→hailuo, hero→seedance, dialogue→veo. TO RESTORE KLING: buy a resource pack via Kling sales, confirm `python -m agents.balances` shows a live pack, then move kling_pro/kling_std back up the lists.",
+      "_higgsfield_first_note": "2026-07-17: higgsfield LEADS landscape+hero (its declared strengths: camera-move, cinematic) and sits 2nd on face. Why: (a) it is the only video backend with BOTH working code and live prepaid credit — fal is balance-locked and both Kling packs are dead, so every other premium video model is currently unpayable; (b) $0.10/5s is cheaper than kling_pro's $0.14. Verified live 2026-07-17 with a real DoP render: 74s end-to-end (NOT the 1.5-5min the agents/higgsfield.py docstring claims), 720x1280 true 9:16, 5.37s, 30fps, h264, no audio; identity held across the clip and the subject produced real motion (head turn + foreground parallax), not just a camera push. NOT added to 'real' (the render reframes/re-crops the source — unsafe for real-media preservation until tested on an actual photo) or 'dialogue' (no audio/lipsync strength). TO REVERT: drop 'higgsfield' from the lists below; the model entry + fallbacks can stay.",
+      "_draft_note": "kling_std ($0.08) WAS the entire draft tier — with Kling refusing, higgsfield ($0.10, prepaid credit already owned) is the only cheap draft option left. It is slower (~74s/clip, max_concurrent 4), which is the real cost of this; seedance/veo/hailuo are 3-5x pricier and wrong for iteration. kling_std stays last so a restored pack instantly reclaims the lane.",
+      "real": {
+        "draft": [
+          "higgsfield",
+          "kling_std"
+        ],
+        "premium": [
+          "seedance",
+          "higgsfield",
+          "kling_pro"
+        ]
+      },
+      "face": {
+        "draft": [
+          "higgsfield",
+          "kling_std"
+        ],
+        "premium": [
+          "higgsfield",
+          "seedance",
+          "kling_pro"
+        ]
+      },
+      "landscape": {
+        "draft": [
+          "higgsfield",
+          "kling_std"
+        ],
+        "premium": [
+          "higgsfield",
+          "hailuo",
+          "seedance",
+          "kling_pro"
+        ]
+      },
+      "hero": {
+        "draft": [
+          "higgsfield",
+          "kling_std"
+        ],
+        "premium": [
+          "higgsfield",
+          "seedance",
+          "veo",
+          "kling_pro"
+        ]
+      },
+      "dialogue": {
+        "draft": [
+          "higgsfield",
+          "kling_std"
+        ],
+        "premium": [
+          "veo",
+          "higgsfield",
+          "kling_pro"
+        ]
+      }
     },
     "identity": {
       "_note": "Reference-conditioned generation (keep a supplied face/character in a new scene). Ordered failover — the edit path (agents/image_editor.edit_image) tries these in order. Override the primary with env IDENTITY_MODEL.",
-      "default": ["nano_banana_edit", "gpt_image_edit"]
+      "default": [
+        "nano_banana_edit",
+        "gpt_image_edit"
+      ]
     }
   },
-
   "fallbacks": {
     "_note": "Gap #8 — per-model ordered alternates for vendor failover. Each chain prefers a DIFFERENT backend first so one vendor outage/price-spike degrades independently. The router (model_router.run_with_fallback) tries the primary, then these in order. Same kind only.",
-    "flux":        ["nano_banana", "gpt_image", "seedream"],
-    "gpt_image":   ["flux", "nano_banana", "seedream"],
-    "seedream":    ["flux", "gpt_image", "nano_banana"],
-    "nano_banana": ["flux", "gpt_image", "seedream"],
-
-    "kling_std":   ["hailuo", "seedance", "kling_pro"],
-    "kling_pro":   ["seedance", "veo", "kling_std"],
-    "higgsfield":  ["kling_std", "seedance", "hailuo"],
-    "seedance":    ["kling_std", "hailuo", "veo"],
-    "veo":         ["kling_pro", "seedance", "kling_std"],
-    "hailuo":      ["kling_std", "seedance", "kling_pro"]
+    "flux": [
+      "nano_banana",
+      "gpt_image",
+      "seedream"
+    ],
+    "gpt_image": [
+      "flux",
+      "nano_banana",
+      "seedream"
+    ],
+    "seedream": [
+      "flux",
+      "gpt_image",
+      "nano_banana"
+    ],
+    "nano_banana": [
+      "flux",
+      "gpt_image",
+      "seedream"
+    ],
+    "_video_note": "2026-07-17: higgsfield inserted as the FIRST alternate on every kling/fal chain. Before this, the video chains only LOOKED cross-vendor: kling_pro -> [seedance, veo, kling_std] is two fal hops then kling, so with fal balance-locked AND both Kling packs expired there was no live path — a kling failure exhausted the whole chain. higgsfield is the only third video backend (own credit, own vendor), so it is what makes the '_note' claim above actually true for video.",
+    "kling_std": [
+      "higgsfield",
+      "hailuo",
+      "seedance",
+      "kling_pro"
+    ],
+    "kling_pro": [
+      "higgsfield",
+      "seedance",
+      "veo",
+      "kling_std"
+    ],
+    "higgsfield": [
+      "kling_std",
+      "seedance",
+      "hailuo"
+    ],
+    "seedance": [
+      "higgsfield",
+      "hailuo",
+      "veo",
+      "kling_std"
+    ],
+    "veo": [
+      "higgsfield",
+      "seedance",
+      "kling_pro",
+      "kling_std"
+    ],
+    "hailuo": [
+      "higgsfield",
+      "seedance",
+      "kling_pro",
+      "kling_std"
+    ]
   },
-
+  "_defaults_note": "defaults[kind] is the LAST resort in select_model/candidates — it fires when a shot_type/tier has no routing entry. It pointed at kling_std, i.e. the one video vendor that refuses every request (2026-07-17), which turned the safety net into a guaranteed failure. Point it at a vendor that can actually bill.",
   "defaults": {
     "image": "flux",
-    "video": "kling_std"
+    "video": "higgsfield"
   }
 }

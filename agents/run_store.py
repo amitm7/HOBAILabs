@@ -9,60 +9,91 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import tempfile
 import threading
 from pathlib import Path
 
+# NEVER default into the temp dir. It used to be `tempfile.gettempdir()/hob_runs.db`,
+# which on a machine with TMPDIR pointed at an external volume put the whole story
+# archive on removable storage inside a directory the OS is entitled to erase — and
+# SQLite's WAL locking there produced hard "disk I/O error"s. Durable home dir, always;
+# override with HOB_RUNS_DB / HOB_RUNS_DIR (see .env.example).
+DEFAULT_RUNS_DIR = Path.home() / ".hob_runs"
 _DB_PATH = Path(os.environ.get(
     "HOB_RUNS_DB",
-    str(Path(tempfile.gettempdir()) / "hob_runs.db"),
+    str(DEFAULT_RUNS_DIR / "hob_runs.db"),
 )).expanduser()
 _LOCAL = threading.local()
 
 
+def _open() -> sqlite3.Connection:
+    """Open + migrate a fresh connection. Everything goes through _conn(), not this."""
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(_DB_PATH), timeout=30, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
+    legacy_runs = _rename_legacy_table(con, "runs", {"run_id", "payload_json"})
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS runs ("
+        "run_id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'running', "
+        "payload_json TEXT NOT NULL DEFAULT '{}', run_dir TEXT NOT NULL DEFAULT '', "
+        "output_path TEXT NOT NULL DEFAULT '', edit_list_path TEXT NOT NULL DEFAULT '', "
+        "error TEXT NOT NULL DEFAULT '', "
+        "performance_views INTEGER, performance_likes INTEGER, "
+        "performance_note TEXT NOT NULL DEFAULT '', "
+        "performance_by TEXT NOT NULL DEFAULT '', "
+        "updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
+    )
+    # Back-compat: add the post-publish feedback columns to DBs created before this
+    # change. Guarded by _columns() and wrapped because each threading.local
+    # connection re-runs _conn(); two fresh connections can race the ADD COLUMN.
+    for _col, _ddl in (
+        ("performance_views", "INTEGER"),
+        ("performance_likes", "INTEGER"),
+        ("performance_note", "TEXT NOT NULL DEFAULT ''"),
+        ("performance_by", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if _col not in _columns(con, "runs"):
+            try:
+                con.execute(f"ALTER TABLE runs ADD COLUMN {_col} {_ddl}")
+            except sqlite3.OperationalError:
+                pass  # another connection added it first
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS run_logs ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, line TEXT NOT NULL, "
+        "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
+    )
+    con.execute("CREATE INDEX IF NOT EXISTS idx_run_logs_run ON run_logs(run_id, id)")
+    _migrate_legacy_runs(con, legacy_runs)
+    con.commit()
+    return con
+
+
 def _conn() -> sqlite3.Connection:
+    """The thread's connection, reopened if the cached one has gone bad.
+
+    The cache used to be permanent, which made ONE transient failure fatal for the life
+    of the process: a `disk I/O error` (the DB's volume sleeping, or another process
+    checkpointing away the -wal/-shm underneath us) poisoned the connection and every
+    later request 500'd until someone restarted the server — which is exactly how the
+    Library "Couldn't load stories" outage happened. A cheap liveness probe turns that
+    into a reconnect. NOTE: this is not SQLite-specific — a pooled Postgres connection
+    dies the same way, so the probe stays valuable after any migration.
+    """
     con = getattr(_LOCAL, "con", None)
-    if con is None:
-        _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(str(_DB_PATH), timeout=30, check_same_thread=False)
-        con.row_factory = sqlite3.Row
-        con.execute("PRAGMA journal_mode=WAL")
-        con.execute("PRAGMA synchronous=NORMAL")
-        legacy_runs = _rename_legacy_table(con, "runs", {"run_id", "payload_json"})
-        con.execute(
-            "CREATE TABLE IF NOT EXISTS runs ("
-            "run_id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'running', "
-            "payload_json TEXT NOT NULL DEFAULT '{}', run_dir TEXT NOT NULL DEFAULT '', "
-            "output_path TEXT NOT NULL DEFAULT '', edit_list_path TEXT NOT NULL DEFAULT '', "
-            "error TEXT NOT NULL DEFAULT '', "
-            "performance_views INTEGER, performance_likes INTEGER, "
-            "performance_note TEXT NOT NULL DEFAULT '', "
-            "performance_by TEXT NOT NULL DEFAULT '', "
-            "updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
-        )
-        # Back-compat: add the post-publish feedback columns to DBs created before this
-        # change. Guarded by _columns() and wrapped because each threading.local
-        # connection re-runs _conn(); two fresh connections can race the ADD COLUMN.
-        for _col, _ddl in (
-            ("performance_views", "INTEGER"),
-            ("performance_likes", "INTEGER"),
-            ("performance_note", "TEXT NOT NULL DEFAULT ''"),
-            ("performance_by", "TEXT NOT NULL DEFAULT ''"),
-        ):
-            if _col not in _columns(con, "runs"):
-                try:
-                    con.execute(f"ALTER TABLE runs ADD COLUMN {_col} {_ddl}")
-                except sqlite3.OperationalError:
-                    pass  # another connection added it first
-        con.execute(
-            "CREATE TABLE IF NOT EXISTS run_logs ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, line TEXT NOT NULL, "
-            "created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))"
-        )
-        con.execute("CREATE INDEX IF NOT EXISTS idx_run_logs_run ON run_logs(run_id, id)")
-        _migrate_legacy_runs(con, legacy_runs)
-        con.commit()
-        _LOCAL.con = con
+    if con is not None:
+        try:
+            con.execute("SELECT 1")
+            return con
+        except sqlite3.Error as e:
+            print(f"[run_store] cached connection is dead ({e}) — reconnecting")
+            try:
+                con.close()
+            except Exception:
+                pass
+            _LOCAL.con = None
+    con = _open()
+    _LOCAL.con = con
     return con
 
 

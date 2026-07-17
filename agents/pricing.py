@@ -71,6 +71,12 @@ def music_cost(provider: str | None = None) -> float:
     return m.get("suno_song_usd", 0.05)
 
 
+def sfx_cost() -> float:
+    """Cost for one clip's SFX/atmosphere track (S30 Phase 2 — MMAudio-class
+    video→audio via fal). Placeholder price: VERIFY on fal.ai before first paid run."""
+    return load().get("sfx", {}).get("mmaudio_clip_usd", 0.05)
+
+
 def voice_cost(char_count: int) -> float:
     cpd = load()["voice"].get("elevenlabs_chars_per_dollar", 25000)
     return round(char_count / cpd, 4)

@@ -1,0 +1,44 @@
+{# Shared app navigation (S31) — ONE menu for every surface.
+
+   Included by _base.html AND by the standalone pages (canvas, library) that do not
+   extend it, so the nav can never drift into three hand-maintained copies again
+   (which is how /studio outlived its own removal in two of them).
+
+   Canvas is FIRST: it is the product. Story and Brand stay reachable until the
+   docs/CANVAS_ENTRY_PLAN.md pre-flight lands (browser photo upload → posting kit →
+   brand gate), at which point they leave this list and become scopes inside Canvas.
+   Active state is resolved in nav.js from the path, so this works whether or not the
+   including template passes `active_mode`. #}
+<button type="button" class="nav-burger" id="nav-burger"
+        aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+  <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+</button>
+
+<div class="nav-backdrop" id="nav-backdrop" hidden></div>
+
+<nav class="nav-menu" id="nav-menu" hidden aria-label="Main">
+  <div class="nav-menu-head">
+    <span class="nav-menu-brand">Veristory<span class="nav-menu-tld">.ai</span></span>
+    <button type="button" class="nav-menu-close" id="nav-menu-close"
+            aria-label="Close menu">&times;</button>
+  </div>
+
+  <a href="/canvas" data-path="/canvas">
+    <b>🎬 Canvas</b><em>Plan, direct and render a reel</em>
+  </a>
+  <a href="/story" data-path="/story">
+    <b>📖 Story</b><em>A real story, from real photos</em>
+  </a>
+  <a href="/brand" data-path="/brand">
+    <b>🏷️ Brand</b><em>Product and ad reels</em>
+  </a>
+
+  <div class="nav-menu-sep" role="separator"></div>
+
+  <a href="/library" data-path="/library">
+    <b>📚 Library</b><em>Every story's assets — browse and download</em>
+  </a>
+  <a href="/guide" data-path="/guide">
+    <b>📘 Guide</b><em>How everything works</em>
+  </a>
+</nav>

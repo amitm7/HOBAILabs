@@ -117,6 +117,15 @@ def _submit_one(frame: dict, temp_dir: str, audio_dir: str,
     voice_id = voice_for_frame(frame, default_voice_id, voice_map)
     if not voice_id:
         print(f"[LipsyncCoordinator] {fid}: no voice_id — skipping lipsync (set ELEVENLABS_VOICE_ID)")
+        try:
+            from agents import degradation
+            degradation.report("lipsync", "alert",
+                               f"{fid}: lip-sync requested but no voice resolved for speaker "
+                               f"'{frame.get('speaker_label') or frame.get('speaker_id') or '?'}' — "
+                               f"frame renders WITHOUT lip-sync. Assign a voice on the Character "
+                               f"sheet, or set ELEVENLABS_VOICE_ID as the global default.")
+        except Exception:
+            pass
         frame["lipsync"] = False
         return frame
     if frame.get("speaker_id", "narrator") != "narrator":
@@ -127,6 +136,16 @@ def _submit_one(frame: dict, temp_dir: str, audio_dir: str,
         audio_path, audio_dur = _generate_audio(caption, voice_id, audio_dir)
     except Exception as e:
         print(f"[LipsyncCoordinator] {fid}: audio generation failed ({e}) — falling back")
+        try:
+            from agents import degradation
+            # 'alert', not 'info': TTS failing is how a reel goes silent (the S1 root
+            # cause was exactly this shape — a paid audio vendor fell over and the
+            # ledger said nothing). ElevenLabs quota exhaustion lands here.
+            degradation.report("lipsync", "alert",
+                               f"{fid}: voice generation FAILED ({str(e)[:90]}) — this frame has "
+                               f"no lip-sync and no spoken line. Check the ElevenLabs balance.")
+        except Exception:
+            pass
         frame["lipsync"] = False
         return frame
 
@@ -160,8 +179,24 @@ def _submit_one(frame: dict, temp_dir: str, audio_dir: str,
     elif has_hedra:
         vendor = "hedra"
     else:
+        # Rule 13: this is the S1 pattern verbatim — a best-effort step fails and only
+        # a server-side print() knows. It is worse here than elsewhere because the UI
+        # SELLS lip-sync: main.js renders a "N × Lip sync (Hedra/Sync)" line with a
+        # dollar figure, the operator ticks it, pays attention to the estimate, and
+        # gets a reel with no lip-sync and no explanation. 'alert' (not 'info'): the
+        # operator must see this BEFORE judging the output, because what they asked
+        # and paid for is simply absent.
         missing = "SYNCLABS_API_KEY" if is_video else "HEDRA_API_KEY"
         print(f"[LipsyncCoordinator] {fid}: {missing} not set — skipping lipsync")
+        try:
+            from agents import degradation
+            degradation.report("lipsync", "alert",
+                               f"{fid}: lip-sync requested but {missing} is not set — this "
+                               f"frame renders WITHOUT lip-sync (the mouth will not match the "
+                               f"audio). Set {missing} in .env, or turn lip-sync off to stop "
+                               f"being quoted for it.")
+        except Exception:
+            pass
         frame["lipsync"] = False
         return frame
 

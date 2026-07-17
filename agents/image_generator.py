@@ -238,6 +238,12 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
     appearance = (frame.get("character_appearance") or "").strip()
     if appearance and appearance.lower() not in prompt.lower():
         prompt = f"The person on screen is {appearance}. " + prompt
+    # S30 location anchoring: the shot's location clause rides EVERY prompt as an
+    # invariant (T11 lesson), so the place stays the same place across the reel.
+    # Part of the prompt → part of the cache hash (edit a location → shots regenerate).
+    location = (frame.get("location_clause") or "").strip()
+    if location and location.lower() not in prompt.lower():
+        prompt = f"{prompt} {location}."
     prompt = _inject_world(frame, prompt)   # P2: global art-direction / world
 
     use_ref = bool(reference_path) and os.path.exists(reference_path)
@@ -325,19 +331,46 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
             "shallow depth of field, photorealistic, 9:16 vertical, no text, no watermarks."
         )
 
+    # S30 location anchoring: the invariant setting clause rides symbolic prompts too.
+    location = (frame.get("location_clause") or "").strip()
+    if location and location.lower() not in prompt.lower():
+        prompt = f"{prompt} {location}."
     prompt = _inject_world(frame, prompt)   # P2: global art-direction / world
-    chosen = model_id or "gpt_image"
+
+    # The generated PLATE as an image-to-image reference. Symbolic shots carry no face,
+    # so nothing competes for the single reference slot — which is why the plate can
+    # anchor these TODAY, while face-bearing shots still wait for D5 multi-ref (identity
+    # beats place, S19/S20). Until this, the plate was billed and read by nothing: only
+    # the text clause reached a render, so shots looked identical with or without it.
+    plate = (frame.get("location_ref_path") or "").strip()
+    use_plate = bool(plate) and os.path.exists(plate)
+    chosen = "gpt_image_ref" if use_plate else (model_id or "gpt_image")
     # _redo_seed is injected by redo-still so even the same prompt produces a new file.
     seed = frame.get("scene", {}).get("_redo_seed", "")
+    hash_src = prompt + (f"|plate:{_file_hash(plate)}" if use_plate else "") + seed
     out_path = os.path.join(
-        assets_dir, f"ai_symbolic_{frame_id}_{_prompt_hash(chosen, prompt + seed, frame_id)}.jpg")
+        assets_dir, f"ai_symbolic_{frame_id}_{_prompt_hash(chosen, hash_src, frame_id)}.jpg")
 
     if _image_cached(out_path):
         print(f"[ImageGen] Symbolic ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
         return out_path
 
-    print(f"[ImageGen] Symbolic ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
-    _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
+    if use_plate:
+        from agents.image_editor import edit_image
+        # Anchor the PLACE, not the composition: the plate is an empty plate of the set,
+        # and this shot still needs its own framing/subject. "No people" is restated
+        # because that is what makes a symbolic shot symbolic.
+        plate_prompt = ("The reference image is an empty plate of the LOCATION this shot "
+                        "takes place in. Keep the SAME place — same architecture, "
+                        "surfaces, props and light direction — but compose a NEW shot in "
+                        "it as described. No people, no faces. Shot: " + prompt)
+        print(f"[ImageGen] Symbolic ({frame_id}) [{scene.get('emotion', '')}] via plate edit "
+              f"(location from {os.path.basename(plate)})…")
+        _generate_image_checked("", prompt, out_path, "", frame_id,
+                                generator=lambda: edit_image(plate, plate_prompt, out_path))
+    else:
+        print(f"[ImageGen] Symbolic ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
+        _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path
 
@@ -378,6 +411,41 @@ def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: 
         return out_path
     print(f"[ImageGen] Canonical character portrait ({char_id}) via {chosen}…")
     _generate_image_checked(chosen, prompt, out_path, "gpt_image", char_id)
+    return out_path
+
+
+def generate_location_plate(description: str, out_dir: str, *, world_clause: str = "",
+                            time_of_day: str = "", loc_id: str = "loc",
+                            model_id: str = "", variant: int = 0) -> str:
+    """Generate a CANONICAL location plate (S30 Phase 1 — the 'character sheet for
+    places'). Plate discipline stolen from the galleri5 teardown (§10.4 item 5): the
+    environment is generated EMPTY — no people, clear negative space at center for the
+    characters, lighting headroom for later drama — so shots condition on the place
+    without fighting a baked-in subject. The plate becomes the location's reference;
+    the invariant clause (canvas_run._location_clause) rides every shot's prompt."""
+    prompt = (
+        "Location reference plate — a single clean establishing view of ONE place, "
+        f"vertical 9:16. {description.strip()}"
+        + (f" Time of day: {time_of_day.strip()}." if time_of_day.strip() else "")
+        + (f" {world_clause.strip()}." if world_clause.strip() else "")
+        + " EMPTY environment: no people, no characters, no animals. Keep clear space "
+          "at the center of frame for characters to occupy later, and lighting headroom "
+          "(don't blow out highlights). Consistent, memorable geometry. "
+          "No text, no labels, no borders, no watermark."
+    )
+    chosen = model_id or "flux"
+    os.makedirs(out_dir, exist_ok=True)
+    # Rule 12 (redo ≠ cache hit): variant participates in the cache key — 0 reuses a
+    # prior identical plate; any other value is the operator's "↻ New plate".
+    out_path = os.path.join(
+        out_dir, f"locplate_{loc_id}_{_prompt_hash(chosen, prompt, f'{loc_id}_v{variant}')}.jpg")
+    if _image_cached(out_path):
+        return out_path
+    print(f"[ImageGen] Location plate ({loc_id}) via {chosen}…")
+    # Checked path on purpose: Gate B treats no-face images as valid (symbolic frames
+    # have no people by design) and Gate B2 catches baked-in text / era mismatches —
+    # both real failure modes for an establishing plate.
+    _generate_image_checked(chosen, prompt, out_path, "gpt_image", loc_id)
     return out_path
 
 

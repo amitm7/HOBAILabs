@@ -24,6 +24,12 @@ Stage execution split (this slice):
 """
 from __future__ import annotations
 
+# Stdlib only. Agent/vendor imports stay lazy + inside functions (this module must import
+# cheaply and never drag the pipeline in); these three back the locations disk cache.
+import hashlib
+import json
+from pathlib import Path
+
 # Ordered pipeline. Each stage gates the next; paid stages reserve spend per stage.
 STAGES = ["script", "storyboard", "keyframes", "audio", "video", "finalcut"]
 
@@ -212,6 +218,7 @@ def board_cards(frames: list[dict]) -> list[dict]:
         real_path = (f.get("visual_path") or f.get("photo_spec") or "") if kind == ASSET_REAL else ""
         cards.append({
             "frame_id":   f.get("frame_id"),
+            "review":     f.get("review_status") or "",   # S30 P3: editorial QA verdict
             "form":       shot_form(f),              # S28: dialogue | narration | silent
             "form_override": f.get("form_override") or "",
             "overlays":   f.get("overlays") or [],   # T14 Frame Composer spec per shot
@@ -459,20 +466,37 @@ EDITABLE_FRAME_FIELDS = {
 }
 _SCENE_FIELDS = {"image_prompt", "emotion", "camera_angle"}
 
+# S30 Phase 3: per-asset editorial review states (galleri5 teardown §10.4 item 4) —
+# a QA verdict on each shot's current asset, layered UNDER the pipeline governance
+# gates (this is "is it good", not "is it allowed"). Pure metadata: setting it never
+# cascades or invalidates anything.
+REVIEW_STATES = ("", "needs_review", "approved", "production_ready", "rejected")
+
 
 def edit_frame(state: dict, frame_id: str, fields: dict) -> dict:
     """Edit one shot's text/prompt from the board. A visual edit makes downstream stages
     stale (cascade from storyboard). A DURATION-only edit leaves the still unchanged, so it
     only invalidates from Video (timing/clip length) — no wasteful still regen."""
     visual_changed = False
+    timing_changed = False
     for f in state["frames"]:
         if f.get("frame_id") == frame_id:
             for k, v in (fields or {}).items():
                 if k == "duration":
                     try:
                         f["duration"] = max(1.0, min(15.0, round(float(v), 1)))
+                        timing_changed = True
                     except (TypeError, ValueError):
                         pass
+                    continue
+                if k == "review_status":
+                    # S30 Phase 3: editorial QA verdict — metadata only, NEVER a
+                    # visual change (must not cascade-invalidate anything).
+                    if str(v) in REVIEW_STATES:
+                        if str(v):
+                            f["review_status"] = str(v)
+                        else:
+                            f.pop("review_status", None)
                     continue
                 if k not in EDITABLE_FRAME_FIELDS:
                     continue
@@ -486,8 +510,9 @@ def edit_frame(state: dict, frame_id: str, fields: dict) -> dict:
         raise ValueError(f"unknown frame {frame_id!r}")
     if visual_changed and state["stages"]["storyboard"]["status"] in ("done", "approved"):
         invalidate_from(state, "storyboard")
-    elif not visual_changed and state["stages"]["video"].get("status") in ("done", "approved", "generating"):
+    elif timing_changed and state["stages"]["video"].get("status") in ("done", "approved", "generating"):
         invalidate_from(state, "video")   # duration-only → just re-time the clips
+    # metadata-only edits (review_status) invalidate NOTHING — a QA verdict is not a change
     state["board"] = board_cards(state["frames"])
     state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
     return state
@@ -509,6 +534,26 @@ def redistribute_durations(state: dict, target_seconds: float) -> dict:
     return state
 
 
+def _replan_from_brief(state: dict) -> dict:
+    """Re-run the planner on state['brief'] IN PLACE and reset everything downstream.
+    Shared by chat() (append a refinement) and replan_brief() (edit the whole story) so
+    the reset rules live in exactly one place."""
+    from agents import shot_planner
+    new_frames = shot_planner.plan(state["brief"], scope=state.get("scope", "general"),
+                                   mood=state.get("mood", ""),
+                                   target_seconds=state.get("target_seconds", 0))
+    if new_frames:
+        state["frames"] = new_frames
+    # A new shot list invalidates every downstream stage — generated stills/clips for
+    # shots that changed or vanished must not linger (they'd show the OLD story).
+    invalidate_from(state, "script")
+    state["stages"]["script"].update(status="done")
+    state["stages"]["storyboard"].update(ready=True)
+    state["board"] = board_cards(state["frames"])
+    state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
+    return state
+
+
 def chat(state: dict, message: str) -> dict:
     """The command box (our Studio-Chat equivalent): a natural-language refinement
     that re-plans the shot list via shot_planner. Reuses the brain; degrades safely
@@ -517,18 +562,28 @@ def chat(state: dict, message: str) -> dict:
     if not msg:
         return state
     state["brief"] = (state.get("brief", "") + "\n\nRefinement: " + msg).strip()
-    from agents import shot_planner
-    new_frames = shot_planner.plan(state["brief"], scope=state.get("scope", "general"),
-                                   mood=state.get("mood", ""),
-                                   target_seconds=state.get("target_seconds", 0))
-    if new_frames:
-        state["frames"] = new_frames
-    invalidate_from(state, "script")
-    state["stages"]["script"].update(status="done")
-    state["stages"]["storyboard"].update(ready=True)
-    state["board"] = board_cards(state["frames"])
-    state["costs"] = stage_costs(state["frames"], quality=state.get("quality", "dev"))
-    return state
+    return _replan_from_brief(state)
+
+
+def replan_brief(state: dict, brief: str, *, scope: str = "", quality: str = "",
+                 target_seconds: int | None = None, story_type: str = "") -> dict:
+    """Edit-story: REPLACE the whole brief (+ optionally scope/quality/length/type) and
+    re-plan in place. This is why the entry box is reachable after planning — you go back,
+    change the story, and the SAME canvas rebuilds instead of stranding you or forcing a
+    brand-new run. Everything downstream resets (see _replan_from_brief)."""
+    b = (brief or "").strip()
+    if not b:
+        return state
+    state["brief"] = b
+    if scope:
+        state["scope"] = scope
+    if quality:
+        state["quality"] = quality
+    if target_seconds is not None:
+        state["target_seconds"] = target_seconds
+    if story_type in STORY_TYPES:
+        state["story_type"] = story_type
+    return _replan_from_brief(state)
 
 
 # ── State machine ──────────────────────────────────────────────────────────────
@@ -769,6 +824,312 @@ def set_character(state: dict, char_id: str, *, ref_path: str = "",
     return state
 
 
+# ── Location anchoring (S30 Phase 1 — the S28 "character sheet for places") ─────────
+# Mirrors the character-sheet machinery one level up: derive the story's distinct
+# PLACES, tag every frame with its location_id (like speaker_id), and propagate an
+# INVARIANT location clause (+ optional generated plate) onto that location's shots so
+# the same cave/kitchen/street stays the same place across the reel (T11 phrasing —
+# soft wording is how outfits and anatomy drifted).
+
+LOCATION_ATTRS = ("label", "description", "time_of_day")
+
+_LOCATION_SCHEMA = {"name": "locations", "schema": {
+    "type": "object", "additionalProperties": False,
+    "properties": {
+        "locations": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "id":          {"type": "string"},
+                "label":       {"type": "string"},
+                "description": {"type": "string"},
+                "time_of_day": {"type": "string"},
+            },
+            "required": ["id", "label", "description", "time_of_day"],
+        }},
+        "by_frame": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "frame_id":    {"type": "string"},
+                "location_id": {"type": "string"},
+            },
+            "required": ["frame_id", "location_id"],
+        }},
+    },
+    "required": ["locations", "by_frame"],
+}}
+
+
+def _loc_key(loc: dict) -> str:
+    """Normalised label — the re-derive fallback for when the model churns an id."""
+    return " ".join((loc.get("label") or "").lower().split())
+
+
+# Disk cache for the derive pass — same convention as scene_intelligence's
+# (~/.hob_cache/<thing>/<md5>.json, "cached after first run, then $0"). 🏞 Locations is a
+# reasoning-tier completion and re-deriving is a DESIGNED flow ("re-derive keeps work"),
+# so an uncached button re-spent a full completion on every click of an unchanged story.
+LOCATION_CACHE_DIR = Path.home() / ".hob_cache" / "locations"
+LOCATION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _locations_cache_key(beat_list: str) -> str:
+    # Keyed on the BEATS only — deliberately not on the existing location ids, even though
+    # they ride the prompt. Keying on them would miss on every re-derive (the ids only
+    # exist from the 2nd click on), i.e. exactly the case this cache is for. A hit replays
+    # the same locations, so ids are stable for free; the reuse-ids instruction only has to
+    # earn its keep on a miss (= the story actually changed).
+    return hashlib.md5(beat_list.encode()).hexdigest()
+
+
+def _locations_cache_load(key: str) -> dict | None:
+    p = LOCATION_CACHE_DIR / f"{key}.json"
+    if p.exists():
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _locations_cache_save(key: str, data: dict) -> None:
+    try:
+        with open(LOCATION_CACHE_DIR / f"{key}.json", "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass          # a cache write must never break the stage (rule #4)
+
+
+def derive_locations(state: dict) -> list[dict]:
+    """Locations stage: ONE LLM pass over the beats → the story's distinct physical
+    places (screenplay-slugline granularity, deduped), tagging frames[].location_id.
+    Safe no-op on any failure: frames stay untagged and generation behaves exactly as
+    today. Merges plate/attrs already set by the operator (re-derive keeps work)."""
+    frames = state.get("frames") or []
+    # `or {}` throughout: a frame can carry scene=None (board_cards/image_matcher/plan_qc
+    # all guard the same access) and dict.get's default does NOT apply to a present None —
+    # this sits outside the try below, so an unguarded .get() 500s the whole route.
+    beats = [f for f in frames
+             if (f.get("caption") or (f.get("scene") or {}).get("image_prompt"))]
+    state.pop("locations_warning", None)
+    if not beats:
+        state.setdefault("locations", [])
+        return state["locations"]          # a real answer: nothing to anchor
+    beat_list = "\n".join(
+        f"{f['frame_id']}: {(f.get('caption') or '').strip()[:160]} "
+        f"[{((f.get('scene') or {}).get('image_prompt') or '')[:120]}]"
+        for f in beats)
+    existing = [l for l in (state.get("locations") or []) if l.get("id")]
+    sys = (
+        "You analyse a story reel's beats and extract its distinct physical LOCATIONS "
+        "(screenplay-slugline granularity: 'cave interior', 'chai stall at dawn' — not "
+        "camera angles). DEDUPE aggressively: the same place at the same rough time is "
+        "ONE location; most stories have 1-4. Use short stable snake_case ids. "
+        "description = the place itself (architecture, surfaces, key props, light), "
+        "NEVER the people in it. Assign EVERY beat to exactly one location.")
+    if existing:
+        # Re-derive: hand the model the ids it already chose and require reuse. A churned
+        # id ("cave" → "cave_interior") orphans that location's operator edits AND its PAID
+        # plate, so id stability here is a money question, not a tidiness one.
+        sys += ("\nThese locations ALREADY EXIST — reuse the EXACT id for the same place; "
+                "mint a new id ONLY for a genuinely new place: "
+                + "; ".join(f'{l["id"]} = {l.get("label") or l["id"]}' for l in existing))
+    user = (f"Beats:\n{beat_list}\n\n"
+            'Reply ONLY as JSON: {"locations":[{"id","label","description","time_of_day"}],'
+            ' "by_frame":[{"frame_id","location_id"}]}.')
+    ckey = _locations_cache_key(beat_list)
+    try:
+        data = _locations_cache_load(ckey)
+        if data is not None:
+            print("[Canvas] locations: cache hit — no spend")
+        else:
+            from agents import llm
+            text = llm.chat([{"role": "system", "content": sys},
+                             {"role": "user", "content": user}],
+                            json_mode=True, json_schema=_LOCATION_SCHEMA,
+                            max_tokens=1200, model_tier="reasoning")
+            data = llm.json_loads_lenient(text)
+        locs = [l for l in data.get("locations", []) if (l.get("id") or "").strip()]
+        if not locs:
+            raise ValueError("no locations returned")
+        _locations_cache_save(ckey, data)     # only ever cache a USABLE result
+    except Exception as e:
+        print(f"[Canvas] location derivation degraded ({e}) — shots stay unanchored")
+        try:
+            from agents import degradation
+            degradation.report("plan", "warn",
+                               f"location derivation unavailable ({e}); shots render without a location anchor")
+        except Exception:
+            pass
+        # Distinguish FAILED from "this story has no distinct places". Both used to
+        # return the same empty list, so the UI reported an outage as a confident
+        # negative and the operator never retried.
+        state["locations_warning"] = (
+            "Couldn't derive locations just now — shots will render without a location "
+            "anchor. Nothing was charged; try again.")
+        state.setdefault("locations", [])
+        return state["locations"]
+
+    prev_by_id = {l["id"]: l for l in existing}
+    prev_by_label = {}
+    for l in existing:
+        if _loc_key(l):
+            prev_by_label.setdefault(_loc_key(l), l)
+    claimed, merged = set(), []
+    for l in locs:
+        # id first, then the normalised label — so operator work survives an id churn the
+        # prompt above failed to prevent. First match wins; a prev can only be claimed once
+        # (two new locations must never inherit the same paid plate).
+        prev = prev_by_id.get(l["id"]) or prev_by_label.get(_loc_key(l))
+        if prev is not None and prev["id"] in claimed:
+            prev = None
+        prev = prev or {}
+        if prev.get("id"):
+            claimed.add(prev["id"])
+        merged.append({
+            "id": l["id"],
+            "label":       prev.get("label") or l.get("label", l["id"]),
+            "description": prev.get("description") or l.get("description", ""),
+            "time_of_day": prev.get("time_of_day") or l.get("time_of_day", ""),
+            "plate_path":  prev.get("plate_path", ""),
+            "source":      prev.get("source", ""),
+        })
+    # A location this pass dropped whose plate was PAID for: never bin that silently.
+    lost = [l for l in existing
+            if l["id"] not in claimed and (l.get("plate_path") or "").strip()]
+    if lost:
+        try:
+            from agents import degradation
+            degradation.report("plan", "warn",
+                               "re-derive dropped location(s) carrying a paid plate: "
+                               + ", ".join(l.get("label") or l["id"] for l in lost)
+                               + " — the plate files are kept on disk, but no shot uses them now")
+        except Exception:
+            pass
+
+    state["locations"] = merged
+    by_frame = {b.get("frame_id"): b.get("location_id") for b in data.get("by_frame", [])}
+    known = {l["id"] for l in merged}
+    before = {f.get("frame_id"): (f.get("location_clause", ""), f.get("location_ref_path", ""))
+              for f in frames}
+    for f in frames:
+        lid = by_frame.get(f.get("frame_id"), "")
+        if lid in known:
+            f["location_id"] = lid
+        else:
+            # Dropped / renamed / unassigned → clear the WHOLE tag. A leftover clause keeps
+            # riding this shot's prompt (and its still cache key) while being invisible on
+            # the Locations sheet — pinning the shot to a place the story no longer has.
+            for k in ("location_id", "location_clause", "location_ref_path"):
+                f.pop(k, None)
+    # Re-apply any locations that already carry operator work (plate/edited attrs) so
+    # the fresh frame tags immediately pick up the existing clause + plate.
+    for l in merged:
+        if l.get("plate_path") or l.get("description"):
+            _propagate_location(state, l)
+    after = {f.get("frame_id"): (f.get("location_clause", ""), f.get("location_ref_path", ""))
+             for f in frames}
+    # The clause rides the prompt → the still's cache key, so moving it must invalidate
+    # already-rendered keyframes — the rule set_location already follows. Only when it
+    # actually moved: an unchanged re-derive must not force a needless re-render.
+    if after != before and state.get("stages", {}).get("keyframes", {}).get("status") in (
+            "done", "approved", "generating"):
+        invalidate_from(state, "keyframes")
+    return merged
+
+
+def _location_clause(loc: dict) -> str:
+    """Invariant setting clause for one location's shots. Same lesson as T11: soft
+    phrasing lets the place redraw itself shot-to-shot, so the wording pins it."""
+    label = (loc.get("label") or "").strip()
+    desc = (loc.get("description") or "").strip()
+    tod = (loc.get("time_of_day") or "").strip()
+    if not (label or desc):
+        return ""
+    bits = ", ".join(b for b in (desc, tod) if b)
+    return (f"Setting — this EXACT location in every shot set here: {label or 'the location'}"
+            + (f" ({bits})" if bits else "")
+            + ". Same geometry, same architecture, same light direction whenever it appears")
+
+
+def _propagate_location(state: dict, loc: dict) -> None:
+    """Stamp one location's clause (+ plate ref) onto every frame tagged with it.
+    The FACE reference still wins the single-ref edit path (S19/S20: identity beats
+    place); the plate ref is carried for the D5 multi-ref follow-up."""
+    clause = _location_clause(loc)
+    plate = (loc.get("plate_path") or "").strip()
+    for f in state.get("frames") or []:
+        if f.get("location_id") != loc["id"]:
+            continue
+        if clause:
+            f["location_clause"] = clause
+        else:
+            f.pop("location_clause", None)
+        if plate:
+            f["location_ref_path"] = plate
+        else:
+            f.pop("location_ref_path", None)
+
+
+BRAND_FIELDS = ("name", "cta_text", "logo_path", "product_name", "vo_mode", "music_mode",
+                "vo_audio_path", "music_audio_path")
+
+
+def set_brand(state: dict, brand: dict | None) -> dict:
+    """Set this canvas's brand mandatories (S31). Empty/absent ⇒ back to story mode.
+
+    Copy is stored VERBATIM and never generated — BRAND_PLAN §5 ("AI never writes brand
+    ad claims"). This module only stores it; `brand.validate_mandatories` (armed at the
+    render route once web_app._canvas_mode(state) == "brand") decides whether it's
+    complete enough to spend on, and `_run_inner` burns the disclosure.
+    """
+    b = dict(state.get("brand") or {})
+    for k in BRAND_FIELDS:
+        if k in (brand or {}):
+            b[k] = str((brand or {})[k]).strip()
+    if "disclosure" in (brand or {}):
+        b["disclosure"] = bool((brand or {})["disclosure"])
+    if "mandatories" in (brand or {}) and isinstance((brand or {})["mandatories"], dict):
+        b["mandatories"] = {k: bool(v) for k, v in (brand or {})["mandatories"].items()}
+    # Everything blank ⇒ the operator cleared it; drop the key so the run is a story
+    # again rather than a brand run that can never satisfy its own mandatories.
+    if not any(str(b.get(k) or "").strip() for k in ("name", "cta_text", "logo_path")):
+        state.pop("brand", None)
+    else:
+        b.setdefault("disclosure", True)   # sponsored disclosure defaults ON
+        state["brand"] = b
+    return state
+
+
+def set_location(state: dict, loc_id: str, *, plate_path: str = "",
+                 attrs: dict | None = None, propagate: bool = True) -> dict:
+    """Update a story-level location (attrs and/or its generated plate) and propagate
+    to every frame tagged with it — the exact mirror of set_character.
+
+    propagate=False stores the values only. The plate route applies just-typed attrs
+    BEFORE generating (so the prompt and the content hash use them), then applies the
+    plate after — and the first of those two calls has no reason to walk every frame,
+    invalidate and rebuild the whole board when the second call will do it anyway.
+    """
+    loc = next((l for l in state.get("locations", []) if l["id"] == loc_id), None)
+    if loc is None:
+        raise ValueError("unknown location")
+    if plate_path:
+        loc["plate_path"] = plate_path
+    if attrs:
+        for k in LOCATION_ATTRS:
+            if k in attrs:
+                loc[k] = str(attrs[k]).strip()
+    if not propagate:
+        return state
+    _propagate_location(state, loc)
+    if state.get("stages", {}).get("keyframes", {}).get("status") in (
+            "done", "approved", "generating"):
+        invalidate_from(state, "keyframes")
+    state["board"] = board_cards(state["frames"])
+    return state
+
+
 def public_state(state: dict) -> dict:
     """The board view sent to the client — costs, stage statuses, board cards and
     the asset legend. (Frames carry internal keys; the board is the view model.)"""
@@ -804,9 +1165,18 @@ def public_state(state: dict) -> dict:
         "check_done": state.get("check_done", 0),
         "check_total": state.get("check_total", 0),
         "characters": state.get("characters", []),
+        # S30 Phase 1 location anchoring: the story's places (the "character sheet
+        # for places") — label/description/time_of_day + the generated plate.
+        "locations": state.get("locations", []),
         "caption_style": state.get("caption_style") or {},   # operator caption settings
         "orientation": state.get("orientation") or "portrait",
         "story_type": state.get("story_type") or "real",     # 'real' (HOB) | 'ai' (fiction)
+        # S31: operator-supplied brand mandatories. Non-empty ⇒ the run is a branded ad
+        # (web_app._canvas_mode) ⇒ brand.validate_mandatories gates the paid render and
+        # the sponsored disclosure burns in. Copy is ALWAYS verbatim (BRAND_PLAN §5).
+        "brand": state.get("brand") or {},
+        # "" unless the last derive FAILED — an outage must not read as "no locations".
+        "locations_warning": state.get("locations_warning", ""),
         "world": state.get("world") or {},                    # P2: global art-direction/setting
         "ip": state.get("ip", ""),                            # watermark IP id
         "transition": state.get("transition") or "crossfade",

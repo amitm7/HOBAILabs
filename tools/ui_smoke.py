@@ -31,8 +31,9 @@ GOLDENS = os.path.join(HERE, "ui_goldens")
 VIEWS = [
     ("canvas_empty", "/canvas",  "1600,1000", ["Director Canvas", "board-viewport", "[hidden]"]),
     ("story",        "/",        "1600,1000", []),
-    ("studio",       "/studio",  "1600,1000", []),
     ("brand",        "/brand",   "1600,1000", []),
+    ("library",      "/library", "1600,1000", []),
+    # /studio retired in S31 (301 → /canvas); Canvas absorbed it.
 ]
 
 

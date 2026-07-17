@@ -278,8 +278,45 @@ def _concat_audio(clips: list[dict], output_path: str):
     ])
 
 
+_SUBS_AVAILABLE = None      # cached: does this ffmpeg have the libass `subtitles` filter?
+_SUBS_WARNED = False
+
+
+def _subtitles_available() -> bool:
+    """Whether the ffmpeg on PATH can burn ASS/SRT captions (needs libass).
+    Homebrew's ffmpeg 8.x is sometimes built WITHOUT libass, in which case the
+    `subtitles` filter simply doesn't exist and the whole assemble crashes."""
+    global _SUBS_AVAILABLE
+    if _SUBS_AVAILABLE is None:
+        try:
+            out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                                 capture_output=True, text=True, timeout=10).stdout
+            _SUBS_AVAILABLE = any(line.split()[1:2] == ["subtitles"]
+                                  for line in out.splitlines() if line.strip())
+        except Exception:
+            _SUBS_AVAILABLE = False
+    return _SUBS_AVAILABLE
+
+
 def _subtitle_filter(sub_path: str) -> str:
-    """Build ffmpeg subtitles filter string for an ASS file."""
+    """Build the ffmpeg subtitles filter string for an ASS file, or a passthrough
+    (`null`) if this ffmpeg lacks libass — a missing OPTIONAL caption filter must
+    degrade to a clean reel, never crash the assemble and lose every rendered clip."""
+    global _SUBS_WARNED
+    if not _subtitles_available():
+        if not _SUBS_WARNED:
+            _SUBS_WARNED = True
+            print("[Assembler] ffmpeg has no libass/`subtitles` filter — rendering "
+                  "WITHOUT burned-in captions (install an ffmpeg built --enable-libass "
+                  "to restore them).")
+            try:
+                from agents import degradation
+                degradation.report("assemble", "warn",
+                                   "ffmpeg built without libass — captions were NOT burned "
+                                   "into this reel; video otherwise complete")
+            except Exception:
+                pass
+        return "null"
     escaped = os.path.abspath(sub_path).replace("\\", "/").replace("'", r"\'").replace(":", r"\:")
     return f"subtitles='{escaped}':fontsdir='{FONT_DIR}'"
 

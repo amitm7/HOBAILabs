@@ -29,6 +29,19 @@ _PERSON_TOKENS = (
 )
 _PERSON_RE = re.compile(rf"\b(?:{_PERSON_TOKENS})\b", re.IGNORECASE)
 
+# "face" is a person noun AND a landscape/architecture noun, and this is a story
+# pipeline full of cliffs and mountains — "a cave mouth barely visible in the rock
+# face" false-positived a pure Himalayan landscape beat as "describes a person" and
+# told the operator to retag a frame that was already correct. Same precision-over-
+# recall logic that excluded bare "hand" ("hand of a clock"): strip the known
+# non-person compounds BEFORE person-matching, rather than dropping the token and
+# losing "a face in the crowd". Mirrors the negated-clause strip below.
+_NON_PERSON_FACE_RE = re.compile(
+    r"\b(?:rock|cliff|stone|granite|ice|glacier|mountain|canyon|quarry|wall|brick|"
+    r"clock|watch|coin|card|dial|north|south|east|west)[- ]faces?\b",
+    re.IGNORECASE,
+)
+
 
 def _field(frame: dict, *names: str, default: str = "") -> str:
     for n in names:
@@ -82,6 +95,9 @@ def contract_validate(frames: list[dict], posting_caption: str = "") -> dict:
             c for c in re.split(r"[,;]", mq)
             if not re.search(r"\b(no|without|zero|devoid|empty of)\b", c, re.IGNORECASE)
         )
+        # Drop landscape/object "face" compounds ("rock face", "north face", "clock
+        # face") so geology stops reading as anatomy — see _NON_PERSON_FACE_RE.
+        visual = _NON_PERSON_FACE_RE.sub(" ", visual)
         is_symbolic = vneed == "ai_symbolic"
         is_real = vneed in ("real_photo_preferred", "real_video_preferred")
 

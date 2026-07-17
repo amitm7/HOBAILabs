@@ -39,6 +39,8 @@ agents/
   growth.py               STR-2 LLM story→Format B draft + STR-3b/4/5 helpers
                           (editable drafts/descriptors, no auto-spend)
   run_store.py            F3 restart-safe run payload/status/log bridge; performance_* (Gap #3)
+                          Storage contract: DEFAULT_RUNS_DIR = ~/.hob_runs (NEVER the temp
+                          dir); _conn() probes + reconnects on a dead connection.
   db.py                   Gap #2 storage switch: SQLite default / Postgres via HOB_DB_URL
   auth.py                 Gap #1 operator identity: operators table, HS256 JWT, require_operator, CLI
   provenance.py           Gap #5 authenticity tiers (real / ai_symbolic / real-person AI)
@@ -65,6 +67,7 @@ agents/
   caption_writer.py       frames → ASS subtitle file (uses effective_timecodes)
   music_generator.py      pluggable music engine (config/music.json): lyria (Gemini interactions)|suno; provider dispatch + graceful fallback; instrumental beds vs vocal songs
   beat_track.py           music → onset/beat times (ffmpeg + numpy, no librosa; graceful [])
+  sfx.py                  S30 Phase 2 SFX/atmosphere seam: generate_sfx(video, prompt, out, variant) → clip-synced foley/atmosphere WAV via the models.json "mmaudio" entry (fal video→audio); content-hash cached (video 1MB fingerprint+size+prompt+variant, rule 12); '' on ANY failure + degradation.report("sfx","info") — callers mix nothing. Creates the output dir BEFORE the paid call (neither download_media nor ffmpeg makes parents, so a missing run subdir used to fail the write *after* fal billed, and the bare except swallowed it → paid, no track). Final-Cut mix stem = ticketed follow-up (S30 plan Phase 2; S1 lesson: audio-mix changes get their own verify loop)
   assembler.py            clips → normalize → concat/xfade → captions → music → voiceover
                           → apply_brand_overlay (brand post-pass);
                           P1 beat-aware per-junction overlaps (cut on beat / dissolve off-beat)
@@ -243,6 +246,35 @@ Resolution order:
 - Image (`_image_shot_type`): `ai_symbolic→object`, else `face`.
 - Video (`_video_shot_type`): `lipsync→dialogue`, real→`real`, `ai_symbolic→landscape`, hero/index-0→`hero`, else `face`.
 
+**Sharp edge — video vendor concentration + the Kling outage (2026-07-17).** Lane
+contents live in `config/models.json`, but the *why* belongs here. Five of six video
+models (`seedance`, `veo`, `hailuo` on fal; `kling_std`, `kling_pro` on Kling) sit on
+just **two** vendors, and on 2026-07-17 both were unpayable at once — fal balance-locked,
+and **Kling refusing every request**: `POST /v1/videos/image2video` → `429 {"code":1102,
+"message":"Account balance not enough"}`.
+
+Two facts about Kling that are not obvious from the code and cost a day to learn:
+1. **The Kling API Platform is prepaid-packs-only.** There is no pay-as-you-go tier. A
+   dead pack does not mean "worse rate" — it means **no generation at all**.
+2. **Top-up is not self-serve.** The dashboard offers only "Contact us for purchase", so
+   a lapsed pack is a sales cycle, not a checkout. Plan replenishment ahead.
+
+`higgsfield` is the only third video vendor (own account, own credit), which is why it now
+**leads every draft lane and most premium lanes**, and why `defaults.video` was moved off
+`kling_std` — the last-resort default pointed at the one vendor that refuses everything,
+turning the safety net into a guaranteed failure. Kling is demoted, never deleted: buy a
+pack and moving the ids back up the lists re-activates it with no code change.
+
+Best-fit is now restored as the hack's own revert note prescribed (`landscape→hailuo`,
+`hero→seedance`, `dialogue→veo`) — the 2026-07-02 "kling_pro leads every lane to burn a
+prepaid balance" hack outlived its balance by 13 days and was making every premium shot
+open with a doomed 429.
+
+Note `candidates()` appends `fallbacks_for(primary)`, so `real` and `dialogue` can reach
+`higgsfield` as a late hop even though it is deliberately not their lead (it re-crops its
+input, and has no audio/lip-sync — `dialogue` leads `veo` for its native audio). That is a
+reported degradation (`run_with_fallback` → `degradation.report`), not a silent substitution.
+
 ---
 
 ## 6. `cast.py` — multi-speaker detection + voice resolution
@@ -389,6 +421,147 @@ AI-likeness consent gate) and sets `frame["character_ref_path"]` per speaker. In
 `character_ref_path` → first-portrait `face_ref`**; the chosen ref is passed to
 `generate_contextual_image(reference_path=…)` so every portrait of that speaker
 reference-edits to the same face. Degradable: missing/invalid path falls through.
+
+### Location anchor (S30 Phase 1) — `location_id` / `location_clause` / `location_ref_path`
+The place-level mirror of the character keys. `canvas_run.derive_locations` tags
+`frame["location_id"]`; `set_location` propagates `location_clause` (the invariant
+setting text from `_location_clause` — T11 phrasing) and `location_ref_path` (the
+generated plate). `generate_contextual_image` APPENDS the clause to the prompt (after
+the appearance clause, before the world clause) — part of the content-hash, so a
+location edit regenerates its shots. **Sharp edge:** the plate ref is carried but NOT
+yet conditioned on — `edit_image` takes one reference and the FACE wins (identity
+beats place); plate-as-second-ref lands with D5 multi-ref.
+
+**Cached** (`~/.hob_cache/locations/<md5>.json`, same convention as `scene_intelligence`
+— "cached after first run, then $0"). Keyed on the **beat list only**, deliberately *not*
+on the existing location ids even though they ride the prompt: keying on them would miss
+on every re-derive (ids only exist from the 2nd click on) — precisely the case the cache
+exists for. A hit replays the same locations, so id stability comes free; the reuse-ids
+instruction only has to earn its keep on a miss (= the story really changed). Only a
+*usable* result is cached (never a degraded empty). Tests must isolate `LOCATION_CACHE_DIR`
+(autouse fixture in `tests/test_canvas_run.py`) — it is real global disk state.
+
+**Re-derive contract** (hardened 2026-07-17 — these were live bugs):
+- **Id stability is a money question.** The existing location ids are passed INTO the
+  prompt with a reuse instruction; the merge then matches `id` → normalised `label`, and
+  a predecessor can be claimed only once. A churned id used to orphan the operator's
+  edited description and their **paid** `plate_path`. A dropped location that still
+  carries a paid plate is reported to the degradation ledger (`warn`), never binned
+  silently; its plate file stays on disk.
+- **Tags are cleared, not just overwritten.** A frame whose location is dropped/renamed/
+  unassigned has `location_id` + `location_clause` + `location_ref_path` popped — a
+  leftover clause keeps riding the prompt (and the still's cache key) while being
+  invisible on the Locations sheet.
+- **`derive_locations` invalidates like `set_location`.** Anchoring moves the cache key,
+  so if the clause/plate map actually changed and keyframes are `done|approved|
+  generating`, it calls `invalidate_from(state, "keyframes")`. An unchanged re-derive
+  invalidates nothing (no needless re-render).
+- `scene` may be present-but-`None`; the beats scan sits outside the try, so it uses
+  `(f.get("scene") or {})` — `dict.get`'s default does not apply to a present `None`.
+
+### Canvas edit-story + UX declutter (S31 red-team)
+- **`canvas_run.replan_brief(state, brief, ...)`** replaces the WHOLE brief and re-plans
+  in place (vs `chat()` which appends a refinement); both share `_replan_from_brief`,
+  which resets every downstream stage (`invalidate_from(state, "script")`) so stills for
+  changed/removed shots don't linger showing the old story. Route:
+  `POST /api/canvas/<id>/replan` (operator-gated — planner call). UI: the **✎ Edit story**
+  top-bar button returns to the entry page with the brief intact; **Plan** becomes
+  **Re-plan** and confirms before dropping generated work. Without this the entry box was
+  unreachable after planning — the only way back (`＋ New`) wiped the story.
+- **Stage bar is the pipeline only.** The 🎵 Music / ✂️ Beat cut / 🔊 SFX "extras" were
+  removed: Music/Beat were buttons that only scrolled to the left-rail controls that own
+  them, SFX was permanently disabled (mix stem ticketed).
+- **Inspector — disclosure, not deletion.** A route-level audit found the inspector is
+  ~26 DISTINCT controls, NOT duplicates: New-still/Re-roll/Re-create are different
+  operations (still / still+clip / identity-safe), and the five real-media controls are
+  different sources — each is the only path in its state. So the fix is grouping:
+  **Replace asset** and **Overlays** (comic devices) are now collapsed `<details.insp-group>`;
+  core edit fields + primary Shot Actions stay visible. Two real fixes rode along: (1) the
+  6 overlay `<select>`s shared class `.fid-sel` with the fidelity select, and the change
+  handler matches `.fid-sel` first → it would dispatch overlay values into `setFidelity`
+  (benign no-op today, latent footgun); they now use `.ov-field`. (2) The one TRUE
+  duplicate — the fidelity "recreate" rung — is removed (the 🎬 Re-create button has a
+  superset condition), keeping the select for its only-path "restore"/"passthrough" rungs.
+  `.insp-group` deliberately has NO `overflow:hidden` (that + flex-shrink is what clipped
+  the left-rail accordion).
+- **Left rail is a collapsible accordion.** Each section is a `<details class="cv-sec">`:
+  World / Audio / Captions (output settings) collapsed by default; Story tools + the
+  conditional Brand/Publish panels open when shown. `details.cv-sec` MUST carry
+  `flex:0 0 auto` — `.cv2-left` is a flex column, so without it a details shrinks below
+  its content and `overflow:hidden` clips the body (only the summary showed). A control
+  inventory found 58 fixed controls at first sight (~134 with cast/locations/inspector);
+  collapsing the settings takes ~16 of them one click away. Remaining declutter (the
+  regenerate-shot triad, the real-media-assign routes, the fidelity-vs-buttons overlap)
+  is tracked in `docs/CANVAS_ENTRY_PLAN.md` — deferred because each risks removing the
+  only path to a capability and overlaps the inspector.
+- **Nav close bug.** `.nav-menu`/`.nav-backdrop` carry an author `display`, which beat the
+  UA `[hidden]{display:none}`, so closing the hamburger flipped `.hidden` but left the
+  panel on screen (backdrop vanished → half-closed). Fixed with an explicit
+  `[hidden]{display:none!important}` reset — same trap as the canvas page-section split.
+
+### S31 pre-flight — what made Canvas able to replace the doors (`docs/CANVAS_ENTRY_PLAN.md` §5)
+- **Real photos from a browser** (#1, THE blocker). `canvas.html` had a text box for a
+  *server-side* path; a hosted server cannot see the user's disk, so the moat workflow
+  (real photos → untouched passthrough) was Story-door-only in production even though
+  every engine-side piece was already shared. Canvas now posts to the same
+  `/upload-folder` route (batched at 40 MB, `session_id = run_id` so media lands in that
+  canvas's assets dir) and fills `assets_dir` for `match-photos`.
+- **Posting kit** (#2) → `agents/posting_kit.py`. Was inline in the Story route layer, so
+  only `/story` could produce it. `build(frames, caption, cover_frame_id, mode)` raises
+  `BrandCopyRefused` for brand runs (BRAND_PLAN §5 — a hashtag ranker is harmless on a
+  story, not on an ad). Free/deterministic: no LLM, no spend. Routes: `/posting-kit`
+  (Story) + `/api/canvas/<id>/posting-kit`.
+- **Publish surfaces** (#3). `/export`, `/provenance`, `/credential`, `POST /performance`
+  are run_id-keyed and always worked for a canvas `render_id` — only `main.js` surfaced
+  them. Canvas's Publish panel now does (shown once `render_id` exists).
+- **Brand gate** (#4). `web_app._canvas_mode(state)` derives `"brand"` from
+  `state["brand"]` instead of the hardcoded `"story"`; `_canvas_brand_gate(state)` runs
+  `brand.validate_mandatories` on **every paid canvas route** (`keyframes`, `video`,
+  `render`, `render-language`) *before* the spend reservation. Brand mode is **opt-in**
+  (`canvas_run.set_brand`; clearing the fields returns the run to a story) — otherwise
+  every canvas would fail mandatories it has no UI to satisfy. Copy is stored verbatim,
+  never generated. A test asserts each paid route arms the gate — the module-level
+  `test_brand_mandatories` passes with *nothing calling it*, which is how this leaked.
+- **Auth** (#5). `/api/canvas/plan` now carries `@auth.require_operator()` like `/run`.
+
+### Test isolation (`tests/conftest.py`)
+`HOB_RUNS_DB` / `HOB_RUNS_DIR` are pointed at a temp dir **before any test imports
+run_store** (it resolves the env at import time). The suite was writing permanent
+`unit-<pid>` / `perf-<pid>` rows into the operator's real archive — 229 of 281 rows in
+one DB — and since `list_performance` is `LIMIT 100`, ~100 accumulated `perf-*` rows made
+the feedback-loop test fail forever on a machine where nothing was wrong.
+
+### Run storage — where the archive lives, and staying alive (`agents/run_store.py`)
+**Both paths default to `~/.hob_runs`** (`DEFAULT_RUNS_DIR`; DB at `hob_runs.db` inside
+it) and must share one durable filesystem. Override with `HOB_RUNS_DIR` /
+`HOB_RUNS_DB`. They previously defaulted under `tempfile.gettempdir()`, which **follows
+`TMPDIR`** — on a machine whose `TMPDIR` pointed at an external volume, the entire story
+archive (2.4 GB / 49 runs, in the wild) sat on removable storage inside a directory the
+OS may erase, and SQLite's WAL locking there raised hard `disk I/O error`s. A regression
+test asserts the default is never inside the temp dir; `web_app._warn_if_archive_left_behind`
+shouts at boot if a legacy temp archive exists while the live dir is empty (changing the
+default silently repoints a deploy at an empty directory).
+
+**`_conn()` self-heals.** It probes the cached per-thread connection (`SELECT 1`) and
+reopens on failure. The cache was permanent, so one transient error poisoned the
+connection for the life of the process and every later request 500'd until a restart —
+the Library *"Couldn't load stories: Unexpected token '<'"* outage (a `disk I/O error`
+became Flask's HTML error page, which the client's `.json()` choked on). Not
+SQLite-specific: a pooled Postgres connection dies the same way, so the probe survives
+the `agents/db.py` (`HOB_DB_URL`) migration.
+
+### Canvas provenance subject — `_canvas_subject_name(state)` (web_app.py, S31 pre-flight)
+A character carrying a real `ref_path` (or any frame with `character_ref_path` from
+`attach_asset` mode=`reference`) means a **real person's face is being AI-generated** —
+both paths stamp those shots `photo_spec="ai_portrait"`. `provenance.summarize` only sets
+`real_person_ai` — and `_run_inner` only burns the on-screen disclosure — when
+`subject_name` is non-empty, so `_canvas_render_data`'s hardcoded `""` silently labeled
+every such reel *"no real person depicted"*. It now names those characters (falling back
+to `"unnamed subject"` when a real ref exists but nobody is named), and returns `""` for a
+fully synthetic cast so mythology/fiction correctly stays symbolic. **`likeness_consent`
+stays auto-granted** — the canvas no-consent-gate call stands (owner decision); the label
+is the compensating control it was traded for. *Open:* the label reads "— consented" under
+an auto-grant (`provenance.py`, shared with Story where consent IS collected).
 
 ### Governance (MODE3_PLAN §2)
 AI may draft on-screen lines in Studio; all frame text still passes Gate A
@@ -667,7 +840,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/state` | GET | Current board state (`canvas_run.public_state`) |
 | `/api/canvas/<run_id>/advance` | POST (operator) | Run a stage. Free stages execute in-process; **paid stages return a per-stage cost + `check_spend_cap` result *before* any spend** (the anti-wallet-drain), then dispatch to the render pipeline. 409 if the stage is locked |
 | `/api/canvas/<run_id>/approve` | POST (operator) | Approve a finished stage → unlocks the next stage's Generate |
-| `/api/canvas/<run_id>/frame` | POST (operator) | Edit one shot's text/prompt from the board (`canvas_run.edit_frame`: caption/director_note/motion/negative/image_prompt); cascade-invalidates downstream |
+| `/api/canvas/<run_id>/frame` | POST (operator) | Edit one shot's text/prompt from the board (`canvas_run.edit_frame`: caption/director_note/motion/negative/image_prompt); cascade-invalidates downstream. Cascade tiers: visual edit → storyboard, `duration` → video only (`timing_changed`), **`review_status`** (S30 P3 per-asset QA verdict ∈ `REVIEW_STATES`: needs_review/approved/production_ready/rejected) → **invalidates NOTHING** (pure metadata; board carries it as `review`, UI renders `.rv-*` chips + an Inspector select) |
 | `/api/canvas/<run_id>/chat` | POST (operator) | Natural-language command box (`canvas_run.chat`): refine + re-plan shots via `shot_planner` (reuses the brain); resets downstream |
 | `/api/canvas/<run_id>/match-photos` | POST (operator) | **The moat for real people:** clears `ai_portrait` on talent shots, then `image_matcher.smart_match` content-matches a folder of the operator's REAL photos/videos to the shots → real passthrough (untouched), AI fills the rest. Sets `state["assets_dir"]` (threaded into the render). Validated `_path_allowed`. Avoids generating a synthetic likeness of a named real person. |
 | `/api/canvas/<run_id>/recreate` | POST (operator) | **Re-create ambient (ladder rung 3):** opt-in per-shot — generate a cinematic version of a NON-person scene *inspired from* the real footage (`image_generator.recreate_ambient` → `image_editor.edit_image`). **Identity-safe, triple-guarded:** rejects `uses_talent` shots, and refuses any reference where `safety.face_count` (Haar) **or** `safety.has_person` (vision LLM — catches angled/partial faces Haar misses) sees a person. Video refs: a frame is extracted first. Output labeled `ai_symbolic` + `recreated_from_real`. |
@@ -696,6 +869,9 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/characters` | POST (operator) | **Cast detection (Characters stage):** `canvas_run.derive_characters` runs `cast.detect_cast(frames)` to surface the REAL people in the story (narrator + named speakers), stored on `state["characters"]` (`{id,name,gender,age,consent,ref_path}`). Idempotent; safe to re-run. Returns `public_state.characters` |
 | `/api/canvas/<run_id>/character` | POST (operator) | Update one **story-level character** (`canvas_run.set_character`): real reference photo + consent AND appearance **`attrs`** (role/name/gender/age/skin_tone/hair/clothing/source). Propagates to every shot whose `speaker_id==char_id`: `character_ref_path` (face identity) + a `character_appearance` clause (`_character_appearance`) that `image_generator.generate_contextual_image` injects into the prompt — so the character's look stays consistent across the reel. Per-frame overrides still win. Path validated `_path_allowed`. |
 | `/api/canvas/<run_id>/character-portrait` | POST (operator) | **P1 character-sheet-first:** generate a CANONICAL portrait for one character from its sheet attributes + the world style (`image_generator.generate_character_portrait`, face-strong model + QC gates), set it as that character's `ref_path`, and link it to their shots (`set_character`) so every shot conditions on the SAME face via the pluggable identity path. AI/fiction characters (generated → no real-person consent gate). Spend-gated. |
+| `/api/canvas/<run_id>/locations` | POST (operator) | **S30 Phase 1 location anchoring (the S28 "character sheet for places"):** `canvas_run.derive_locations` — one reasoning-tier LLM pass (`_LOCATION_SCHEMA`) → the story's distinct places at slugline granularity (deduped, 1–4 typical), stored on `state["locations"]` (`{id,label,description,time_of_day,plate_path,source}`) and tagging `frames[].location_id` (the place-level `speaker_id`). Re-derive merges operator work by id. Degrades to a **no-op** (frames unanchored + `degradation.report("plan","info",…)`). Free. |
+| `/api/canvas/<run_id>/location` | POST (operator) | Update one location's `attrs` (label/description/time_of_day) — `canvas_run.set_location` re-propagates the **invariant clause** (`_location_clause`, T11 phrasing: "this EXACT location… same geometry, same light direction") onto every frame tagged with it as `frames[].location_clause`; `image_generator.generate_contextual_image` appends it to the prompt (part of the cache-hash → edits regenerate stills). Also stamps `frames[].location_ref_path` (the plate) — **reserved for the D5 multi-ref follow-up**; the FACE ref wins today's single-ref edit path (identity beats place, S19/S20). Cascade-invalidates keyframes. |
+| `/api/canvas/<run_id>/location-plate` | POST (operator) | Generate the CANONICAL plate for one location (`image_generator.generate_location_plate`) — **plate discipline** (teardown §10.4 item 5): EMPTY environment, no people, negative space at center for characters to occupy, lighting headroom. Checked generation path on purpose (Gate B passes no-face images by design; Gate B2 catches baked-in text/era drift). Applies just-typed `attrs` first (same lesson as the portrait route); `variant` obeys rule 12 (0 = reuse, else fresh). Cache: `locations/locplate_<loc>_<md5(model|loc_v<variant>|prompt)>.jpg`. Spend-gated at `pricing.image_cost("flux")`. |
 | `/api/canvas/<run_id>/rematch` | POST (operator) | **Per-shot re-match (C6):** clear ONE shot's media + re-run the role-aware `image_matcher.smart_match` → auto-pick the best-fitting photo for just this beat (vs manual 🖼 Pick). Needs a matched folder; cascade-invalidates keyframes. |
 | `/api/canvas/list` | GET | Recent saved canvases (`run_store.list_canvases`) for the resume picker — each entry carries **title + updated_at + shots + story_type** so same-brief sessions (separate `run_id`s, not real duplicates) are distinguishable by time/shots/mode in the label |
 | `/api/canvas/<run_id>/delete` | POST (operator) | Delete a saved canvas (`run_store.delete_canvas` — removes the run row + logs). Powers the resume picker's 🗑 to clean up old/duplicate sessions. |

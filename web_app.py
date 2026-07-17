@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, send_file
 
 from agents import auth
+from agents import run_store        # RUNS_DIR default is derived from it (below)
 
 load_dotenv(override=True)
 
@@ -31,8 +32,32 @@ app = Flask(__name__, template_folder="web/templates", static_folder="web/static
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024  # 256MB per request
 app.config["MAX_FORM_PARTS"] = 5000
 
-RUNS_DIR = Path(os.environ.get("HOB_RUNS_DIR", str(Path(tempfile.gettempdir()) / "hob_runs")))
+# Every story's media lives here. The default was `tempfile.gettempdir()/hob_runs`,
+# which silently follows TMPDIR — on a machine whose TMPDIR pointed at an external
+# volume that put the entire archive on removable storage, in a directory the OS may
+# erase, and gave SQLite hard "disk I/O error"s. Durable home dir by default; override
+# with HOB_RUNS_DIR (keep it on the same filesystem as HOB_RUNS_DB).
+RUNS_DIR = Path(os.environ.get("HOB_RUNS_DIR", str(run_store.DEFAULT_RUNS_DIR))).expanduser()
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
+def _warn_if_archive_left_behind() -> None:
+    """Shout if a legacy temp-dir archive exists while the live one is empty.
+
+    Changing the default silently repoints a deploy at a fresh, empty directory — the
+    stories are still on disk, just not where we now look. Better a loud line at boot
+    than an operator concluding their library vanished.
+    """
+    try:
+        legacy = Path(tempfile.gettempdir()) / "hob_runs"
+        if legacy.resolve() == RUNS_DIR.resolve() or not legacy.is_dir():
+            return
+        if any(legacy.iterdir()) and not any(RUNS_DIR.iterdir()):
+            print(f"[runs] ⚠  {RUNS_DIR} is empty but a legacy archive exists at {legacy}.\n"
+                  f"[runs]    Move it (`rsync -a {legacy}/ {RUNS_DIR}/`) or set HOB_RUNS_DIR={legacy}.")
+    except Exception:
+        pass
+
+_warn_if_archive_left_behind()
 
 # Typed asset paths, the folder browser, and /media file serving are all confined
 # to this root (plus RUNS_DIR). Set ASSETS_BROWSE_ROOT on hosted deploys to the
@@ -224,8 +249,10 @@ def brand_page():
 
 @app.route("/studio")
 def studio_page():
-    """Studio Mode (MODE3): type a brief → full reel, with a reusable identity library."""
-    return render_template("studio.html")
+    """RETIRED (S31, docs/CANVAS_ENTRY_PLAN.md §1). Studio was pure redundancy: Canvas
+    already calls its shot_planner and its talent/product locks are Canvas's characters.
+    Redirect rather than 404 — bookmarks and the old nav links still point here."""
+    return redirect("/canvas", code=301)
 
 
 @app.route("/landing")
@@ -309,25 +336,6 @@ def api_delete_product(product_id):
     return jsonify({"deleted": ps.delete_product(product_id)})
 
 
-@app.route("/api/studio/plan", methods=["POST"])
-def api_studio_plan():
-    """Expand a free-text brief into an editable frames[] list (MODE3 P2)."""
-    data = request.json or {}
-    brief = (data.get("brief") or "").strip()
-    if not brief:
-        return jsonify({"error": "Enter a brief first."}), 400
-    scope = data.get("scope", "general")
-    mood = data.get("mood", "")
-    from agents import product_surface as ps
-    from agents import shot_planner
-    talent = ps.get_talent(data["talent_id"]) if data.get("talent_id") else None
-    product = ps.get_product(data["product_id"]) if data.get("product_id") else None
-    try:
-        frames = shot_planner.plan(brief, scope=scope, talent=talent,
-                                   product=product, mood=mood)
-        return jsonify({"frames": frames})
-    except Exception as e:
-        return jsonify({"error": str(e), "frames": []}), 500
 
 
 # ── Director Canvas (AGENTIC_CANVAS_PLAN) ───────────────────────────────────────
@@ -458,8 +466,14 @@ def canvas_page():
 
 
 @app.route("/api/canvas/plan", methods=["POST"])
-def api_canvas_plan():
-    """Create a canvas and run the free Script stage (reuses shot_planner)."""
+@auth.require_operator()
+def api_canvas_plan(operator: str):
+    """Create a canvas and run the free Script stage (reuses shot_planner).
+
+    Gated like /run: "free" means no vendor RENDER, not no cost — planning is a
+    reasoning-tier completion plus cast derivation, so an open route was anonymous
+    LLM spend against our keys.
+    """
     data = request.json or {}
     brief = (data.get("brief") or "").strip()
     if not brief:
@@ -778,14 +792,79 @@ def _orient_wh(orientation: str) -> tuple[int, int]:
             "square": (1080, 1080)}.get(orientation or "portrait", (1080, 1920))
 
 
+def _canvas_mode(state: dict) -> str:
+    """"brand" once this canvas carries brand data, else "story" (S31 pre-flight #4).
+
+    Canvas hardcoded "story" everywhere, which made `brand.validate_mandatories` — whose
+    ONLY caller is /run under mode=="brand" — unreachable from the surface that is meant
+    to replace the Brand door. Deriving the mode from the state makes the gate reachable
+    without pretending every canvas is an ad: brand mode is OPT-IN (open the Brand panel
+    and fill it), and opting in is what arms the mandatories + the sponsored disclosure.
+    """
+    b = state.get("brand") or {}
+    return "brand" if any(str(b.get(k) or "").strip()
+                          for k in ("name", "cta_text", "logo_path")) else "story"
+
+
+def _canvas_brand_gate(state: dict) -> list[str]:
+    """Missing brand mandatories for a canvas run, or [] (BRAND_PLAN §5, S31 pre-flight).
+
+    The hard gate `brand.validate_mandatories` had exactly ONE caller — /run under
+    mode=="brand" — so going through canvas skipped it entirely. Runs BEFORE any paid
+    stage: an incomplete ad must never be half-rendered. A story run is never gated.
+    """
+    if _canvas_mode(state) != "brand":
+        return []
+    from agents import brand as brand_agent
+    return brand_agent.validate_mandatories(state.get("frames") or [],
+                                            state.get("brand") or {})
+
+
+def _canvas_subject_name(state: dict) -> str:
+    """The real people whose likeness this canvas reel synthesises, for provenance.
+
+    A character carrying a real reference photo — or any shot conditioned on an uploaded
+    face (`attach_asset` mode='reference') — means a real person's face is being AI-
+    generated: both paths stamp those shots `photo_spec="ai_portrait"`. `provenance.
+    summarize` only sets `real_person_ai` (and the engine only burns the on-screen
+    disclosure) when `subject_name` is non-empty, so passing "" silently labeled every
+    such reel "no real person depicted". Returns "" for a fully synthetic cast
+    (mythology/fiction), which correctly keeps the symbolic label.
+    """
+    chars = state.get("characters") or []
+    frames = state.get("frames") or []
+    if not (any((c.get("ref_path") or "").strip() for c in chars)
+            or any((f.get("character_ref_path") or "").strip() for f in frames)):
+        return ""
+    by_id = {c.get("id"): c for c in chars}
+    names = [(c.get("name") or c.get("label") or "").strip()
+             for c in chars if (c.get("ref_path") or "").strip()]
+    for f in frames:                      # per-shot face refs need no cast-sheet entry
+        if (f.get("character_ref_path") or "").strip():
+            c = by_id.get(f.get("speaker_id")) or {}
+            names.append((c.get("name") or c.get("label") or "").strip())
+    named = [n for n in dict.fromkeys(names) if n]
+    # A real face is referenced but nobody is named — still a real person; say so rather
+    # than fall back to "no real person depicted".
+    return ", ".join(named) if named else "unnamed subject"
+
+
 def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
     """Shared payload for the canvas's stills/video render (one builder, two callers)."""
     return {
         "beat_grid_bpm": _canvas_tempo_bpm(state.get("mood", "")),
         "assets_dir": state.get("assets_dir", ""),   # real-photo folder (the moat)
-        "mode": "story", "quality": state.get("quality", "prod"),
+        # Derived, not hardcoded: "brand" arms the CTA end-card, the sponsored-disclosure
+        # burn and the brand VO/music modes in _run_inner — all of which were unreachable
+        # from canvas while this said "story".
+        "mode": _canvas_mode(state), "brand": state.get("brand") or {},
+        "quality": state.get("quality", "prod"),
         "frames": state["frames"], "mood": state.get("mood", ""),
-        "subject_name": "", "subject_description": "",
+        # S31 pre-flight #0 — name the real people this reel AI-likenesses, so provenance
+        # sees real_person_ai and the on-screen disclosure fires. Consent stays auto-
+        # granted below (the canvas no-consent-gate call stands); the LABEL is the
+        # compensating control that call was traded for, and "" disabled it.
+        "subject_name": _canvas_subject_name(state), "subject_description": "",
         "video_model": "auto", "image_model": "auto", "music_type": "none",
         # Operator-set caption style + orientation (persisted on the canvas state), with the
         # house defaults when unset. The render engine already burns caption_style + honors
@@ -964,6 +1043,9 @@ def api_canvas_keyframes(run_id: str, operator: str):
     # Stills-only spend gate (images, not video).
     governance.record_consent(data, confirmed_by=operator)
     governance.record_likeness_consent(data, confirmed_by=operator)
+    brand_missing = _canvas_brand_gate(state)
+    if brand_missing:
+        return jsonify({"error": "Brand mandatories missing", "missing": brand_missing}), 400
     spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
     if spend_missing:
         return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
@@ -1440,6 +1522,103 @@ def api_canvas_set_character(run_id: str, operator: str):
     return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/locations", methods=["POST"])
+@auth.require_operator()
+def api_canvas_locations(run_id: str, operator: str):
+    """S30 Phase 1 (the S28 'character sheet for places'): derive the story's distinct
+    locations and tag every frame with its location_id — the location-level mirror of
+    /characters. Free (one fast LLM pass); degrades to a no-op."""
+    from agents import canvas_run, degradation
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    # Bind the ledger or the degradation event is DISCARDED: report() resolves the run
+    # from _CURRENT and drops the event when nothing is bound, so a failed derive left
+    # no trace anywhere. try/finally because an unbalanced bind would misattribute every
+    # later report to this run.
+    degradation.bind(run_id)
+    try:
+        locs = canvas_run.derive_locations(state)
+    finally:
+        degradation.unbind(run_id)
+    _canvas_save(run_id, state)
+    return jsonify({"locations": locs, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/location", methods=["POST"])
+@auth.require_operator()
+def api_canvas_set_location(run_id: str, operator: str):
+    """Update one location's attributes (label/description/time_of_day); the invariant
+    clause re-propagates to that location's shots — the mirror of /character."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    attrs = body.get("attrs") if isinstance(body.get("attrs"), dict) else None
+    try:
+        state = canvas_run.set_location(state, body.get("loc_id", ""), attrs=attrs)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/location-plate", methods=["POST"])
+@auth.require_operator()
+def api_canvas_location_plate(run_id: str, operator: str):
+    """Generate the CANONICAL plate for one location (paid, spend-gated) — the mirror
+    of /character-portrait. The plate is generated EMPTY (no people, negative space for
+    characters, lighting headroom) and becomes the location's reference; its invariant
+    clause rides every shot set there. `variant` obeys rule 12 (0 = reuse, else fresh)."""
+    from agents import canvas_run, governance, pricing, image_generator
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    body = request.json or {}
+    loc_id = body.get("loc_id", "")
+    loc = next((l for l in state.get("locations", []) if l.get("id") == loc_id), None)
+    if not loc:
+        return jsonify({"error": "Unknown location"}), 400
+    # Apply just-typed attrs FIRST (same lesson as the portrait route: unsaved edits +
+    # the content-hash cache otherwise return the OLD plate).
+    if isinstance(body.get("attrs"), dict) and body["attrs"]:
+        # propagate=False: the plate call below re-propagates and rebuilds the board once.
+        state = canvas_run.set_location(state, loc_id, attrs=body["attrs"], propagate=False)
+        loc = next(l for l in state["locations"] if l.get("id") == loc_id)
+    try:
+        variant = int(body.get("variant") or 0)
+    except (TypeError, ValueError):
+        variant = 0
+    description = (loc.get("description") or loc.get("label") or "the story's setting").strip()
+    world_clause = canvas_run._world_clause(state.get("world") or {})
+    usd = pricing.image_cost("flux")
+    one = {"mode": "story", "quality": state.get("quality", "dev"),
+           "frames": [{"frame_id": f"loc_{loc_id}"}], "session_id": run_id, "operator_id": operator}
+    spend_missing = governance.reserve_spend(one, usd, run_id=run_id)
+    if spend_missing:
+        return jsonify({"error": spend_missing[0]}), 400
+    out_dir = str(RUNS_DIR / run_id / "locations")
+    try:
+        plate = image_generator.generate_location_plate(
+            description, out_dir, world_clause=world_clause,
+            time_of_day=loc.get("time_of_day", ""), loc_id=loc_id, variant=variant)
+        governance.release_reservation(one, run_id=run_id, reason="canvas_loc_plate_done")
+        governance.record_cost_event(governance.project_key(one), item="canvas_loc_plate",
+                                     usd=usd, run_id=run_id, event_type="estimate")
+    except Exception as e:
+        try:
+            governance.release_reservation(one, run_id=run_id, reason="canvas_loc_plate_failed")
+        except Exception:
+            pass
+        return jsonify({"error": str(e)}), 500
+    loc["source"] = "ai"
+    state = canvas_run.set_location(state, loc_id, plate_path=plate)
+    _canvas_save(run_id, state)
+    return jsonify({"loc_id": loc_id, "plate": f"/media?path={plate}",
+                    "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/match-photos", methods=["POST"])
 @auth.require_operator()
 def api_canvas_match_photos(run_id: str, operator: str):
@@ -1561,6 +1740,9 @@ def api_canvas_video(run_id: str, operator: str):
     render_id = state.get("render_id") or str(uuid.uuid4())
     data = _canvas_render_data(state, render_id, operator)
     data["stop_after"] = "clips"      # build + cache clips, skip assembly
+    brand_missing = _canvas_brand_gate(state)
+    if brand_missing:
+        return jsonify({"error": "Brand mandatories missing", "missing": brand_missing}), 400
     governance.record_consent(data, confirmed_by=operator)
     governance.record_likeness_consent(data, confirmed_by=operator)
     spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
@@ -1608,6 +1790,9 @@ def api_canvas_render(run_id: str, operator: str):
     render_id = state.get("render_id") or str(uuid.uuid4())
     data = _canvas_render_data(state, render_id, operator)
     data["canvas_run_id"] = run_id
+    brand_missing = _canvas_brand_gate(state)
+    if brand_missing:
+        return jsonify({"error": "Brand mandatories missing", "missing": brand_missing}), 400
     # Audio options (same set as Story mode): generate (Suno), upload a song,
     # ElevenLabs voiceover, or none. Default = generate so beat-aware cutting has a
     # bed; if it can't, the tempo-grid fallback keeps cuts rhythmic anyway.
@@ -1673,6 +1858,49 @@ def _lib_entry(p: Path, frame_id: str = "") -> dict:
     return {"name": p.name, "path": str(p), "size": p.stat().st_size,
             "is_video": ext in _VID, "is_audio": ext in _AUD,
             "frame_id": frame_id, "mtime": int(p.stat().st_mtime)}
+
+
+@app.route("/api/canvas/<run_id>/brand", methods=["POST"])
+@auth.require_operator()
+def api_canvas_set_brand(run_id: str, operator: str):
+    """S31 — set/clear this canvas's brand mandatories (BRAND_PLAN §5).
+
+    Stored VERBATIM; never generated. Filling it flips the run to brand mode, which arms
+    `brand.validate_mandatories` on every paid stage and the sponsored-disclosure burn.
+    Returns the mandatories still missing so the panel can show them BEFORE any spend.
+    """
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    canvas_run.set_brand(state, (request.json or {}).get("brand") or {})
+    _canvas_save(run_id, state)
+    return jsonify({"mode": _canvas_mode(state),
+                    "missing": _canvas_brand_gate(state),
+                    "canvas": canvas_run.public_state(state)})
+
+
+@app.route("/api/canvas/<run_id>/posting-kit", methods=["POST"])
+def api_canvas_posting_kit(run_id: str):
+    """S31 — the posting kit for a canvas story (caption + hashtags + cover).
+
+    Same agents/posting_kit the Story door uses; free and deterministic, so no auth or
+    spend gate. Canvas is becoming the one creator mode, and shipping a reel you can't
+    post is shipping half the job.
+    """
+    from agents import posting_kit as pk
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    data = request.json or {}
+    try:
+        kit = pk.build(state.get("frames") or [],
+                       caption=data.get("caption") or "",
+                       cover_frame_id=data.get("cover_frame_id") or "",
+                       mode=_canvas_mode(state))
+    except pk.BrandCopyRefused as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(kit)
 
 
 @app.route("/api/library/<canvas_id>")
@@ -1817,6 +2045,9 @@ def api_canvas_render_language(run_id: str, operator: str):
     render_id = str(uuid.uuid4())            # fresh dir — never overwrite the original
     data = _canvas_render_data(state, render_id, operator)
     data["canvas_run_id"] = run_id
+    brand_missing = _canvas_brand_gate(state)
+    if brand_missing:
+        return jsonify({"error": "Brand mandatories missing", "missing": brand_missing}), 400
     data["language"] = lang
     data["frames"] = copy.deepcopy(state["frames"])
     for f in data["frames"]:
@@ -2199,6 +2430,35 @@ def api_canvas_chat(run_id: str, operator: str):
                     "reply": f"Re-planned {len(state.get('frames', []))} shots."})
 
 
+@app.route("/api/canvas/<run_id>/replan", methods=["POST"])
+@auth.require_operator()
+def api_canvas_replan(run_id: str, operator: str):
+    """Edit-story: replace the brief and re-plan the SAME canvas in place. Operator-gated
+    like /plan (it's a reasoning-tier planner call). Resets every downstream stage — the
+    caller warns the user that generated stills for changed shots are dropped."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    data = request.json or {}
+    brief = (data.get("brief") or "").strip()
+    if not brief:
+        return jsonify({"error": "Enter a brief first."}), 400
+    try:
+        ts = int(data.get("target_seconds") or 0)
+    except (TypeError, ValueError):
+        ts = 0
+    state = canvas_run.replan_brief(state, brief, scope=data.get("scope", ""),
+                                    quality=data.get("quality", ""), target_seconds=ts,
+                                    story_type=data.get("story_type", ""))
+    try:
+        state["characters"] = canvas_run.derive_characters(state)
+    except Exception as e:
+        print(f"[Canvas] replan cast derivation skipped ({e})")
+    _canvas_save(run_id, state)
+    return jsonify({"run_id": run_id, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/guide")
 def guide_page():
     from flask import send_from_directory
@@ -2318,49 +2578,19 @@ def parse_script():
     return jsonify({"frames": result, "cast": cast, "posting_caption": posting_caption})
 
 
-def _posting_hashtags(text: str, frames: list[dict], limit: int = 12) -> list[str]:
-    """Cheap story-mode hashtag helper; avoids ad-copy generation and vendor spend."""
-    stop = {
-        "about", "after", "again", "also", "and", "because", "before", "being",
-        "from", "have", "into", "just", "more", "most", "that", "their", "there",
-        "this", "through", "with", "without", "where", "while", "your",
-    }
-    source = " ".join([text] + [f.get("caption", "") for f in frames])
-    words = re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", source.lower())
-    ranked = []
-    seen = set()
-    for w in words:
-        if w in stop or w in seen:
-            continue
-        seen.add(w)
-        ranked.append(w)
-    base = ["reels", "shorts", "storytelling", "inspiration", "journey"]
-    tags = base + ranked
-    out = []
-    for tag in tags:
-        clean = re.sub(r"[^A-Za-z0-9]", "", tag.title())
-        if clean and clean.lower() not in {t.lower().lstrip("#") for t in out}:
-            out.append("#" + clean)
-        if len(out) >= limit:
-            break
-    return out
-
-
 @app.route("/posting-kit", methods=["POST"])
 def posting_kit():
+    """Story door's posting kit. Logic lives in agents/posting_kit (S31) so Canvas —
+    the surface that replaces this door — can serve the same thing."""
+    from agents import posting_kit as pk
     data = request.json or {}
-    if data.get("mode") == "brand":
-        return jsonify({"error": "Posting kit AI copy is story-mode only."}), 400
-    frames = data.get("frames") or []
-    caption = (data.get("posting_caption") or "").strip()
-    if not caption:
-        caption = "\n".join(f.get("caption", "") for f in frames if f.get("caption"))
-    cover_id = data.get("cover_frame_id") or (frames[0].get("frame_id") if frames else "")
-    return jsonify({
-        "caption": caption,
-        "hashtags": _posting_hashtags(caption, frames),
-        "cover_frame_id": cover_id,
-    })
+    try:
+        return jsonify(pk.build(data.get("frames") or [],
+                                caption=data.get("posting_caption") or "",
+                                cover_frame_id=data.get("cover_frame_id") or "",
+                                mode=data.get("mode") or "story"))
+    except pk.BrandCopyRefused as e:
+        return jsonify({"error": str(e)}), 400
 
 
 def _commercial_gate(data: dict, estimate_usd: float = 0.0) -> tuple[list[str], list[str]]:

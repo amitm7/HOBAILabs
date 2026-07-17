@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HOBAILabs — Story Asset Library</title>
+<title>Veristory.ai — Story Asset Library</title>
 <link rel="stylesheet" href="/static/style.css">
 <style>
   /* Light-themed standalone page (same pattern as the canvas). */
   body { margin:0; background:#f8fafc; color:#0f172a; font-family: var(--font-sans, system-ui, sans-serif); padding-bottom:40px; }
-  .lib-top { height:56px; display:flex; align-items:center; gap:16px; padding:0 20px; border-bottom:1px solid #e5e7eb; background:#fff; }
+  /* Sticky: the drawer must be openable from anywhere, and this page scrolls —
+     a burger that scrolls out of reach is a burger you don't have. */
+  .lib-top { position:sticky; top:0; z-index:100; height:56px; display:flex; align-items:center; gap:14px; padding:0 20px; border-bottom:1px solid #e5e7eb; background:#fff; }
   .lib-top h1 { font-size:18px; margin:0; color:#0f172a; white-space:nowrap; }
-  .lib-top nav { display:flex; gap:16px; margin-left:24px; }
-  .lib-top a { color:#6b7280; text-decoration:none; font-size:14px; font-weight:500; }
-  .lib-top a.active { color:#e0a32e; }
+  /* Nav lives in _nav.html (dark slide-out); this page's own top bar is light, so give
+     the burger a dark ink so it reads against white. */
+  .lib-top .nav-burger { color:#0f172a; }
   .lib-wrap { max-width:1240px; margin:0 auto; padding:20px; }
   /* Story cards */
   .stories { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:14px; }
@@ -46,11 +48,8 @@
 </head>
 <body>
 <div class="lib-top">
+  {% include "_nav.html" %}
   <h1>📚 Story Asset Library</h1>
-  <nav>
-    <a href="/story">Story</a><a href="/studio">Studio</a><a href="/brand">Brand</a>
-    <a href="/canvas">Canvas</a><a href="/library" class="active">Library</a>
-  </nav>
 </div>
 
 <div class="lib-wrap">
@@ -72,6 +71,7 @@
   </div>
 </div>
 
+<script src="/static/nav.js"></script>
 <script>
 (function () {
   "use strict";

@@ -5,6 +5,8 @@
   "use strict";
   let runId = null;
   let activeFrameId = null;
+  let brandLogoPath = "";
+  let credProbed = "";
   let stillsCache = {};
   let clipsCache = {};
 
@@ -216,6 +218,18 @@
     } catch (e) { err(e.message); $("song-name").textContent = ""; }
   });
 
+  // S30 P3: per-asset editorial review chip (galleri5-style QA states). Empty = unset.
+  const REVIEW_META = {
+    needs_review:     { label: "NEEDS REVIEW", cls: "rv-needs" },
+    approved:         { label: "APPROVED",     cls: "rv-ok" },
+    production_ready: { label: "PROD READY",   cls: "rv-prod" },
+    rejected:         { label: "REJECTED",     cls: "rv-no" },
+  };
+  function reviewChip(review) {
+    const m = REVIEW_META[review];
+    return m ? `<span class="cv-badge ${m.cls}">${m.label}</span>` : "";
+  }
+
   function renderBoard(board) {
     const empty = board.length === 0;
     $("legend").hidden = empty;
@@ -223,30 +237,129 @@
     $("assets").hidden = empty;
 
     if (empty) {
-      $("board").innerHTML = "";
+      // F4: a blank board reads as "broken". Say what will appear and how spending works.
+      $("board").innerHTML = `<div class="board-empty">
+        <div class="be-emoji">🎬</div>
+        <p class="be-title">Your storyboard appears here</p>
+        <p class="be-sub">Each shot becomes a card, left→right in cut order. You generate and approve one stage at a time from the bar below — nothing is charged until you approve it.</p>
+      </div>`;
       $("timeline-strip").innerHTML = "";
+      if ($("board-hint")) $("board-hint").hidden = true;
       $("inspector").hidden = true;
       return;
     }
+    if ($("board-hint")) $("board-hint").hidden = false;
 
-    // Final Cut is a whole-reel assembly, not a per-shot stage — its per-row cells were
-    // all identical ("Awaiting Video"), pure noise. Drop the column from the board (the
-    // reel is still assembled via the top "Render reel" button + the render-panel status).
+    // Final Cut is a whole-reel assembly, not a per-shot stage — it stays off the
+    // storyboard and is driven from the top "Render reel" button + the render panel.
     const allStages = lastCanvas ? lastCanvas.stages : [];
     const stages = allStages.filter((s) => s.id !== "finalcut");
-    $("board").style.gridTemplateColumns = `repeat(${stages.length}, 260px)`;
 
-    // 1. Column headers
-    const headerHtml = stages.map((s) => {
-      const free = !s.paid;
-      const eta = s.paid ? fmtEta(s.eta_sec) : "";
-      const costLine = free
-        ? `<div class="cost free">Free</div>`
-        : `<div class="cost">${usd(s.cost_usd)}${eta ? ` · <span class="eta">${eta}</span>` : ""}</div>`;
-      
-      let btn = "";
+    // The board is the FILM, in cut order, left→right. The stage ACTIONS live in the
+    // common bar below it (renderStageBar) — a storyboard, not a tracker.
+    $("board").innerHTML = board.map((c, i) => shotCard(c, i, board.length)).join("");
+    renderStageBar(stages);
+    renderTimelineStrip(board);
+    if (activeFrameId) {
+      renderInspector(activeFrameId);
+    }
+  }
+
+  // ── Storyboard (S31) ───────────────────────────────────────────────────────
+  // Shaped after Interface Builder: shots read left→right in CUT ORDER, joined by
+  // segue arrows, because a reel is linear time. (This replaced a stage×shot matrix
+  // that read like a project tracker — five cells per shot saying "Awaiting…".)
+  // Per-shot progress rides on the card as pips; the stage ACTIONS moved to the
+  // common bar below (renderStageBar), which is where the Generate/Approve buttons
+  // that used to sit in the column headers now live.
+
+  // Pips are derived from the assets that actually exist for THIS shot — truer than
+  // the global stage status, which is identical on every card and so says nothing
+  // about the shot you're looking at.
+  function shotPips(c, stillPath, clipPath) {
+    // [full name (tooltip), short label (under the bar), done?]. The short label is
+    // what makes the four bars self-explanatory on the card itself.
+    const steps = [
+      ["Script", "Script", !!(c.caption || c.shot_size)],
+      ["Storyboard", "Board", !!(c.storyboard_art || c.motion)],
+      ["Key frame", "Still", !!stillPath],
+      ["Video", "Clip", !!clipPath],
+    ];
+    const tip = steps.map(([n, , d]) => `${n}: ${d ? "done" : "pending"}`).join(" · ");
+    return `<span class="sb-pips" title="Shot progress — ${tip}">` +
+      steps.map(([, ab, d]) =>
+        `<span class="pip${d ? " on" : ""}"><i></i><em>${ab}</em></span>`).join("") + `</span>`;
+  }
+
+  function shotCard(c, index, total) {
+    const fid = c.frame_id;
+    const isReal = c.asset_kind === "real";
+    const stillPath = stillsCache[fid] || c.real_path || "";
+    const clipPath = clipsCache[fid] || "";
+    const active = (fid === activeFrameId) ? " active" : "";
+    const formIcon = c.form === "dialogue" ? "🎬" : c.form === "silent" ? "🌫" : "🎙";
+
+    // Best available visual, in order of truth: the rendered clip → the key frame →
+    // the reference it will be conditioned on → the storyboard sketch → nothing yet.
+    let media;
+    if (clipPath) {
+      media = `<div class="frame video-poster" data-clip="${escapeHtml(clipPath)}" data-still="${escapeHtml(stillPath)}" data-frame="${fid}">
+                 ${mediaThumb(stillPath, "video poster")}<span class="play-icon">▶</span></div>`;
+    } else if (stillPath) {
+      media = `<div class="frame">${mediaThumb(stillPath, isReal ? "real media" : "keyframe")}</div>`;
+    } else if (c.ref_path) {
+      media = `<div class="frame"><span class="refchip">${mediaThumb(c.ref_path, "ref")}<b>REF</b></span></div>`;
+    } else if (c.storyboard_art) {
+      media = `<div class="frame"><img class="thumb sketch" src="${mediaUrl(c.storyboard_art)}" alt=""></div>`;
+    } else {
+      media = `<div class="sb-empty"><span>${index + 1}</span></div>`;
+    }
+
+    const badge = isReal
+      ? `<span class="kindbadge kb-real" title="Real media — passes through untouched">REAL</span>`
+      : `<span class="kindbadge kb-${c.asset_kind}">${c.asset_kind === "ai_person" ? "AI FACE" : "AI"}</span>`;
+
+    const card = `
+      <div class="sb-card${active}${isReal ? " is-real" : ""}" data-frame="${fid}">
+        <div class="sb-head">
+          <span class="sb-n">${index + 1}</span>
+          <span class="form-tag form-${c.form || "narration"}" title="Storytelling form (S28): 🎬 dialogue · 🎙 narration · 🌫 silent. Override in the Inspector.">${formIcon}</span>
+          <span class="sb-head-sp"></span>
+          ${reviewChip(c.review)}${badge}
+        </div>
+        <div class="sb-media">${media}</div>
+        <div class="sb-body">
+          <div class="sb-cap" title="${escapeHtml(c.caption || "")}">${escapeHtml(c.caption || "(no line)")}</div>
+          <div class="sb-meta">
+            <span class="sb-motion">${arrowSvg(c.arrow)} ${escapeHtml(c.motion || "slow push")}</span>
+            <span class="sb-dur">${c.duration ? c.duration + "s" : ""}</span>
+          </div>
+          ${shotPips(c, stillPath, clipPath)}
+        </div>
+      </div>`;
+
+    // The segue: the cut from this shot into the next one.
+    const link = index < total - 1
+      ? `<div class="sb-link" aria-hidden="true"><span class="sb-line"></span><span class="sb-arrow">▶</span></div>`
+      : "";
+    return card + link;
+  }
+
+  // The storyboard's common bar. Deliberately carries the SAME .gen[data-stage] /
+  // .appr[data-approve] markup the old column headers used, and the same click handler
+  // is bound to it — so every rule (the AI-face soft gate, per-stage API routing, the
+  // spend labels) is unchanged. Only the location moved.
+  const STAGE_BAR_LABEL = {
+    script: "📝 Script", storyboard: "✏️ Storyboard", keyframes: "🖼 Images",
+    audio: "🎵 Audio", video: "🎬 Video",
+  };
+  function renderStageBar(stages) {
+    const bar = $("stage-bar");
+    if (!bar) return;
+    const tools = stages.map((s) => {
+      let btn;
       if (s.id === "audio") {
-        btn = `<button disabled>in Final Cut</button>`;
+        btn = `<button disabled title="Music is mixed at Final Cut — choose the track in Audio Setup">in Final Cut</button>`;
       } else if (s.status === "generating") {
         btn = `<button disabled>Generating…</button>`;
       } else if (s.status === "done") {
@@ -254,166 +367,26 @@
       } else if (s.status === "approved") {
         btn = `<button disabled>Approved ✓</button>`;
       } else if (s.ready) {
-        const label = free ? "Generate" : `Generate · ${usd(s.cost_usd)}`;
-        btn = `<button class="gen" data-stage="${s.id}">${label}</button>`;
+        const eta = s.paid ? fmtEta(s.eta_sec) : "";
+        btn = `<button class="gen" data-stage="${s.id}" title="${escapeHtml(s.blurb || "")}${eta ? " · ~" + eta : ""}">${
+          s.paid ? `Generate · ${usd(s.cost_usd)}` : "Generate"}</button>`;
       } else {
-        btn = `<button disabled>Locked</button>`;
+        btn = `<button disabled title="Approve the previous step first">Locked</button>`;
       }
-
-      return `<div class="cv-stage${s.status === "generating" ? " shimmer" : ""}">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>${s.label}</h3>
-          <span class="cv-badge st-${s.status}">${s.status}</span>
-        </div>
-        <div class="blurb">${s.blurb}</div>
-        ${costLine}${btn}
-      </div>`;
+      return `<div class="sb-tool${s.status === "generating" ? " shimmer" : ""}">
+        <span class="sb-tool-l">${STAGE_BAR_LABEL[s.id] || s.label}
+          <span class="cv-badge st-${s.status}">${s.status}</span></span>
+        ${btn}</div>`;
     }).join("");
 
-    // 2. Grid cells
-    const cellsHtml = board.map((c, index) => {
-      return renderShotCells(c, index, stages);
-    }).join("");
-
-    $("board").innerHTML = headerHtml + cellsHtml;
-    renderTimelineStrip(board);
-    if (activeFrameId) {
-      renderInspector(activeFrameId);
-    }
-  }
-
-  function renderShotCells(c, index, stages) {
-    const fid = c.frame_id;
-    const activeClass = (fid === activeFrameId) ? " active-row" : "";
-    const isReal = c.asset_kind === "real";
-
-    // Cell 0: Script
-    const cell0 = `
-      <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="script">
-        <div class="cell-hdr">
-          <span>Shot ${index + 1} · Script</span>
-          <span class="form-tag form-${c.form || "narration"}" title="Storytelling form (S28): 🎬 dialogue = a character speaks in-scene · 🎙 narration = the storyteller's voice · 🌫 silent = atmosphere. Override it in the Inspector.">${
-            c.form === "dialogue" ? "🎬 dialogue" : c.form === "silent" ? "🌫 silent" : "🎙 narration"}</span>
-        </div>
-        <div class="cell-content">
-          <div style="font-weight:700;margin-bottom:4px;font-size:11px">${escapeHtml(c.shot_size || "shot")}</div>
-          <div style="font-size:11px;color:#475569">${escapeHtml(c.caption || "(no line)")}</div>
-        </div>
-      </div>
-    `;
-
-    // Cell 1: Storyboard (Moat Locked)
-    let cell1 = "";
-    if (isReal) {
-      cell1 = `
-        <div class="cv2-cell passthrough-locked${activeClass}" data-frame="${fid}" data-stage="storyboard">
-          <div class="cell-hdr"><span>Storyboard</span></div>
-          <div class="cell-content">
-            <span class="pass-badge">PASSTHROUGH</span>
-            <div style="margin-top:6px;font-size:10px;color:#64748b">Authentic footage passes through untouched.</div>
-          </div>
-        </div>
-      `;
-    } else {
-      cell1 = `
-        <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="storyboard">
-          <div class="cell-hdr"><span>Storyboard</span></div>
-          <div class="cell-content" style="display:flex;flex-direction:column;justify-content:center;height:100%">
-            ${c.storyboard_art ? `
-              <div class="frame">
-                <img class="thumb sketch" src="${mediaUrl(c.storyboard_art)}" alt="">
-                <span class="sketch-arrow" style="position:absolute;bottom:6px;right:6px;opacity:.75;pointer-events:none">${arrowSvg(c.arrow)}</span>
-              </div>
-            ` : `
-              <div style="font-weight:600;margin-bottom:2px;font-size:11px">${escapeHtml(c.camera || "Auto Camera")}</div>
-              <div style="font-size:11px;color:#64748b">${escapeHtml(c.motion || "Slow push")}</div>
-              <div style="display:flex;justify-content:center;margin-top:4px">${arrowSvg(c.arrow)}</div>
-            `}
-          </div>
-        </div>
-      `;
-    }
-
-    // Cell 2: Keyframes (Moat Locked)
-    let cell2 = "";
-    const stillPath = stillsCache[fid] || c.real_path || "";
-    if (isReal) {
-      cell2 = `
-        <div class="cv2-cell passthrough-locked${activeClass}" data-frame="${fid}" data-stage="keyframes">
-          <div class="cell-hdr">
-            <span>Key Frame</span>
-            <span class="kindbadge kb-real">REAL</span>
-          </div>
-            <div class="cell-content">
-              <div class="frame">${mediaThumb(stillPath, "real media")}</div>
-            </div>
-        </div>
-      `;
-    } else {
-      const hasStill = !!stillPath || (c.ref_path && c.asset_kind !== "real");
-      cell2 = `
-        <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="keyframes">
-          <div class="cell-hdr">
-            <span>Key Frame</span>
-            <span class="kindbadge kb-${c.asset_kind}">${c.asset_kind === "ai_person" ? "AI FACE" : "AI"}</span>
-          </div>
-          <div class="cell-content">
-            ${hasStill ? `
-              <div class="frame">
-                ${c.ref_path && !stillPath ? `
-                  <span class="refchip">${mediaThumb(c.ref_path, "ref")}<b>REF</b></span>
-                  ${arrowSvg(c.arrow)}
-                ` : `
-                  ${mediaThumb(stillPath || c.ref_path, "keyframe")}
-                `}
-              </div>
-            ` : `
-              <div class="muted" style="text-align:center;font-size:11px">Awaiting Key Frame</div>
-            `}
-          </div>
-        </div>
-      `;
-    }
-
-    // Cell 3: Audio
-    const audioMode = $("audio-mode").value;
-    let audioStatus = "None";
-    if (audioMode === "generate") audioStatus = "Suno Music";
-    else if (audioMode === "upload") audioStatus = "User Track";
-    else if (audioMode === "voiceover") audioStatus = "Voiceover";
-    
-    const cell3 = `
-      <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="audio">
-        <div class="cell-hdr"><span>Audio</span></div>
-        <div class="cell-content">
-          <div style="font-weight:600;font-size:11px">🎙 ${audioStatus}</div>
-          <div style="font-size:10px;color:#64748b;margin-top:4px;max-height:60px;overflow:hidden">${escapeHtml(c.caption || "No VO")}</div>
-        </div>
-      </div>
-    `;
-
-    // Cell 4: Video (Virtualization poster)
-    const clipPath = clipsCache[fid] || "";
-    const hasClip = !!clipPath;
-    const cell4 = `
-      <div class="cv2-cell${activeClass}" data-frame="${fid}" data-stage="video">
-        <div class="cell-hdr"><span>Video</span></div>
-        <div class="cell-content">
-          ${hasClip ? `
-            <div class="frame video-poster" data-clip="${escapeHtml(clipPath)}" data-still="${escapeHtml(stillPath)}" data-frame="${fid}">
-              ${mediaThumb(stillPath, "video poster")}
-              <span class="play-icon">▶</span>
-            </div>
-          ` : `
-            <div class="muted" style="text-align:center;font-size:11px">Awaiting Video</div>
-          `}
-        </div>
-      </div>
-    `;
-
-    // (Final Cut per-row cell removed — it repeated one identical status 33× and added a
-    // full extra column of horizontal scroll. The reel is assembled from the top bar.)
-    return cell0 + cell1 + cell2 + cell3 + cell4;
+    // The stage bar is the PIPELINE only. The former "extras" (🎵 Music, ✂️ Beat cut,
+    // 🔊 SFX) were removed (S31 red-team): Music/Beat were buttons that did nothing but
+    // scroll to the left-rail controls that already own them, and SFX was permanently
+    // disabled (its Final-Cut mix stem is ticketed). Music + beat live in Audio Setup /
+    // World Context where they belong; SFX returns here when the mix ships.
+    // F2: name the bar so its Generate/Approve buttons read as the reel's pipeline
+    // controls (they act on the whole board, deliberately, rather than per card).
+    bar.innerHTML = `<span class="sb-bar-lead">Pipeline</span>` + tools;
   }
 
   function renderTimelineStrip(board) {
@@ -487,6 +460,17 @@
         </div>
 
         <div class="inspector-field">
+          <label class="inspector-label">Review — your verdict on this shot's current asset</label>
+          <select class="edit" data-frame="${fid}" data-field="review_status">
+            <option value="" ${!c.review ? "selected" : ""}>— unset —</option>
+            <option value="needs_review" ${c.review === "needs_review" ? "selected" : ""}>🔎 Needs review</option>
+            <option value="approved" ${c.review === "approved" ? "selected" : ""}>✅ Approved</option>
+            <option value="production_ready" ${c.review === "production_ready" ? "selected" : ""}>🏁 Production-ready</option>
+            <option value="rejected" ${c.review === "rejected" ? "selected" : ""}>❌ Rejected (re-roll it)</option>
+          </select>
+        </div>
+
+        <div class="inspector-field">
           <label class="inspector-label">Caption / Script Line</label>
           <input class="edit" data-frame="${fid}" data-field="caption" value="${escapeHtml(c.caption || "")}" placeholder="narration script line">
         </div>
@@ -520,7 +504,7 @@
           <div class="inspector-field" style="flex:1">
             <label class="inspector-label">Fidelity Rung</label>
             <select class="fid-sel" data-frame="${fid}">
-              ${c.fidelity_options.map(opt => `<option value="${opt}" ${opt === c.fidelity ? "selected" : ""}>${escapeHtml(fidelityLabel(opt))}</option>`).join("")}
+              ${c.fidelity_options.filter(opt => opt !== "recreate").map(opt => `<option value="${opt}" ${opt === c.fidelity ? "selected" : ""}>${escapeHtml(fidelityLabel(opt))}</option>`).join("")}
             </select>
           </div>` : ""}
         </div>
@@ -549,9 +533,9 @@
           </div>
         </div>
 
-        <div style="border-top:1px solid #f1f5f9;padding-top:10px">
-          <div class="inspector-label" style="margin-bottom:6px">Replace Asset</div>
-          <div class="inspector-actions">
+        <details class="insp-group">
+          <summary>Replace asset — swap this shot's media</summary>
+          <div class="inspector-actions" style="margin-top:6px">
             <button class="btn-secondary pick-btn" data-frame="${fid}">🖼 Folder pick</button>
             <button class="btn-secondary rematch-btn" data-frame="${fid}">⟳ Re-match</button>
             <label class="btn-primary attach-btn" style="display:flex;align-items:center;justify-content:center">
@@ -564,10 +548,10 @@
             </label>
             <button class="btn-secondary ai-gen" data-frame="${fid}">🎭 Use AI generic</button>
           </div>
-        </div>
+        </details>
 
-        <div style="border-top:1px solid #f1f5f9;padding-top:10px">
-          <div class="inspector-label" style="margin-bottom:6px">Overlays — comic devices (max 2, applied at Final Cut)</div>
+        <details class="insp-group">
+          <summary>Overlays — comic devices (max 2, applied at Final Cut)</summary>
           <div id="ov-list" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
             ${(c.overlays || []).map((o, i) => `
               <span style="background:#eef2f7;border:1px solid #e2e8f0;border-radius:999px;padding:3px 8px;font-size:10px">
@@ -577,16 +561,16 @@
           </div>
           ${(c.overlays || []).length < 2 ? `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px">
-            <select id="ov-kind" class="fid-sel"><option value="memory">📷 Memory inset</option><option value="speaker">🗣 Speaker chip</option><option value="thought">💭 Thought bubble</option><option value="sticker">✨ Thinking sticker</option></select>
-            <select id="ov-src" class="fid-sel">
+            <select id="ov-kind" class="ov-field"><option value="memory">📷 Memory inset</option><option value="speaker">🗣 Speaker chip</option><option value="thought">💭 Thought bubble</option><option value="sticker">✨ Thinking sticker</option></select>
+            <select id="ov-src" class="ov-field">
               <option value="">(no image — sticker)</option>
               ${((lastCanvas && lastCanvas.characters) || []).filter((ch) => ch.ref_path)
                  .map((ch) => `<option value="@char:${ch.id}">👤 ${escapeHtml(ch.role || ch.name || ch.id)}</option>`).join("")}
             </select>
-            <select id="ov-style" class="fid-sel"><option value="rounded">Rounded</option><option value="polaroid">Polaroid</option><option value="chip">Circle chip</option><option value="bubble">Thought bubble</option></select>
-            <select id="ov-pos" class="fid-sel"><option value="tr">Top right</option><option value="tl">Top left</option><option value="tc">Top centre</option><option value="ml">Mid left</option><option value="mr">Mid right</option><option value="bl">Bottom left</option><option value="br">Bottom right</option></select>
-            <select id="ov-size" class="fid-sel"><option value="s">Small</option><option value="m" selected>Medium</option><option value="l">Large</option></select>
-            <select id="ov-when" class="fid-sel"><option value="all">Whole shot</option><option value="first-half">First half</option><option value="second-half">Second half</option></select>
+            <select id="ov-style" class="ov-field"><option value="rounded">Rounded</option><option value="polaroid">Polaroid</option><option value="chip">Circle chip</option><option value="bubble">Thought bubble</option></select>
+            <select id="ov-pos" class="ov-field"><option value="tr">Top right</option><option value="tl">Top left</option><option value="tc">Top centre</option><option value="ml">Mid left</option><option value="mr">Mid right</option><option value="bl">Bottom left</option><option value="br">Bottom right</option></select>
+            <select id="ov-size" class="ov-field"><option value="s">Small</option><option value="m" selected>Medium</option><option value="l">Large</option></select>
+            <select id="ov-when" class="ov-field"><option value="all">Whole shot</option><option value="first-half">First half</option><option value="second-half">Second half</option></select>
           </div>
           <div class="inspector-actions">
             <button class="btn-secondary ov-preview" data-frame="${fid}">👁 Preview on still</button>
@@ -594,7 +578,7 @@
           </div>
           <img id="ov-preview-img" style="width:100%;border-radius:8px;margin-top:6px;border:1px solid #e2e8f0" hidden>
           ` : ""}
-        </div>
+        </details>
       </div>
     `;
 
@@ -645,8 +629,8 @@
 
   function selectFrame(fid) {
     activeFrameId = fid;
-    document.querySelectorAll(".cv2-cell").forEach((el) => {
-      el.classList.toggle("active-row", el.getAttribute("data-frame") === fid);
+    document.querySelectorAll(".sb-card").forEach((el) => {
+      el.classList.toggle("active", el.getAttribute("data-frame") === fid);
     });
     document.querySelectorAll(".cv2-timeline-card").forEach((el) => {
       el.classList.toggle("active", el.getAttribute("data-frame") === fid);
@@ -677,7 +661,7 @@
         pollRestore();
       } else if (rung === "recreate") {
         if (sel) sel.disabled = true;
-        const fr = document.querySelector(`.cv2-cell[data-stage="keyframes"][data-frame="${fid}"]`);
+        const fr = document.querySelector(`.sb-card[data-frame="${fid}"]`);
         if (fr) fr.classList.add("shimmer");
         const d = await api(`/api/canvas/${runId}/recreate`, { frame_id: fid });
         render(d.canvas);
@@ -739,7 +723,7 @@
   async function upscaleShot(fid, btn) {
     if (!runId) return;
     err("");
-    const fr = document.querySelector(`.cv2-cell[data-stage="keyframes"][data-frame="${fid}"]`);
+    const fr = document.querySelector(`.sb-card[data-frame="${fid}"]`);
     if (fr) fr.classList.add("shimmer");
     const oldLabel = btn ? btn.textContent : "";
     if (btn) { btn.disabled = true; btn.textContent = "…"; }
@@ -834,6 +818,17 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   }
 
+  // ── Two-page shell (S31) ───────────────────────────────────────────────────
+  // Page 1 = the prompt, page 2 = the canvas. Derived from "does a board exist"
+  // and called from render(), so there is exactly one source of truth about which
+  // page you are on — no separate view state to drift out of sync with the run.
+  function setView(hasBoard) {
+    const entry = $("entry-view"), board = $("canvas-view");
+    if (!entry || !board) return;
+    entry.hidden = !!hasBoard;
+    board.hidden = !hasBoard;
+  }
+
   function render(canvas) {
     lastCanvas = canvas;
     syncSettings(canvas);
@@ -844,10 +839,51 @@
     if ((canvas.characters || []).length && !$("characters").contains(document.activeElement)) {
       renderCharacters(canvas.characters);
     }
+    // S30 location anchoring: same auto-render + same don't-clobber-typing rule.
+    if ((canvas.locations || []).length && !$("locations").contains(document.activeElement)) {
+      renderLocations(canvas.locations);
+    }
     const hasBoard = canvas.board && canvas.board.length > 0;
+    // Don't force the board visible while the stage view owns the screen (they'd stack).
+    if ($("stage-view").hidden) setView(hasBoard);   // a planned board IS page 2
+    // Brand panel rides the scope: an ad is what Commerce means. Publish rides an actual
+    // render — there is nothing to post, prove or measure until the reel exists.
+    if ($("brand-panel")) $("brand-panel").hidden = !(hasBoard && canvas.scope === "commerce");
+    if (canvas.brand && !$("brand-name").value) {
+      $("brand-name").value = canvas.brand.name || "";
+      $("brand-cta").value = canvas.brand.cta_text || "";
+      if (canvas.brand.disclosure !== undefined) $("brand-disclosure").checked = !!canvas.brand.disclosure;
+      if (canvas.brand.logo_path) {
+        brandLogoPath = canvas.brand.logo_path;
+        $("brand-logo-name").textContent = canvas.brand.logo_path.split("/").pop();
+      }
+    }
+    const rid = canvas.render_id || "";
+    if ($("publish-panel")) $("publish-panel").hidden = !rid;
+    if (rid) {
+      $("export-link").href = "/export/" + rid;
+      $("prov-link").href = "/provenance/" + rid;
+      // The C2PA credential only exists if signing actually ran for this reel (it makes
+      // an outbound call and can be disabled). Probe once rather than show a link that
+      // 404s — a dead button is worse than no button.
+      $("cred-link").href = "/credential/" + rid;
+      if (credProbed !== rid) {
+        credProbed = rid;
+        $("cred-link").hidden = true;
+        fetch("/credential/" + rid, { method: "HEAD" })
+          .then((r) => { $("cred-link").hidden = !r.ok; })
+          .catch(() => { $("cred-link").hidden = true; });
+      }
+    }
     const vid = (canvas.stages || []).find((s) => s.id === "video");
     const videoApproved = vid && vid.status === "approved";
     $("render-btn").hidden = !hasBoard;
+    // S31: the stage-view toggle + settings gear appear once there's a film to show.
+    if ($("view-toggle")) $("view-toggle").hidden = !hasBoard;
+    if ($("settings-gear")) $("settings-gear").hidden = !hasBoard;
+    // If the stage view is open, keep it in sync with this data refresh (unless a shot
+    // sheet is mid-render, to avoid clobbering a focused field — same rule as the board).
+    if (!$("stage-view").hidden && !$("sv-center").contains(document.activeElement)) renderStageView();
     $("render-btn").disabled = !videoApproved;
     // T13: language versions unlock exactly when Final Cut does.
     if ($("lang-controls")) $("lang-controls").hidden = !(hasBoard && videoApproved);
@@ -1002,6 +1038,7 @@
     history.replaceState({}, "", "/canvas?run=" + id);
     $("saved").hidden = false;
     if ($("del-btn")) $("del-btn").hidden = false;
+    if ($("edit-story-btn")) $("edit-story-btn").hidden = false;
   }
   function clearRun() {
     runId = null;
@@ -1010,12 +1047,15 @@
     history.replaceState({}, "", "/canvas");
     $("saved").hidden = true;
     if ($("del-btn")) $("del-btn").hidden = true;
+    if ($("edit-story-btn")) $("edit-story-btn").hidden = true;
+    $("plan-btn").textContent = "Plan ✨";      // fresh story → "Plan", not "Re-plan"
   }
   function applyCanvas(canvas) {
     if (canvas.brief !== undefined) $("brief").value = canvas.brief || "";
     if (canvas.scope) $("scope").value = canvas.scope;
     if (canvas.quality) $("quality").value = canvas.quality;
     if (canvas.target_seconds !== undefined) $("length").value = String(canvas.target_seconds);
+    if (canvas.story_type) $("story-type").value = canvas.story_type;
     render(canvas);
   }
   async function loadCanvas(id) {
@@ -1036,16 +1076,27 @@
   async function loadRecents() {
     try {
       const d = await api("/api/canvas/list");
+      const list = d.canvases || [];
       // Distinguishable labels — same brief across sessions is disambiguated by
       // time + shot count + mode (they're separate runs, not real duplicates).
+      const meta = (c) => [_ago(c.updated_at), c.shots ? c.shots + " shots" : "",
+        c.story_type === "ai" ? "🎭 AI" : "📷 Real"].filter(Boolean).join(" · ");
       $("resume").innerHTML = '<option value="">Resume…</option>' +
-        (d.canvases || []).map((c) => {
-          const meta = [_ago(c.updated_at), c.shots ? c.shots + " shots" : "",
-            c.story_type === "ai" ? "🎭" : ""].filter(Boolean).join(" · ");
-          return `<option value="${c.run_id}">${escapeHtml(c.title)}${meta ? "  — " + meta : ""}</option>`;
-        }).join("");
+        list.map((c) => `<option value="${c.run_id}">${escapeHtml(c.title)}  — ${escapeHtml(meta(c))}</option>`).join("");
+      // Same data as cards on the prompt page: a new session opens on an empty box,
+      // and picking up yesterday's story shouldn't mean hunting through a dropdown.
+      const el = $("entry-recents");
+      if (!el) return;
+      el.hidden = !list.length;
+      el.innerHTML = !list.length ? "" : "<h3>Recent</h3><div class=\"cv-recent-grid\">" +
+        list.slice(0, 6).map((c) => `<button type="button" class="cv-recent" data-run="${c.run_id}">` +
+          `<b>${escapeHtml(c.title)}</b><span>${escapeHtml(meta(c))}</span></button>`).join("") + "</div>";
     } catch (e) { /* non-fatal */ }
   }
+  $("entry-recents") && $("entry-recents").addEventListener("click", (ev) => {
+    const card = ev.target.closest("[data-run]");
+    if (card) loadCanvas(card.dataset.run);
+  });
   // Delete the open canvas (clean up old/duplicate sessions).
   $("del-btn") && $("del-btn").addEventListener("click", async () => {
     if (!runId) return;
@@ -1062,13 +1113,23 @@
     err("");
     const brief = $("brief").value.trim();
     if (!brief) { err("Enter a brief first."); return; }
-    $("plan-btn").disabled = true; $("plan-btn").textContent = "Planning…";
+    const payload = {
+      brief, scope: $("scope").value, quality: $("quality").value,
+      target_seconds: parseInt($("length").value, 10) || 0,
+      story_type: $("story-type").value,
+    };
+    // Re-plan in place when a run is already open (Edit story) and the story changed —
+    // but only after warning that a new shot list drops generated stills for shots that
+    // no longer exist. A brand-new story (no run) just plans.
+    const replan = !!runId && lastCanvas && brief !== (lastCanvas.brief || "").trim();
+    if (replan && !confirm("Re-planning rebuilds the shot list from your edited story. Generated images for shots that change or disappear will be dropped. Continue?")) {
+      return;
+    }
+    $("plan-btn").disabled = true; $("plan-btn").textContent = replan ? "Re-planning…" : "Planning…";
     try {
-      const d = await api("/api/canvas/plan", {
-        brief, scope: $("scope").value, quality: $("quality").value,
-        target_seconds: parseInt($("length").value, 10) || 0,
-        story_type: $("story-type").value,
-      });
+      const d = replan
+        ? await api(`/api/canvas/${runId}/replan`, payload)
+        : await api("/api/canvas/plan", payload);
       setRun(d.run_id);
       // Push the operator's PRE-PLAN settings (captions/orientation/watermark) onto the
       // new canvas FIRST — they were silently dropped before (no run existed to save to),
@@ -1078,7 +1139,7 @@
       if (!lastCanvas) render(d.canvas);        // settings save failed → still show the board
       loadRecents();
     } catch (e) { err(e.message); }
-    finally { $("plan-btn").disabled = false; $("plan-btn").textContent = "Plan ✨"; }
+    finally { $("plan-btn").disabled = false; $("plan-btn").textContent = runId ? "Re-plan ✨" : "Plan ✨"; }
   });
 
   // Render the whole reel (prod by default) via the proven pipeline.
@@ -1102,7 +1163,22 @@
     $("legend").hidden = true; $("chat").hidden = true; $("assets").hidden = true;
     $("render-btn").hidden = true; $("render-panel").hidden = true;
     $("render-video").hidden = true; $("render-dl").hidden = true; $("render-log").textContent = "";
+    lastCanvas = null;
+    setView(false);          // back to the prompt
+    loadRecents();
     err("");
+    $("brief").focus();
+  });
+
+  // ✎ Edit story — the way BACK to the prompt (S31). Unlike ＋ New (which wipes and
+  // starts fresh), this keeps the run open and the brief editable, so you can change the
+  // story and re-plan the SAME canvas. The board rebuilds on re-plan.
+  $("edit-story-btn") && $("edit-story-btn").addEventListener("click", () => {
+    if (lastCanvas) $("brief").value = lastCanvas.brief || $("brief").value;
+    $("plan-btn").textContent = "Re-plan ✨";
+    setView(false);
+    err("");
+    $("brief").focus();
   });
 
   // Resume a saved canvas from the picker.
@@ -1125,7 +1201,7 @@
   async function rerollShot(fid, btn) {
     if (!runId) return;
     err("");
-    const frame = document.querySelector(`.cv2-cell[data-stage="video"][data-frame="${fid}"]`);
+    const frame = document.querySelector(`.sb-card[data-frame="${fid}"]`);
     if (frame) frame.classList.add("shimmer");
     const oldLabel = btn.textContent;
     btn.disabled = true; btn.textContent = "…";
@@ -1146,7 +1222,7 @@
   async function restillShot(fid, btn) {
     if (!runId) return;
     err("");
-    const cell = document.querySelector(`.cv2-cell[data-stage="keyframes"][data-frame="${fid}"]`);
+    const cell = document.querySelector(`.sb-card[data-frame="${fid}"]`);
     if (cell) cell.classList.add("shimmer");
     const old = btn.textContent;
     btn.disabled = true; btn.textContent = "…";
@@ -1183,7 +1259,7 @@
   async function recreateShot(fid, btn) {
     if (!runId) return;
     err("");
-    const frame = document.querySelector(`.cv2-cell[data-stage="keyframes"][data-frame="${fid}"]`);
+    const frame = document.querySelector(`.sb-card[data-frame="${fid}"]`);
     if (frame) frame.classList.add("shimmer");
     const oldLabel = btn.textContent;
     btn.disabled = true; btn.textContent = "…";
@@ -1199,7 +1275,7 @@
 
   // Delegated re-roll / re-create / select / picker clicks.
   function handleBoardOrInspectorClick(ev) {
-    const cell = ev.target.closest(".cv2-cell");
+    const cell = ev.target.closest(".sb-card");
     if (cell && !ev.target.closest("button") && !ev.target.closest("input") && !ev.target.closest("select") && !ev.target.closest(".picker")) {
       const fid = cell.getAttribute("data-frame");
       selectFrame(fid);
@@ -1355,6 +1431,124 @@
 
   // Auto-match a whole folder of the operator's real photos/videos to the shots
   // (the moat: real media, not synthetic portraits of a real person).
+  // ── Brand / Ad (S31 pre-flight #4) ────────────────────────────────────────
+  // Filling this flips the run to brand mode server-side (web_app._canvas_mode), which
+  // arms brand.validate_mandatories on every PAID stage and the sponsored-disclosure
+  // burn. Copy is sent verbatim and never generated (BRAND_PLAN §5).
+  $("brand-logo") && $("brand-logo").addEventListener("change", async (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f || !runId) return;
+    try {
+      const fd = new FormData();
+      fd.append("session_id", runId);
+      fd.append("files", f, f.name);
+      const r = await fetch("/upload-folder", { method: "POST", body: fd });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error);
+      brandLogoPath = j.assets_dir + "/" + f.name;
+      $("brand-logo-name").textContent = f.name;
+    } catch (e) { err("Logo upload failed: " + e.message); }
+    finally { ev.target.value = ""; }
+  });
+  $("brand-save") && $("brand-save").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/brand`, {
+        brand: {
+          name: $("brand-name").value.trim(),
+          cta_text: $("brand-cta").value.trim(),
+          logo_path: brandLogoPath,
+          disclosure: $("brand-disclosure").checked,
+        },
+      });
+      // Show what's still missing BEFORE any spend — that's the whole point of the gate.
+      $("brand-hint").innerHTML = d.mode !== "brand"
+        ? "story mode — no brand mandatories enforced"
+        : (d.missing || []).length
+          ? `⚠ still missing: ${(d.missing || []).map(escapeHtml).join(" · ")}`
+          : "✓ brand mandatories complete — ad is cleared to render";
+      render(d.canvas);
+    } catch (e) { err(e.message); }
+  });
+
+  // ── Publish: posting kit / export / provenance / performance (S31 #2, #3) ──
+  // These routes are run_id-keyed and already worked for a canvas render_id; only the
+  // Story door ever surfaced them.
+  $("kit-btn") && $("kit-btn").addEventListener("click", async () => {
+    if (!runId) return;
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/posting-kit`, {});
+      $("kit-out").hidden = false;
+      $("kit-out").innerHTML =
+        `<textarea class="edit" rows="3" readonly>${escapeHtml(d.caption || "")}</textarea>` +
+        `<div class="muted" style="font-size:11px;margin-top:4px">${escapeHtml((d.hashtags || []).join(" "))}</div>`;
+    } catch (e) { err(e.message); }
+  });
+  $("perf-save") && $("perf-save").addEventListener("click", async () => {
+    const rid = lastCanvas && lastCanvas.render_id;
+    if (!rid) { err("Render the reel first."); return; }
+    err("");
+    try {
+      await api(`/performance/${rid}`, {
+        views: parseInt($("perf-views").value, 10) || 0,
+        likes: parseInt($("perf-likes").value, 10) || 0,
+      });
+      $("publish-hint").textContent = "✓ logged — feeds the performance history";
+    } catch (e) { err(e.message); }
+  });
+
+  // ── Real photos from the browser (S31 pre-flight #1) ───────────────────────
+  // THE parity blocker: canvas only accepted a SERVER-side path, and a hosted server
+  // cannot see the user's disk — so the moat workflow (real photos → untouched
+  // passthrough) was Story-door-only in production. Same /upload-folder route the Story
+  // door already used; batched because one big folder in a single request gets rejected.
+  const _MEDIA_RE = /\.(jpe?g|png|webp|heic|mp4|mov|m4v|webm)$/i;
+  const _BATCH_BYTES = 40 * 1024 * 1024;
+
+  async function uploadMedia(fileList) {
+    const media = Array.from(fileList || []).filter((f) => _MEDIA_RE.test(f.name));
+    if (!media.length) { err("No images or videos found there."); return; }
+    if (!runId) { err("Plan a story first."); return; }
+    err("");
+    const batches = [];
+    let cur = [], bytes = 0;
+    for (const f of media) {
+      if (cur.length && bytes + f.size > _BATCH_BYTES) { batches.push(cur); cur = []; bytes = 0; }
+      cur.push(f); bytes += f.size;
+    }
+    if (cur.length) batches.push(cur);
+
+    let done = 0, dir = "";
+    $("upload-hint").textContent = `uploading 0/${media.length}…`;
+    try {
+      for (const batch of batches) {
+        const fd = new FormData();
+        fd.append("session_id", runId);        // land in THIS canvas's assets dir
+        batch.forEach((f) => fd.append("files", f, f.name));
+        const r = await fetch("/upload-folder", { method: "POST", body: fd });
+        if (!r.ok) throw new Error(`server returned ${r.status} (file too large or rejected)`);
+        const j = await r.json();
+        if (j.error) throw new Error(j.error);
+        dir = j.assets_dir;
+        done += batch.length;
+        $("upload-hint").textContent = `uploading ${done}/${media.length}…`;
+      }
+      $("assets-folder").value = dir;
+      $("upload-hint").textContent = `✓ ${done} uploaded — now match them to your shots`;
+    } catch (e) {
+      $("upload-hint").textContent = "";
+      err("Upload failed: " + e.message);
+    }
+  }
+  $("photos-input") && $("photos-input").addEventListener("change", (ev) => {
+    uploadMedia(ev.target.files).finally(() => { ev.target.value = ""; });
+  });
+  $("photofiles-input") && $("photofiles-input").addEventListener("change", (ev) => {
+    uploadMedia(ev.target.files).finally(() => { ev.target.value = ""; });
+  });
+
   $("match-btn").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     const folder = $("assets-folder").value.trim();
@@ -1738,6 +1932,92 @@
     }
   });
 
+  // ── S30 Phase 1: Locations sheet — the "character sheet for places". Mirrors the
+  // cast sheet: attrs carry to every shot set there (invariant clause), the generated
+  // PLATE (empty set — no people, space for characters) locks the look of the place.
+  function _lattr(lid, attr, val, ph, w) {
+    return `<input class="lattr cattr" data-loc="${lid}" data-attr="${attr}" placeholder="${ph}"
+              value="${escapeHtml(val || "")}"${w ? ` style="width:${w}px"` : ""}>`;
+  }
+  function renderLocations(locs) {
+    const el = $("locations");
+    if (!locs || !locs.length) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<h4>🏞 Locations — the same place stays the SAME place across shots; a plate locks its look</h4>`
+      + locs.map((l) => `
+        <div class="cv-char" data-loc="${l.id}">
+          <div class="char-head">
+            <span class="nm">${escapeHtml(l.label || l.id)}</span>
+            ${l.plate_path ? `<img class="loc-plate" src="${mediaUrl(l.plate_path)}" alt="" title="Click to view full size">` : `<span class="muted">no plate</span>`}
+            <button class="loc-gen" data-loc="${l.id}" title="${l.plate_path
+              ? "Generate a FRESH plate from the fields below (uses any edits you just typed)"
+              : "Generate an EMPTY establishing plate of this place — no people, space left for your characters. Shots with NO character are then generated from this plate itself; character shots follow the location's wording (one reference image, and the face wins it — plate+face lands with D5)."}">${l.plate_path ? "↻ New plate" : "🏞 Generate plate"}</button>
+            <button class="loc-save char-save" data-loc="${l.id}">Save</button>
+          </div>
+          <div class="char-attrs">
+            ${_lattr(l.id, "label", l.label, "name (cave interior…)")}
+            ${_lattr(l.id, "description", l.description, "the place itself — walls, props, light (never the people)", 300)}
+            ${_lattr(l.id, "time_of_day", l.time_of_day, "time of day (dawn…)")}
+          </div>
+        </div>`).join("");
+  }
+  $("locations").addEventListener("click", async (ev) => {
+    const plate = ev.target.closest("img.loc-plate");
+    if (plate) { window.open(plate.src, "_blank"); return; }
+    const gen = ev.target.closest(".loc-gen");
+    const save = ev.target.closest(".loc-save");
+    const btn = gen || save;
+    if (!btn) return;
+    const lid = btn.getAttribute("data-loc");
+    const attrs = {};
+    document.querySelectorAll(`.lattr[data-loc="${lid}"]`).forEach((i) => {
+      attrs[i.getAttribute("data-attr")] = i.value;
+    });
+    err(""); btn.disabled = true;
+    try {
+      if (save) {
+        const d = await api(`/api/canvas/${runId}/location`, { loc_id: lid, attrs });
+        renderLocations(d.canvas.locations); render(d.canvas);
+        $("match-hint").textContent = "✓ location saved — applies to its shots";
+      } else {
+        const row = gen.closest(".cv-char");
+        const isRedo = !!(row && row.querySelector("img.loc-plate"));
+        const oldLabel = gen.textContent; gen.textContent = "…";
+        const d = await api(`/api/canvas/${runId}/location-plate`, {
+          loc_id: lid, attrs,
+          variant: isRedo ? (1 + Math.floor(Math.random() * 1e6)) : 0,
+        });
+        renderLocations(d.canvas.locations); render(d.canvas);
+        $("match-hint").textContent = isRedo
+          ? "↻ new plate generated — click it to view full size; ↻ again for another"
+          : "✓ location plate locked — its shots hold this set";
+        void oldLabel;
+      }
+    } catch (e) { err((save ? "Save: " : "Plate: ") + e.message); btn.disabled = false; if (gen) gen.textContent = "🏞 Generate plate"; }
+  });
+  $("locs-btn").addEventListener("click", async () => {
+    if (!runId) { err("Plan a story first."); return; }
+    err("");
+    try {
+      const d = await api(`/api/canvas/${runId}/locations`, {});
+      renderLocations((d.canvas && d.canvas.locations) || d.locations || []);
+      const panel = $("locations");
+      if (!panel.hidden) {   // visible response, same as Cast (S10 lesson)
+        panel.scrollIntoView({ behavior: "smooth", block: "center" });
+        panel.classList.add("flash");
+        setTimeout(() => panel.classList.remove("flash"), 1200);
+      } else if (d.canvas && d.canvas.locations_warning) {
+        // A FAILED derive used to render as a confident "no locations detected" — the
+        // operator concluded their multi-location story had one setting and never
+        // retried. Say what actually happened.
+        $("match-hint").textContent = "";
+        err(d.canvas.locations_warning);
+      } else {
+        $("match-hint").textContent = "no distinct locations detected for this story";
+      }
+    } catch (e) { err(e.message); }
+  });
+
   // Character-level: attach a real photo of the person to every people-shot.
   $("board").addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && ev.target.matches("input.edit")) ev.target.blur();
@@ -1759,7 +2039,7 @@
   $("chat-send").addEventListener("click", sendChat);
   $("chat-input").addEventListener("keydown", (ev) => { if (ev.key === "Enter") sendChat(); });
 
-  $("board").addEventListener("click", async (ev) => {
+  async function handleStageClick(ev) {
     const gen = ev.target.closest(".gen[data-stage]");
     const appr = ev.target.closest(".appr[data-approve]");
     if (!runId || (!gen && !appr)) return;
@@ -1798,5 +2078,275 @@
         render(d.canvas);
       }
     } catch (e) { err(e.message); }
+  }
+  // Bound to BOTH: the buttons moved to the common bar (S31), and the board still
+  // hosts inline .gen/.appr affordances. One handler, two hosts, zero duplicated rules.
+  $("board").addEventListener("click", handleStageClick);
+  $("stage-bar") && $("stage-bar").addEventListener("click", handleStageClick);
+
+  // ══ Stage view (S31) — the film built step by step. A NEW view toggled from the board;
+  // REUSES renderInspector, the cast/location sheets and the stage generate/approve markup,
+  // so every control on the board is reachable here too (nothing reimplemented, nothing lost).
+  const SV_STAGES = [
+    {id:"script",     nm:"Script",         kind:"stage", desc:"The story turned into a shot list. Edit any line; everything downstream re-plans from it."},
+    {id:"storyboard", nm:"Shot Breakdown", kind:"stage", desc:"Each beat as a shot — camera move, timing, framing. The production guide every later stage follows."},
+    {id:"characters", nm:"Characters",     kind:"cast",  desc:"Lock each person once — a real photo keeps the face exact across every shot (the thing that stops the face drifting)."},
+    {id:"locations",  nm:"Locations",      kind:"loc",   desc:"Lock each place once; a plate keeps the same set across every shot filmed there."},
+    {id:"keyframes",  nm:"Key Frames",     kind:"stage", desc:"The anchor image for every shot. Click a shot to edit it — real media is never re-generated."},
+    {id:"video",      nm:"Video",          kind:"stage", desc:"Each key frame becomes a moving shot. Generate them one at a time and preview before the final cut."},
+    {id:"finalcut",   nm:"Final Cut",      kind:"stage", desc:"Every approved clip assembled — beat-synced cuts, narration, captions — into the finished 9:16 reel."},
+  ];
+  let svActive = "keyframes";
+  let svKfMode = "frames";   // Key Frames grid shows "frames" or the "sketches" (storyboard panels, drawn after approval)
+  let svOrig = null;   // original DOM parents of the reused elements, to restore on exit
+
+  function svStageMeta(id){ return (lastCanvas && (lastCanvas.stages||[]).find(x=>x.id===id)) || {status:"pending"}; }
+  function svStatusClass(st){ return (st==="done"||st==="approved") ? "done" : (st==="generating" ? "work" : "wait"); }
+  function svBoard(){ return (lastCanvas && lastCanvas.board) || []; }
+  function svStillFor(c){ return stillsCache[c.frame_id] || c.real_path || ""; }
+
+  function svCount(item){
+    const b = svBoard(), n = b.length;
+    if (item.kind === "cast") return String(((lastCanvas&&lastCanvas.characters)||[]).length || 0);
+    if (item.kind === "loc")  return String(((lastCanvas&&lastCanvas.locations)||[]).length || 0);
+    if (item.id === "keyframes") return `${b.filter(c=>svStillFor(c)).length}/${n}`;
+    if (item.id === "video")     return `${Object.keys(clipsCache).length}/${n}`;
+    const st = svStageMeta(item.id).status;
+    return (st==="done"||st==="approved") ? "✓" : (st==="generating" ? "…" : "—");
+  }
+  function svClass(item){
+    if (item.kind === "cast") return ((lastCanvas&&lastCanvas.characters)||[]).length ? "done" : "wait";
+    if (item.kind === "loc")  return ((lastCanvas&&lastCanvas.locations)||[]).length ? "done" : "wait";
+    if (item.id === "keyframes") return svBoard().some(svStillFor) ? "done" : "wait";
+    if (item.id === "video")     return Object.keys(clipsCache).length ? "work" : "wait";
+    return svStatusClass(svStageMeta(item.id).status);
+  }
+
+  function renderStageView(){
+    if (!lastCanvas) return;
+    // ribbon
+    const ribbon = SV_STAGES.map((it,i)=>{
+      const cls = svClass(it), thumb = svBoard()[Math.min(i, svBoard().length-1)];
+      const th = (it.id==="keyframes"||it.id==="video") && svStillFor(thumb||{})
+        ? `<img src="${mediaUrl(svStillFor(thumb))}" alt="">` : `<span style="color:var(--mut);font-family:Georgia,serif">Aa</span>`;
+      const arrow = i < SV_STAGES.length-1 ? `<div class="rbn-ar">→</div>` : "";
+      return `<div class="rbn ${it.id===svActive?"active":""}" data-sv="${it.id}"><div class="rbn-th ${cls}">${th}</div><div class="rbn-nm">${it.nm}</div><div class="rbn-ct">${svCount(it)}</div></div>${arrow}`;
+    }).join("");
+    $("sv-ribbon").innerHTML = ribbon;
+    // spine
+    $("sv-spine").innerHTML = SV_STAGES.map(it=>{
+      const cls = svClass(it), dot = {done:"●",work:"◐",wait:"○"}[cls];
+      return `<button class="spn ${cls} ${it.id===svActive?"active":""}" data-sv="${it.id}"><span class="spn-dot">${dot}</span><span class="spn-nm">${it.nm}</span><span class="spn-ct">${svCount(it)}</span></button>`;
+    }).join("");
+    svSelectStage(svActive, true);
+  }
+
+  function svSelectStage(id, keep){
+    svActive = id;
+    document.querySelectorAll("#stage-view [data-sv]").forEach(e=>e.classList.toggle("active", e.dataset.sv===id));
+    const it = SV_STAGES.find(x=>x.id===id) || SV_STAGES[4];
+    $("sv-eyebrow").textContent = `Stage ${SV_STAGES.indexOf(it)+1} of ${SV_STAGES.length}`;
+    $("sv-title").textContent = it.nm;
+    $("sv-desc").textContent = it.desc;
+    svRenderActions(it);
+    svRenderCenter(it);
+  }
+
+  // Stage generate/approve — the SAME .gen/.appr markup the board's stage bar uses, so the
+  // existing handleStageClick (bound below) drives it. No new spend logic.
+  function svRenderActions(it){
+    const host = $("sv-actions");
+    if (it.kind === "cast" || it.kind === "loc"){ host.innerHTML = ""; return; }
+    const s = svStageMeta(it.id);
+    let btn = "";
+    if (it.id === "audio") btn = `<button disabled>set in Final Cut</button>`;
+    else if (s.status === "generating") btn = `<button disabled>Generating…</button>`;
+    else if (s.status === "done") btn = `<button class="appr" data-approve="${it.id}">Approve ✓</button>`;
+    else if (s.status === "approved") btn = `<button disabled>Approved ✓</button>`;
+    else if (s.ready) btn = `<button class="gen" data-stage="${it.id}">${s.paid?`Generate · ${usd(s.cost_usd)}`:"Generate"}</button>`;
+    else btn = `<button disabled>Locked</button>`;
+    host.innerHTML = btn;
+    // Key Frames: the pencil-sketch storyboard is drawn AFTER the frames exist (user flow).
+    if (it.id === "keyframes"){
+      host.insertAdjacentHTML("beforeend",
+        ` <button class="appr" id="sv-sketch-all" title="Draw a loose graphite storyboard panel per shot (framing + camera move) — a planning sketch, cheap">✏️ Sketch all shots</button>` +
+        ` <button class="appr" id="sv-kf-mode">${svKfMode==="sketches"?"🖼 Show frames":"✏️ Show sketches"}</button>`);
+    }
+  }
+
+  function svShotCard(c,i){
+    const still = svStillFor(c), clip = clipsCache[c.frame_id] || "";
+    const isReal = c.asset_kind === "real";
+    const badge = isReal ? `<span class="svc-badge b-real">REAL</span>`
+      : `<span class="svc-badge b-${c.asset_kind==="ai_person"?"person":"ai"}">${c.asset_kind==="ai_person"?"AI FACE":"AI"}</span>`;
+    const media = still ? `<img src="${mediaUrl(still)}" alt="">` : `<div class="svc-empty">${i+1}</div>`;
+    const play = (svActive==="video" && clip) ? `<span class="svc-play">▶</span>` : "";
+    return `<div class="svc" data-frame="${c.frame_id}"><div class="svc-media">${media}<span class="svc-n">${i+1}</span>${badge}${play}</div>
+      <div class="svc-body"><div class="svc-cap">${escapeHtml(c.caption||"(no line)")}</div>
+      <div class="svc-meta"><span>${escapeHtml(c.motion||"")}</span><span>${c.duration?c.duration+"s":""}</span></div></div></div>`;
+  }
+
+  function svRenderCenter(it){
+    const center = $("sv-center");
+    svUnmountSheets();                    // pull any moved sheet OUT before we touch innerHTML
+    if (it.kind === "cast"){ center.innerHTML=""; svMount($("characters"), center); $("characters").hidden = false; renderCharacters((lastCanvas&&lastCanvas.characters)||[]); return; }
+    if (it.kind === "loc"){  center.innerHTML=""; svMount($("locations"), center);  $("locations").hidden = false;  renderLocations((lastCanvas&&lastCanvas.locations)||[]); return; }
+    const b = svBoard();
+    if (it.id === "script"){    // the written lines
+      center.innerHTML = `<div class="sv-textlist">` + b.map((c,i)=>
+        `<div class="sv-line" data-frame="${c.frame_id}"><span class="n">${i+1}</span>${escapeHtml(c.caption||"(no line)")}</div>`
+      ).join("") + `</div>`;
+      return;
+    }
+    if (it.id === "storyboard"){ // the shot breakdown — the production guide (framing, camera, move)
+      center.innerHTML = `<div class="sv-textlist">` + b.map((c,i)=>
+        `<div class="sv-line" data-frame="${c.frame_id}">
+           <div><span class="n">${i+1}</span>${escapeHtml(c.caption||"(no line)")}</div>
+           <div class="svc-meta" style="margin-top:7px;gap:12px">
+             <span>▦ ${escapeHtml(c.shot_size||"shot")}</span>
+             <span>◎ ${escapeHtml(c.camera||"auto")}</span>
+             <span>➔ ${escapeHtml(c.motion||"slow push")}</span>
+             ${c.emotion?`<span>♥ ${escapeHtml(c.emotion)}</span>`:""}
+           </div>
+           ${c.note?`<div style="font-size:11px;color:var(--mut);margin-top:6px">${escapeHtml(c.note)}</div>`:""}
+         </div>`
+      ).join("") + `</div>`;
+      return;
+    }
+    if (it.id === "audio"){ center.innerHTML = `<p class="sv-mount">Audio (music / voiceover) is chosen in ⚙ Reel settings and mixed at Final Cut.</p>`; return; }
+    if (it.id === "finalcut"){
+      const rid = lastCanvas && lastCanvas.render_id;
+      center.innerHTML = rid
+        ? `<p class="sv-mount">Final cut is assembled. Use “🎬 Render reel” in the top bar to (re)assemble; the finished reel + downloads live in the board’s render panel.</p>`
+        : `<p class="sv-mount">Generate and approve Video, then render the Final Cut from the top bar.</p>`;
+      return;
+    }
+    if (it.id === "keyframes" && svKfMode === "sketches"){
+      center.innerHTML = `<div class="sv-grid">` + b.map((c,i)=>{
+        const art = c.storyboard_art;
+        const media = art ? `<img src="${mediaUrl(art)}" alt="" style="filter:contrast(1.05)">`
+          : `<div class="svc-empty">✏️<span style="font-size:11px;position:absolute;bottom:10px">not sketched</span></div>`;
+        return `<div class="svc" data-frame="${c.frame_id}"><div class="svc-media" style="aspect-ratio:3/4;background:#f4f2ec">${media}<span class="svc-n">${i+1}</span></div>
+          <div class="svc-body"><div class="svc-cap">${escapeHtml(c.caption||"")}</div>
+          <div class="svc-meta"><span>${escapeHtml(c.camera||"")}</span><span>${escapeHtml(c.motion||"")}</span></div></div></div>`;
+      }).join("") + `</div>`;
+      return;
+    }
+    // keyframes (frames view) / video → the shot grid
+    center.innerHTML = `<div class="sv-grid">` + b.map((c,i)=>svShotCard(c,i)).join("") + `</div>`;
+  }
+
+  // Reuse elements by MOVING them, restoring to their exact origin so the board still works.
+  // Two independent stores so closing the settings drawer never disturbs the stage view.
+  const SV_STORE = new Map(), SET_STORE = new Map();
+  function svMove(el, target, store){
+    if (!el) return;
+    if (!store.has(el)) store.set(el, {parent: el.parentNode, next: el.nextSibling, hidden: el.hidden});
+    target.appendChild(el);
+  }
+  function svHome(el, store){
+    const o = store.get(el); if (!o) return;
+    o.parent.insertBefore(el, o.next); el.hidden = o.hidden; store.delete(el);
+  }
+  function svRestoreAll(store){ Array.from(store.keys()).forEach(el=>svHome(el, store)); }
+  function svMount(el, target){ svMove(el, target, SV_STORE); }
+  // Re-home the cast/location SHEETS before any innerHTML replace would destroy them.
+  function svUnmountSheets(){ ["characters","locations"].forEach(id=>svHome($(id), SV_STORE)); }
+
+  function svShowInspector(){
+    svMount($("inspector"), $("sv-inspector-slot"));
+    $("inspector").hidden = false;
+    $("sv-inspector-slot").hidden = false; $("sv-chat-slot").hidden = true;
+    document.querySelectorAll(".sv-tab").forEach(t=>t.classList.toggle("active", t.dataset.tab==="shot"));
+    $("sv-tab-shot").disabled = false;
+  }
+  function svShowChat(){
+    $("sv-inspector-slot").hidden = true; $("sv-chat-slot").hidden = false;
+    document.querySelectorAll(".sv-tab").forEach(t=>t.classList.toggle("active", t.dataset.tab==="chat"));
+  }
+
+  function svChatBox(){
+    $("sv-chat-slot").innerHTML =
+      `<div class="sv-chatbox"><div class="sv-chatlog" id="sv-chatlog">
+         <div class="sv-msg ai">Tell me what to change in plain English — “make shot 3 warmer”, “add a rain shot”, “lock the vendor’s face”. I re-plan the shots from it.</div>
+       </div>
+       <div class="sv-chatin"><input id="sv-chat-input" placeholder="Tell the director what to change…"><button id="sv-chat-send">↑</button></div></div>`;
+    const send = async ()=>{
+      const inp = $("sv-chat-input"); const msg = inp.value.trim(); if(!msg||!runId) return;
+      const log = $("sv-chatlog");
+      log.insertAdjacentHTML("beforeend", `<div class="sv-msg you">${escapeHtml(msg)}</div>`);
+      inp.value=""; inp.disabled=true;
+      try{ const d = await api(`/api/canvas/${runId}/chat`, {message:msg});
+        log.insertAdjacentHTML("beforeend", `<div class="sv-msg ai">Re-planned ${((d.canvas&&d.canvas.board)||[]).length} shots.</div>`);
+        render(d.canvas); if(!$("stage-view").hidden) renderStageView();
+      }catch(e){ log.insertAdjacentHTML("beforeend", `<div class="sv-msg ai">${escapeHtml(e.message)}</div>`); }
+      finally{ inp.disabled=false; inp.focus(); log.scrollTop=log.scrollHeight; }
+    };
+    $("sv-chat-send").addEventListener("click", send);
+    $("sv-chat-input").addEventListener("keydown", e=>{ if(e.key==="Enter") send(); });
+  }
+
+  function enterStageView(){
+    $("stage-view").hidden = false; $("canvas-view").hidden = true;
+    $("view-toggle").textContent = "▦ Board";
+    svChatBox(); svShowChat();
+    renderStageView();
+  }
+  function exitStageView(){
+    $("sv-center").innerHTML = "";       // drop grid refs before restoring moved elements
+    svRestoreAll(SV_STORE);              // inspector + any sheet back to the board
+    $("stage-view").hidden = true; $("canvas-view").hidden = false;
+    $("view-toggle").textContent = "⊞ Stages";
+    if (lastCanvas) render(lastCanvas);
+  }
+
+  // wiring
+  $("view-toggle") && $("view-toggle").addEventListener("click", ()=> $("stage-view").hidden ? enterStageView() : exitStageView());
+  let svSketchPoll = null;
+  async function svSketchAll(){
+    if (!runId) return;
+    const btn = $("sv-sketch-all"); if(btn){ btn.disabled=true; btn.textContent="✏️ Sketching…"; }
+    try{
+      await api(`/api/canvas/${runId}/storyboard-art`, {});
+      // poll the canvas until the panels land, refreshing the sketches view
+      if (svSketchPoll) clearInterval(svSketchPoll);
+      svSketchPoll = setInterval(async ()=>{
+        try{ const d = await api(`/api/canvas/${runId}/state`); render(d.canvas);
+          const done = (d.canvas.board||[]).every(c=>c.storyboard_art);
+          if(!$("stage-view").hidden){ svKfMode="sketches"; renderStageView(); }
+          if(done){ clearInterval(svSketchPoll); svSketchPoll=null; }
+        }catch(e){}
+      }, 2500);
+    }catch(e){ err(e.message); if(btn){ btn.disabled=false; btn.textContent="✏️ Sketch all shots"; } }
+  }
+  $("stage-view").addEventListener("click", (ev)=>{
+    if (ev.target.closest("#sv-sketch-all")){ svSketchAll(); return; }
+    if (ev.target.closest("#sv-kf-mode")){ svKfMode = svKfMode==="sketches"?"frames":"sketches"; svSelectStage("keyframes"); return; }
+    const nav = ev.target.closest("[data-sv]");
+    if (nav){ svSelectStage(nav.dataset.sv); return; }
+    const card = ev.target.closest(".svc[data-frame], .sv-line[data-frame]");
+    if (card){ selectFrame(card.getAttribute("data-frame")); svShowInspector(); return; }
+    const tab = ev.target.closest(".sv-tab");
+    if (tab && !tab.disabled){ tab.dataset.tab==="shot" ? svShowInspector() : svShowChat(); return; }
   });
+  // stage generate/approve reuse the board's handler
+  $("sv-actions").addEventListener("click", handleStageClick);
+
+  // settings drawer (gear) — move the reel-setting sections in; restore on close.
+  function openSettings(){
+    const slot = $("settings-slot");
+    // Reel settings = World / Audio / Captions / Brand / Publish. NOT #assets (that's the
+    // story tools — Cast/Locations, which are their own stages). Move them in; keep each
+    // section's own hidden state (brand/publish stay hidden until they apply).
+    document.querySelectorAll("#canvas-view .cv2-left > details.cv-sec").forEach(d=>{
+      if (d.id !== "assets") svMove(d, slot, SET_STORE);
+    });
+    $("settings-drawer").hidden = false; $("settings-backdrop").hidden = false;
+  }
+  function closeSettings(){ svRestoreAll(SET_STORE); $("settings-drawer").hidden = true; $("settings-backdrop").hidden = true; }
+  $("settings-gear") && $("settings-gear").addEventListener("click", openSettings);
+  $("settings-close") && $("settings-close").addEventListener("click", closeSettings);
+  $("settings-backdrop") && $("settings-backdrop").addEventListener("click", closeSettings);
+
+
 })();

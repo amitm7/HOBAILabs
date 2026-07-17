@@ -76,8 +76,8 @@ To stop: `kill $(lsof -ti:7860)`
 | Service | Used For | Recharge / Sign-up URL |
 |---|---|---|
 | **fal.ai** | Aggregator: Flux, Seedream, Nano Banana (images) + Seedance, Veo 3, Hailuo (video) — one key, many models | fal.ai → Avatar → Billing |
-| **Kling AI** | Image-to-video animation (native, default for most shots) | klingai.com → Account → Recharge |
-| **Higgsfield** | Cinematic video + camera-motion presets | cloud.higgsfield.ai → Billing |
+| **Kling AI** | Image-to-video animation. ⚠ **Prepaid resource packs ONLY — no pay-as-you-go.** When no pack is *in effect* Kling refuses every call (`429 code 1102 "Account balance not enough"`), and packs **expire** on a validity window, stranding unused units. Top-up is **not self-serve** — the API Platform offers only "Contact us for purchase", so replenishment is a sales cycle. Plan ahead. | kling.ai/dev → Resource pack manage → Contact us |
+| **Higgsfield** | Cinematic video + camera motion (prompt-driven DoP model — no presets). Leads the landscape/hero lanes | cloud.higgsfield.ai → Billing (no balance API — the dashboard is the only source of truth) |
 | **OpenAI** | Scene intelligence (GPT-4.1) + symbolic images + image edits | platform.openai.com → Billing |
 | **ElevenLabs** | Voice-over + lip-sync audio | elevenlabs.io → Billing |
 | **Hedra** | Lip sync from a photo (talking portrait) — *optional* | hedra.com → Creator plan → Profile → API |
@@ -90,8 +90,10 @@ To stop: `kill $(lsof -ti:7860)`
 
 **Approximate costs per 10-frame story (Auto routing):**
 - Dev / draft tier (Kling Standard video + Seedream images): ~$0.85
-- Production / premium tier (Kling Pro / Seedance / Hailuo + Nano Banana): ~$1.00–2.00 depending on which premium video models the router picks
-- Higgsfield (when chosen): ~$1.00 · GPT-4.1 scene design: ~$0.01 (cached after first run)
+- Production / premium tier (Higgsfield / Kling Pro / Seedance / Hailuo + Nano Banana): ~$1.00–2.00 depending on which premium video models the router picks
+- GPT-4.1 scene design: ~$0.01 (cached after first run)
+
+> **Higgsfield now routes automatically (2026-07-17).** It leads the **landscape** and **hero** lanes (its strengths: camera move, cinematic) at **$0.10/5s** — cheaper than Kling Pro's $0.14 — and is the first alternate on every other video chain. It is the only video backend on its own vendor + its own credit, so it is what keeps video rendering when fal or Kling is unavailable. It is deliberately **not** the lead on `real` or `dialogue`: it re-crops its input (unsafe for real-photo preservation until tested on a real photo) and has no audio/lip-sync. See §11.
 
 > ⚠ **fal.ai model endpoint slugs and prices in `config/models.json` / `config/pricing.json` are marked `VERIFY`.** Confirm each on fal.ai before a *Production* render — they shift monthly. Dev renders are safe: video uses Kling, and unverified fal image models fall back to gpt-image automatically.
 
@@ -260,6 +262,11 @@ A **stage-gated board** that builds your reel one approved step at a time —
 - **Command box** at the bottom: refine in plain English ("make it darker, add a
   rain shot") and the shot list re-plans — the same idea as a chat assistant, wired
   to our planner.
+- **✎ Edit story** (top bar): go back to the story box, change the whole thing, and
+  **Re-plan** rebuilds this same canvas from the edited story. It asks first, because a
+  new shot list drops the generated images for shots that change or disappear. (This is
+  different from **＋ New**, which starts a blank story and leaves this one in your
+  Recents.)
 - **Set the World (one look for the whole reel).** The **🌍 World** bar takes an **art style**
   (e.g. *epic Indian miniature painting*, *anime*, *3D Pixar*) and a **setting** (e.g. *ancient
   Ayodhya palace + forest*) — click **Apply world** and it's woven into *every* shot so the
@@ -336,6 +343,21 @@ A **stage-gated board** that builds your reel one approved step at a time —
   and click **🎨 Generate** — it creates one **canonical portrait** (in your chosen World
   style), and every shot of that character then reuses that exact face. This is how you keep
   *Rama looking like Rama* across a whole mythological reel.
+- **Location sheet (places kept consistent).** Click **🏞 Locations** — the board reads the
+  story and lists its distinct **places** (e.g. *cave interior*, *chai stall at dawn*), the
+  "character sheet for places." Edit each one's name/description/time-of-day, then
+  **🏞 Generate plate**: it renders one **empty establishing plate** of that place (no
+  people — space is deliberately left for your characters), and every shot set there then
+  holds the *same* cave / the same stall instead of quietly redrawing the set between shots.
+  **↻ New plate** re-rolls it (a fresh sample, never the cached one). Free to derive; a
+  plate costs one image.
+  *How far the plate reaches today:* every shot set there gets the location's **wording**
+  baked into its prompt, and shots with **no person in them** are additionally generated
+  *from the plate itself* (image-to-image), so they hold the actual set. Shots **with a
+  character** stay anchored by wording only — the generator takes one reference image and
+  the face has to win it (identity beats place); plate-plus-face lands with the multi-
+  reference work (D5). If a place still drifts on a character shot, sharpen its
+  description — that text is what those shots follow.
 - **Wrong photo on one beat?** Hover a card → **⟳ Re-match** auto-picks the best-fitting
   photo for just that shot (now role-aware — a "brother" beat looks for a young man, not any
   family photo), or **🖼 Pick** to choose by hand.
@@ -348,6 +370,11 @@ A **stage-gated board** that builds your reel one approved step at a time —
   target length defaults to **~60s** (pick 30s/90s/3min or Auto for story-length),
   captions default to **Baskerville serif, size 52, max 2 lines** — the house
   storytelling look, readable on a phone.
+- **Mark a verdict on each shot (optional QA pass).** In a shot's Inspector, set
+  **Review**: 🔎 Needs review · ✅ Approved · 🏁 Production-ready · ❌ Rejected. The
+  verdict shows as a chip on the shot's Key Frame card so you can sweep the board and
+  see at a glance what's client-ready and what needs a ↻ re-roll. It's a label only —
+  setting it never regenerates or invalidates anything.
 - **Approve each stage: Key Frames → Video → Final Cut.** Click **Generate** on the
   *Key Frames* stage to render just the still images — review them, **↻ re-roll** any
   weak one, edit prompts — *before* spending on the expensive video. When you Generate
@@ -797,7 +824,7 @@ A still photo with the right camera move feels like real film. This is what turn
 
 ### How it works behind the scenes
 - **Kling / Seedance / Veo / Hailuo (and other prompt-driven models):** your words are sent as the motion instruction (they understand natural language)
-- **Higgsfield:** your words are matched to one of 30 real cinematic presets (e.g. `360 orbit` → their actual 360° Orbit preset)
+- **Higgsfield:** your words are sent as the motion instruction too — it runs the DoP model, which is **prompt-driven**. There is no motion-preset-ID system (an earlier version of this guide claimed 30 cinematic presets; that was never how `agents/higgsfield.py` worked). Describe the camera move in plain words. It also tends to add an emotional beat of its own (a wary face may drift into a smile), so if a beat must hold an emotion, say so in the motion prompt.
 - **Either way:** type plainly. `crane up`, `slow zoom in`, `orbit around her` all work — and whichever model the router picks for that shot receives them.
 - **Tip (avoids face morphing):** keep it to *one* gentle action + a slow camera (e.g. `slow push in`). Over-describing motion is the main cause of distorted faces.
 

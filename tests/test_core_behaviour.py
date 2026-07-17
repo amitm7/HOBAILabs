@@ -21,6 +21,7 @@ from agents import run_store
 from agents.product_surface import approval_history, register_asset, record_approval, save_version
 from agents.pricing import estimate
 from agents.script_parser import extract_caption_block, parse_frame_script
+import web_app
 from web_app import app
 
 
@@ -320,6 +321,25 @@ Full social caption.
         self.assertIn("hello", stored["log"])
         self.assertIn("again", stored["log"])
 
+    def test_run_store_reconnects_after_a_dead_connection(self):
+        # The per-thread connection used to be cached forever, so ONE transient failure
+        # (volume sleeping, another process checkpointing the -wal/-shm away) poisoned it
+        # and every later call raised until the process restarted — the Library
+        # "Couldn't load stories" outage. Closing it underneath is that failure.
+        run_id = f"unit-reconnect-{os.getpid()}"
+        run_store.save(run_id, status="running", payload={"session_id": run_id})
+        run_store._LOCAL.con.close()
+        self.assertEqual(run_store.load(run_id)["status"], "running")   # must self-heal
+
+    def test_run_store_never_defaults_into_a_temp_dir(self):
+        # The archive + DB must never default under tempfile.gettempdir(): it follows
+        # TMPDIR (which can point at removable storage) and the OS may erase it.
+        import tempfile as _tf
+        self.assertFalse(
+            str(run_store.DEFAULT_RUNS_DIR).startswith(_tf.gettempdir()),
+            f"runs default {run_store.DEFAULT_RUNS_DIR} is inside the temp dir",
+        )
+
     def test_ip_watermark_resolver_and_overlay(self):
         from agents import watermark
         # Unknown IP and missing-PNG IP both degrade to "" (no overlay, no error).
@@ -441,11 +461,13 @@ Full social caption.
         cat = model_router.catalog()
         # Every GENERATION model has a configured cross-vendor fallback chain. Excluded:
         # 'upscale' (must NOT cross-fall-back — real→creative would hallucinate a real face;
-        # degrades to the source image instead) and 'edit' (identity models fail over via
-        # routing.identity in agents/image_editor, not the per-model fallbacks map).
+        # degrades to the source image instead), 'edit' (identity models fail over via
+        # routing.identity in agents/image_editor, not the per-model fallbacks map) and
+        # 'video_to_audio' (single-vendor SFX seam — agents/sfx.py degrades in-module to
+        # "" = no atmosphere track + ledger note; a missing bed can never break a render).
         self.assertEqual(
             [m for m, meta in cat["models"].items()
-             if meta.get("kind") not in ("upscale", "edit")
+             if meta.get("kind") not in ("upscale", "edit", "video_to_audio")
              and not cat.get("fallbacks", {}).get(m)],
             [])
         # a simulated outage degrades to the next vendor
@@ -478,3 +500,69 @@ Full social caption.
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CanvasBrandGateTests(unittest.TestCase):
+    """S31 pre-flight #4 — the ad-claims gate must fire through the CANVAS path.
+
+    test_brand_mandatories (above) passes at module level even with nothing calling
+    validate_mandatories — a green test proving nothing. These assert the wiring.
+    """
+
+    def test_canvas_mode_is_derived_not_hardcoded(self):
+        story = {"frames": [{"frame_id": "f01"}]}
+        self.assertEqual(web_app._canvas_mode(story), "story")
+        self.assertEqual(web_app._canvas_brand_gate(story), [])       # a story is never gated
+        brand = {"frames": [{"frame_id": "f01"}], "brand": {"name": "Acme", "cta_text": "Buy"}}
+        self.assertEqual(web_app._canvas_mode(brand), "brand")
+        self.assertEqual(web_app._canvas_render_data(brand, "r1", "op")["mode"], "brand")
+
+    def test_incomplete_ad_is_blocked_before_any_spend(self):
+        # No logo, no product beat → the gate must name both.
+        state = {"frames": [{"frame_id": "f01", "caption": "x"}],
+                 "brand": {"name": "Acme", "cta_text": "Buy Acme"}}
+        missing = web_app._canvas_brand_gate(state)
+        self.assertTrue(any("logo" in m.lower() for m in missing), missing)
+        self.assertTrue(any("product" in m.lower() for m in missing), missing)
+
+    def test_every_paid_canvas_route_arms_the_gate(self):
+        # A paid route that forgets the gate is exactly how this leaked the first time.
+        import inspect
+        src = inspect.getsource(web_app)
+        for fn in ("api_canvas_keyframes", "api_canvas_video",
+                   "api_canvas_render", "api_canvas_render_language"):
+            start = src.index(f"def {fn}(")
+            body = src[start:start + 2600]
+            self.assertIn("_canvas_brand_gate", body, f"{fn} spends without the brand gate")
+
+
+class PostingKitTests(unittest.TestCase):
+    def test_posting_kit_refuses_brand_copy(self):
+        from agents import posting_kit
+        # BRAND_PLAN §5: AI never writes ad claims. Harmless on a story, not on an ad.
+        with self.assertRaises(posting_kit.BrandCopyRefused):
+            posting_kit.build([{"frame_id": "f01", "caption": "x"}], mode="brand")
+
+    def test_posting_kit_builds_from_the_story(self):
+        from agents import posting_kit
+        kit = posting_kit.build([{"frame_id": "f01", "caption": "A Mumbai chai seller"},
+                                 {"frame_id": "f02", "caption": "funded her degree"}])
+        self.assertIn("chai seller", kit["caption"])
+        self.assertEqual(kit["cover_frame_id"], "f01")
+        self.assertTrue(all(t.startswith("#") for t in kit["hashtags"]))
+        self.assertIn("#Reels", kit["hashtags"])
+
+
+class CanvasAuthTests(unittest.TestCase):
+    def test_canvas_plan_is_operator_gated_like_run(self):
+        """S31 pre-flight #5 — /api/canvas/plan spent LLM tokens anonymously.
+
+        "Free" means no vendor RENDER, not no cost: planning is a reasoning-tier
+        completion plus cast derivation. Asserted at the source, because the dev bypass
+        (HOB_AUTH_DISABLED=1 in .env) makes a live 200 prove nothing.
+        """
+        import inspect
+        src = inspect.getsource(web_app)
+        i = src.index('def api_canvas_plan(')
+        self.assertIn("@auth.require_operator()", src[max(0, i - 200):i])
+        self.assertIn("operator", inspect.signature(web_app.api_canvas_plan).parameters)

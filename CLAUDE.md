@@ -79,6 +79,12 @@ pytest tests/                                         # tests
   ledger + canvas-state write safety; P1 plan-time auto-fill, per-character voices,
   shot take-history, Remotion caption wiring; P2 selective lip-sync + beat→asset ladder.
   Includes the owner-suggestion ledger (S1–S17) — check it before starting canvas work.
+- **S30 galleri5 live-run teardown → adoption track (2026-07-14):** decision record in
+  `docs/COMPETITOR_GALLERI5_TEARDOWN.md §10`, execution in `docs/S30_ADOPTION_PLAN.md` —
+  **location anchoring SHIPPED** (🏞 Locations sheet: derive → invariant clause → empty
+  plates; the S28 "character sheet for places"), **SFX seam SHIPPED** (`agents/sfx.py` +
+  models.json `mmaudio`; the Final-Cut mix stem is ticketed). Found live: the **fal.ai
+  account is balance-locked** — all fal generation 403s until top-up.
 - **Veristory rebrand (2026-07-05):** the web presence is re-signatured to the
   **Veristory** design system (verified green + antique bronze + Hanken Grotesk /
   Cormorant Garamond / IBM Plex Mono). Tokens live in `web/static/veristory/`
@@ -94,5 +100,9 @@ pytest tests/                                         # tests
 - `docs/HLD.md` / `docs/LLD.md` — high- / low-level design.
 - `docs/PRODUCT_IDEAS.md` + `ROADMAP.md` — backlog + roadmap.
 - `docs/BRAND_PLAN.md`, `docs/MODE3_PLAN.md`, `docs/SCALE_PLAN.md`, `docs/WORK_PLAN.md`,
-  `docs/PRESENTER_PLAN.md` (S29 podcast/presenter format — agreed, not started) — plans.
+  `docs/PRESENTER_PLAN.md` (S29 podcast/presenter format — agreed, not started),
+  `docs/CANVAS_ENTRY_PLAN.md` (S31 **one creator mode** — Canvas is the product; Story/
+  Brand/Studio doors retired, prompt-first entry, scope registry — decided, not started),
+  `docs/PRICING_PLAN.md` (S32 SaaS credit model + ladder + admin portal — researched,
+  proposed, NOT decided; pilot before billing) — plans.
 - `.agents/skills/build-feature/SKILL.md` — how to build & verify a change here.
