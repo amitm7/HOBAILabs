@@ -841,7 +841,7 @@ def _canvas_subject_name(state: dict) -> str:
              for c in chars if (c.get("ref_path") or "").strip()]
     for f in frames:                      # per-shot face refs need no cast-sheet entry
         if (f.get("character_ref_path") or "").strip():
-            c = by_id.get(f.get("speaker_id")) or {}
+            c = by_id.get(f.get("visual_subject_id") or f.get("speaker_id")) or {}
             names.append((c.get("name") or c.get("label") or "").strip())
     named = [n for n in dict.fromkeys(names) if n]
     # A real face is referenced but nobody is named — still a real person; say so rather
@@ -1036,6 +1036,29 @@ def api_canvas_keyframes(run_id: str, operator: str):
     state = _canvas_load(run_id)
     if state is None:
         return jsonify({"error": "Unknown canvas"}), 404
+    # Asset-first HARD gate (galleri5 discipline, 2026-07-19): paid still
+    # generation is blocked while an on-screen character has NO locked face —
+    # unanchored generation is exactly how the same character came out different
+    # in every shot. Per canvas-controls-philosophy this is a gate with a story
+    # (the error names the characters + the fix) and an explicit escape
+    # (`force: true`), never a silent trap. Narrator excluded (voice-only);
+    # frames with their own ref or real/passthrough media don't count.
+    if not (request.json or {}).get("force"):
+        chars = {c.get("id"): c for c in state.get("characters") or []}
+        unlocked = sorted({
+            (chars.get(vid) or {}).get("name") or vid
+            for f in state.get("frames") or []
+            if (f.get("photo_spec") or "").startswith("ai_portrait")
+            and not (f.get("character_ref_path") or "").strip()
+            and (vid := f.get("visual_subject_id") or f.get("speaker_id") or "narrator")
+                != "narrator"
+            and not ((chars.get(vid) or {}).get("ref_path") or "").strip()})
+        if unlocked:
+            return jsonify({
+                "error": f"No locked face for: {', '.join(unlocked)}. Lock each on the "
+                         f"Character sheet (📎 photo or 🎨 Generate face) so they stay "
+                         f"the SAME person in every shot — or pass force to spend anyway.",
+                "unlocked_characters": unlocked}), 409
     render_id = state.get("render_id") or str(uuid.uuid4())
     state["render_id"] = render_id
     data = _canvas_render_data(state, render_id, operator)
@@ -1602,7 +1625,11 @@ def api_canvas_location_plate(run_id: str, operator: str):
     try:
         plate = image_generator.generate_location_plate(
             description, out_dir, world_clause=world_clause,
-            time_of_day=loc.get("time_of_day", ""), loc_id=loc_id, variant=variant)
+            time_of_day=loc.get("time_of_day", ""), loc_id=loc_id, variant=variant,
+            # galleri5 anatomy: the plate anticipates the reel's mood/light arc,
+            # and follows the reel's orientation (was hardcoded 9:16).
+            lighting_arc=(state.get("mood") or "").strip(),
+            orientation=state.get("orientation") or "portrait")
         governance.release_reservation(one, run_id=run_id, reason="canvas_loc_plate_done")
         governance.record_cost_event(governance.project_key(one), item="canvas_loc_plate",
                                      usd=usd, run_id=run_id, event_type="estimate")
@@ -3556,6 +3583,10 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
     frames = []
     for fd in data.get("frames", []):
         _speaker_id = (fd.get("speaker_id") or "narrator")
+        # Who is DEPICTED, not just who's speaking — a third-person protagonist
+        # (narrated about, not quoted) still needs their own locked identity.
+        # Defaults to speaker_id, so first-person stories are unaffected.
+        _visual_subject_id = (fd.get("visual_subject_id") or _speaker_id)
         caption = fd.get("caption", "").strip()
         words = len(caption.split()) if caption else 0
         auto_dur = 2.5 if words == 0 else max(3.5, min(max_frame_dur, words / 2.0))
@@ -3625,6 +3656,10 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             "video_start_sec": float(fd.get("video_start_sec") or 0.0),
             "duration":        duration,
             "speaker_id":      _speaker_id,
+            "visual_subject_id": _visual_subject_id,
+            # The reel's orientation rides every frame so STILL generation sizes
+            # (and Gate B's orientation check) follow the canvas setting.
+            "orientation":     data.get("orientation", "portrait"),
             "product_beat":    bool(fd.get("product_beat", False)),
             "layout":          fd.get("layout") or {},
             # Per-frame caption overrides (blank = use the global caption style).
@@ -3638,8 +3673,17 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             # face reference directly on the frame (Replace → 🎭 AI face, Characters stage).
             # Fall back to the frame's own ref so the uploaded face actually conditions the
             # generation instead of being dropped.
-            "character_ref_path": (character_refs.get(_speaker_id)
+            "character_ref_path": (character_refs.get(_visual_subject_id)
+                                   or character_refs.get(_speaker_id)
                                    or fd.get("character_ref_path") or "").strip(),
+            # This rebuild DROPS any field not listed here — S30's location anchoring
+            # and the compile-mode audio/voice fields were silently lost on the render
+            # path until 2026-07-19 (canvas plates never conditioned renders).
+            "location_clause":   (fd.get("location_clause") or "").strip(),
+            "location_ref_path": (fd.get("location_ref_path") or "").strip(),
+            "character_appearance": (fd.get("character_appearance") or "").strip(),
+            "audio_intent":      (fd.get("audio_intent") or "").strip(),
+            "voice_direction":   (fd.get("voice_direction") or "").strip(),
             "negative_prompt": (fd.get("negative_prompt") or "").strip(),
             "continuity_lock": (fd.get("continuity_lock") or "").strip(),
         })
@@ -3778,7 +3822,11 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
             _deg.decision("image", f.get("frame_id", ""), img_model)
         except Exception:
             pass
-        sid = f.get("speaker_id", "narrator")
+        # D1 locks by visual subject (who's depicted), not speaker (who's talking) —
+        # a narrated-about third-person protagonist must reuse their own first
+        # portrait across every shot, not the narrator's (who has no face at all).
+        # Defaults to speaker_id, so first-person stories are unaffected.
+        sid = f.get("visual_subject_id") or f.get("speaker_id", "narrator")
         # Studio Mode: an explicit locked Talent reference wins over the auto
         # per-speaker face_ref, so every shot locks to the same chosen face.
         talent_ref = (f.get("talent_ref_path") or "").strip()
@@ -3997,25 +4045,51 @@ def _canvas_render_thread(run_id: str, data: dict, run_dir: Path):
     _thread_run.run_id = run_id
     degradation.bind(run_id)      # T1: every fallback during this render is ledgered
     try:
-        if data.get("music_type") == "generate" and not data.get("music_path"):
+        _mt = data.get("music_type")
+        # Voiceover reels get a bed too: generated the same way, but mixed UNDER the
+        # narration via the existing VO+bed mixer (VO 100%, bed looped/ducked/faded —
+        # the brand-mode path in assembler). Previously VO mode skipped bed generation
+        # entirely, so narration played over dead silence unless the operator happened
+        # to upload a song. Cutting stays uniform for VO by design (no beat-cut on
+        # narration) — the bed here is audio texture, not a beat source.
+        _needs_bed = ((_mt == "generate" and not data.get("music_path"))
+                      or (_mt == "voiceover" and not data.get("bg_music_path")))
+        if _needs_bed:
             from agents.music_generator import generate_music, compose_music_brief
             music_path = str(run_dir / "music.mp3")
             brief = compose_music_brief([f.get("caption", "") for f in data.get("frames", [])],
                                         mood=data.get("mood", ""))
-            print("[Canvas] Generating music bed (enables beat-aware cutting)…")
+            if _mt == "voiceover":
+                print("[Canvas] Generating music bed (ducked under the narration)…")
+            else:
+                print("[Canvas] Generating music bed (enables beat-aware cutting)…")
             generate_music(brief, music_path)
             if os.path.exists(music_path):
-                data["music_path"] = music_path
-                print("[Canvas] ✓ music bed ready — cuts will land on the beat")
+                if _mt == "voiceover":
+                    data["bg_music_path"] = music_path
+                    print("[Canvas] ✓ music bed ready — mixed under the voice-over")
+                else:
+                    data["music_path"] = music_path
+                    print("[Canvas] ✓ music bed ready — cuts will land on the beat")
                 _set_canvas_audio_warning(data.get("canvas_run_id", ""), "")
     except Exception as e:
-        print(f"[Canvas] ⚠ MUSIC FAILED — the reel will have NO soundtrack: {e}")
-        degradation.report("audio", "alert",
-                           f"music generation failed — reel has NO soundtrack ({str(e)[:120]})")
-        _set_canvas_audio_warning(
-            data.get("canvas_run_id", ""),
-            f"Music generation failed — this reel has NO soundtrack. Fix the cause and "
-            f"re-run Final Cut, or pick a different Audio option. ({str(e)[:180]})")
+        if data.get("music_type") == "voiceover":
+            # The narration still renders — a failed bed degrades texture, not the story.
+            print(f"[Canvas] ⚠ music bed failed — narration will have no background: {e}")
+            degradation.report("audio", "warn",
+                               f"music bed under narration failed — VO only ({str(e)[:120]})")
+            _set_canvas_audio_warning(
+                data.get("canvas_run_id", ""),
+                f"Music bed failed — the reel has narration but no background music. "
+                f"Re-run Final Cut to retry. ({str(e)[:180]})")
+        else:
+            print(f"[Canvas] ⚠ MUSIC FAILED — the reel will have NO soundtrack: {e}")
+            degradation.report("audio", "alert",
+                               f"music generation failed — reel has NO soundtrack ({str(e)[:120]})")
+            _set_canvas_audio_warning(
+                data.get("canvas_run_id", ""),
+                f"Music generation failed — this reel has NO soundtrack. Fix the cause and "
+                f"re-run Final Cut, or pick a different Audio option. ({str(e)[:180]})")
     finally:
         _thread_run.run_id = None
     _execute_pipeline(run_id, data, run_dir)
@@ -4144,7 +4218,7 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
     if data.get("language") and data["language"] != "en":
         caption_style = {**caption_style, "language": data["language"]}
     orientation   = data.get("orientation", "portrait")
-    width, height = (1080, 1920) if orientation == "portrait" else (1920, 1080)
+    width, height = _orient_wh(orientation)
     fps           = int(data.get("fps", 30))
 
     if quality == "dev":
@@ -4236,6 +4310,10 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                 "lipsync_clip_path": f.get("lipsync_clip_path", ""),
                 "has_lipsync_audio": bool(f.get("lipsync_clip_path")),
                 "negative_prompt":   f.get("negative_prompt", ""),
+                # r2v (kie/HappyHorse): identity + location refs condition the
+                # clip directly — threaded so clip_builder can pass them.
+                "character_ref_path": f.get("character_ref_path", ""),
+                "location_ref_path":  f.get("location_ref_path", ""),
                 # Router picks the video model per shot (cost-tier aware), unless
                 # the approval gate forced this frame to Ken Burns.
                 "model_id":          _video_model_for(f),
@@ -4313,8 +4391,11 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                         f.get("duration", 4.0) for f in frames)
                     props = remotion_overlay.build_props(frames, frame_times, total_s)
                     if props["captions"]:
+                        # Rendered at the REEL's dims — a portrait-default overlay
+                        # on a landscape reel put captions off-screen (2026-07-19).
                         cap_overlay_mov = remotion_overlay.render_overlay(
-                            props, str(run_dir / "cap_overlay.mov"))
+                            props, str(run_dir / "cap_overlay.mov"),
+                            width=width, height=height)
                 except Exception as e:
                     from agents import degradation
                     degradation.report("captions", "warn",

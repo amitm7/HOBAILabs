@@ -67,7 +67,9 @@ CLIP-based scoring — these are on the roadmap (§9).
    endpoint circuit breaker (agents/circuit.py) so a down/slow vendor fails fast:                                 │ Higgsfield   │
    · Image: fal.ai (Flux, Seedream, Nano Banana), OpenAI gpt-image              │ fal Seedance │
    · Upscale: fal.ai aura_sr (faithful/real), clarity (creative/AI)             │ fal Upscale  │
-   · Video: Kling AI, Higgsfield, fal (Seedance/Veo/Hailuo)                    │ Veo / Hailuo │
+   · Video: Kling AI, Higgsfield, fal (Seedance/Veo/Hailuo),                   │ Veo / Hailuo │
+     Kie.ai HappyHorse 1.1 R2V (reference-to-video: identity+location refs
+     condition the clip directly, native audio — premium face/hero/dialogue lanes)
    · Lip-sync: Hedra (photo), SyncLabs (video)                                 ├──────────────┤
    · SFX/atmosphere: fal MMAudio (video→audio, S30) — seam only, not yet mixed
    · Voice: ElevenLabs · Music: Lyria 3 (Gemini) | Suno · Safety: OpenAI Mod    │ Voice/Music/ │

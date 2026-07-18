@@ -625,7 +625,13 @@ so you see and approve everything before it spends.</p>
   from the brief, and a free <b>slideshow-risk check</b> posts warnings in the board
   report (repetitive framing, same-length shots, unanimated stills, caption walls)
   before anything spends. Music, per-shot photos, and per-shot emotion stay yours
-  to set.</li>
+  to set. <b>Already wrote a shot list?</b> A brief with <b>FRAME 1: / SCENE 1: /
+  Shot 1 (0–4s):</b> blocks is <b>compiled, not re-imagined</b> — every dialogue line
+  becomes its own shot with <i>your</i> speaker verbatim, camera/lighting notes reach
+  the image untouched, shot timings set durations, <b>[Sound: …]</b> cues are captured,
+  and a <b>"Reference &lt;Name&gt; … (identity)"</b> preamble line registers a character
+  who never speaks (so their face still locks to your photo). Free — no AI planning
+  call for a script you authored.</li>
   <li><b>Review &amp; edit the shots.</b> On each card you can edit the caption, the
   camera move, and (after Storyboard) the actual <b>image prompt</b>. Use the bottom
   <b>command box</b> to refine in plain English ("make it darker, add a rain shot") —
@@ -702,6 +708,15 @@ so you see and approve everything before it spends.</p>
   and the render status reads <b>"done — ⚠ NO AUDIO"</b> instead of "done ✓". A final output
   check also probes the finished file: if you asked for audio and the reel is silent for any
   reason, it's flagged before download. Fix the cause and re-run <b>Final Cut</b>.</li>
+  <li><b>🔒 Faces before spend:</b> Key Frames now <b>refuses to generate</b> while an
+  on-screen character has no locked face (📎 photo or 🎨 generated) — it names who's
+  missing; an unlocked face is how the same character drifted between shots. Confirming
+  the warning generates anyway (explicit choice, never silent drift).</li>
+  <li><b>🎙 Narration comes with music:</b> a voice-over reel automatically gets a generated
+  <b>music bed ducked under the narration</b> (voice full, music quiet) — no extra step; upload
+  your own song via <b>⬆ Music bed</b> to use that instead. And when the story has spoken
+  lines (narrated / dialogue / mixed), the <b>Audio selector defaults to 🎙 ElevenLabs VO</b>
+  automatically instead of music-only — your own choice, once made, always wins.</li>
   <li><b>Asset QC on ingest:</b> EXIF-rotated (sideways) phone photos are auto-normalized
   upright when matched or attached — the original file is never modified. The <b>🔎 Review</b>
   pass additionally flags rotated pixels, visible watermarks / camera-brand overlays, and

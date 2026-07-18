@@ -1,7 +1,9 @@
 # PRESENTER_PLAN — podcast/presenter format, scope registry, education scope (S29)
 
-**Status:** AGREED (2026-07-08) — planned, **not started**. This doc is the decision
-record from the owner↔agent L99 debate; Phase 0 gates all build work.
+**Status:** IN-PROGRESS (2026-07-18) — Phase 1a shipped, Phase 1b's square-orientation
+bug fixed; the presenter feature itself (Phase 2+) is still fully gated behind Phase 0
+(golden-face spike, not run — no feature code before it passes). This doc is the
+decision record from the owner↔agent L99 debate.
 
 ---
 
@@ -72,14 +74,23 @@ Wrap = the avatar model. Adopt-only = nothing (the edit is the product).
   each → stop; capability remains per-shot lip-sync only (T7 track); this plan closes.
 
 ### Phase 1 — Enablers (behavior-preserving) ⟨1a: S · 1b: M⟩
-- **1a Scope registry:** scope → `{system_prompt, planner_flags, ui_controls}`
-  (registry in `shot_planner` or `config/scopes.json`, in the spirit of the other
-  pluggable seams). Migrate `general`/`commerce`; validation + prompt pick read the
-  registry. *Acceptance: zero output diff on existing scopes (cache keys unchanged).*
-- **1b Aspect parameterization:** run-level `aspect` (default **9:16**, unchanged);
-  assembler target dims from the run; still-gen sizes; caption safe-areas; Hedra
-  aspect passthrough. *Acceptance: existing 9:16 behavior identical; a 16:9 test
-  run assembles clean end-to-end.*
+- **1a Scope registry — SHIPPED (2026-07-18):** `shot_planner._SCOPE_SYSTEM_PROMPTS`
+  (`scope → system_prompt`), validation (`plan()`) and prompt-pick both read it —
+  one table instead of two branches that can drift. Migrated `general`/`commerce`
+  only; `podcast`/`education` entries are NOT added yet (still gated behind Phase 0
+  below). `planner_flags`/`ui_controls` fields deferred — nothing consumes them
+  until a scope beyond general/commerce actually exists (YAGNI). *Acceptance met:
+  81/81 suite green, cache keys unchanged (`_cache_key` already hashed scope in).*
+- **1b Aspect parameterization — mostly SHIPPED, one bug fixed (2026-07-18):**
+  canvas already had a working `orientation` control (portrait/landscape/square)
+  threaded through `_run_inner`/`build_clips`/assembler for 9:16 and 16:9 — this
+  plan's July 8 snapshot was stale on that point. What WAS broken: `_run_inner`
+  resolved dims via its own inline ternary (`"portrait" else landscape`) that
+  silently mapped **square → landscape** instead of 1080×1080, diverging from the
+  already-correct `_orient_wh()` helper used elsewhere. Fixed by routing
+  `_run_inner` through `_orient_wh` too. *Acceptance met for 9:16/16:9 (pre-existing);
+  square now correct end-to-end.* Not yet done: Hedra aspect passthrough for a
+  *presenter* beat specifically (no presenter beats exist yet to test against).
 
 ### Phase 2 — `podcast` scope, 16:9 ⟨L⟩
 - **Planner grammar:** alternate **presenter beats** (to-camera line,

@@ -520,8 +520,18 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
         aspect   = "9:16" if height > width else ("16:9" if width > height else "1:1")
 
         # Shared clip cache (paid clips reused for free) — namespaced by model.
-        if backend in ("kling", "higgsfield", "fal"):
-            cache_key = _model_cache_key(model_id, media, motion, duration, force_5s)
+        if backend in ("kling", "higgsfield", "fal", "kie"):
+            # kie r2v: the reference images CONDITION the output, so they join
+            # the cache key (a changed character ref must regenerate the clip).
+            _refhash = ""
+            if backend == "kie":
+                import hashlib as _hl
+                for _rp in (item.get("character_ref_path", ""),
+                            item.get("location_ref_path", "")):
+                    if _rp and os.path.exists(_rp):
+                        _refhash += _hl.md5(open(_rp, "rb").read()).hexdigest()[:8]
+            cache_key = _model_cache_key(model_id, media, motion + _refhash,
+                                         duration, force_5s)
             cached = _cache_lookup(cache_key)
             if cached:
                 import shutil
@@ -539,6 +549,25 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
             item["_hf_prompt"]   = _kling_motion_prompt(item.get("text", ""), motion)
             item["_hf_aspect"]   = aspect
             item["_hf_deferred"] = True
+            return {**item, "clip_path": clip_path, "pending": True}
+
+        # ── Kie.ai r2v models (HappyHorse) — deferred to pool ─────────────────
+        # Reference-to-video: identity + location refs condition EVERY frame of
+        # the clip directly (the galleri5 architecture) — the still is passed as
+        # an additional scene reference, not a first frame.
+        if backend == "kie":
+            item["_clip_path"]    = clip_path
+            item["_cache_key"]    = cache_key
+            item["_media"]        = media
+            item["_provider"]     = "kie"
+            item["_model_id"]     = model_id
+            item["_kie_prompt"]   = _kling_motion_prompt(item.get("text", ""), motion)
+            item["_kie_aspect"]   = aspect
+            item["_kie_duration"] = 5 if force_5s else max(3, min(15, round(duration)))
+            item["_kie_refs"]     = [p for p in (item.get("character_ref_path", ""),
+                                                 item.get("location_ref_path", ""),
+                                                 media) if p]
+            item["_kie_deferred"] = True
             return {**item, "clip_path": clip_path, "pending": True}
 
         # ── fal.ai video models (Seedance, Veo, Hailuo) — deferred to pool ────
@@ -652,6 +681,19 @@ def build_clips(assignments: list[dict], temp_dir: str,
 
                     raw = item["_clip_path"].replace(".mp4", "_hf_raw.mp4")
                     hf.poll_and_download(item["_hf_gen_id"], raw)
+                    _fit_clip_to_duration(raw, item["actual_duration"],
+                                          item["_clip_path"], width, height, fps)
+
+                elif prov == "kie":
+                    from agents import kie_video
+                    if item.get("_kie_deferred"):
+                        urls = kie_video.host_refs(item.get("_kie_refs") or [])
+                        item["_kie_task_id"] = kie_video.submit(
+                            item["_model_id"], urls, item["_kie_prompt"],
+                            duration=item["_kie_duration"],
+                            aspect_ratio=item["_kie_aspect"])
+                    raw = item["_clip_path"].replace(".mp4", "_kie_raw.mp4")
+                    kie_video.poll_and_download(item["_kie_task_id"], raw)
                     _fit_clip_to_duration(raw, item["actual_duration"],
                                           item["_clip_path"], width, height, fps)
 

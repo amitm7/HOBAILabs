@@ -575,13 +575,29 @@ def apply_brand_overlay(in_path: str, out_path: str, disclosure_text: str = "",
         shutil.copy2(in_path, out_path)
         return out_path
 
+    # Disclosure text needs drawtext (freetype). Homebrew's default ffmpeg ships
+    # WITHOUT it, and the old behaviour was catastrophic-but-quiet: the whole
+    # overlay pass failed → clean copy → the PROVENANCE DISCLOSURE silently never
+    # burned (a governance label, not a nicety — same failure class as the S31
+    # subject_name bug). Fallback: render the text to a transparent PNG with PIL
+    # and composite it with plain `overlay`, which every ffmpeg build has.
+    disc_png = ""
+    if has_disc and not _has_drawtext():
+        try:
+            disc_png = _disclosure_png(disclosure_text, width or 1080)
+            print("[Assembler] ffmpeg has no drawtext — disclosure via PIL overlay")
+        except Exception as e:
+            print(f"[Assembler] PIL disclosure fallback failed ({e})")
+
     inputs = ["-i", in_path]
     idx = 1
-    wm_idx = logo_idx = None
+    wm_idx = logo_idx = disc_idx = None
     if has_wm:
         inputs += ["-i", watermark_path]; wm_idx = idx; idx += 1
     if has_logo:
         inputs += ["-i", logo_path]; logo_idx = idx; idx += 1
+    if disc_png:
+        inputs += ["-i", disc_png]; disc_idx = idx; idx += 1
 
     chain, last = [], "[0:v]"
     if has_wm:
@@ -600,7 +616,12 @@ def apply_brand_overlay(in_path: str, out_path: str, disclosure_text: str = "",
         chain.append(f"[{logo_idx}:v]scale=-1:90[lg]")
         chain.append(f"{last}[lg]overlay={pos}[v1]")
         last = "[v1]"
-    if has_disc:
+    if disc_idx is not None:
+        # PIL-rendered disclosure PNG, top-centred, first `disclosure_secs` only.
+        chain.append(f"{last}[{disc_idx}:v]overlay=(W-w)/2:60:"
+                     f"enable='lte(t,{disclosure_secs})'[vout]")
+        last = "[vout]"
+    elif has_disc:
         font = _brand_font_arg()
         safe = disclosure_text.replace("'", r"\'").replace(":", r"\:")
         chain.append(
@@ -616,8 +637,72 @@ def apply_brand_overlay(in_path: str, out_path: str, disclosure_text: str = "",
               "-c:a", "copy", out_path])
     except Exception as e:
         print(f"[Assembler] brand overlay failed ({e}) — using clean output")
+        # A lost disclosure/watermark is a GOVERNANCE gap, not a cosmetic one —
+        # surface it on the canvas render report, never just the console.
+        try:
+            from agents import degradation
+            what = " + ".join(x for x, on in (("disclosure", has_disc),
+                                              ("logo", has_logo),
+                                              ("IP watermark", has_wm)) if on)
+            degradation.report("provenance", "alert",
+                               f"overlay pass failed — {what} NOT burned into the reel "
+                               f"({str(e)[:100]})")
+        except Exception:
+            pass
         shutil.copy2(in_path, out_path)
+    finally:
+        if disc_png:
+            try:
+                os.remove(disc_png)
+            except OSError:
+                pass
     return out_path
+
+
+def _has_drawtext() -> bool:
+    """True if this ffmpeg build has the drawtext filter (needs freetype).
+    Probed once per process — Homebrew's default build lacks it."""
+    global _DRAWTEXT_OK
+    if _DRAWTEXT_OK is None:
+        try:
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                               capture_output=True, text=True, timeout=15)
+            _DRAWTEXT_OK = " drawtext " in r.stdout
+        except Exception:
+            _DRAWTEXT_OK = False
+    return _DRAWTEXT_OK
+
+
+_DRAWTEXT_OK = None
+
+
+def _disclosure_png(text: str, video_width: int) -> str:
+    """Render the disclosure line to a transparent PNG (white on translucent black
+    box — visually matching the drawtext style) for ffmpeg `overlay` compositing."""
+    import tempfile
+    from PIL import Image, ImageDraw, ImageFont
+    font = None
+    for cand in ("deploy/fonts/Montserrat-Regular.ttf", "deploy/fonts/Satoshi-Medium.ttf"):
+        p = os.path.join(os.path.dirname(__file__), "..", cand)
+        if os.path.exists(p):
+            try:
+                font = ImageFont.truetype(p, 34)
+                break
+            except Exception:
+                pass
+    if font is None:
+        font = ImageFont.load_default(size=34)
+    pad = 14
+    probe = Image.new("RGBA", (8, 8))
+    box = ImageDraw.Draw(probe).textbbox((0, 0), text, font=font)
+    tw, th = box[2] - box[0], box[3] - box[1]
+    tw = min(tw, max(100, video_width - 80))
+    img = Image.new("RGBA", (tw + 2 * pad, th + 2 * pad), (0, 0, 0, 115))
+    ImageDraw.Draw(img).text((pad - box[0], pad - box[1]), text,
+                             font=font, fill=(255, 255, 255, 255))
+    out = tempfile.mktemp(suffix="_disc.png")
+    img.save(out)
+    return out
 
 
 def _brand_font_arg() -> str:

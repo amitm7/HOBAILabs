@@ -66,7 +66,7 @@ Screen 1 is **one box and nothing else**:
 | Story *(default)* | narrative | exists (`_GENERAL_SYSTEM`) |
 | Product Ad | product | exists (`_COMMERCE_SYSTEM`) **+ brand governance** |
 | Mood Board | — stages 1–2, stop, export grid | **~₹10** vs ₹150–500/reel — the free-tier hook |
-| Podcast / Education | presenter | S29 → `docs/PRESENTER_PLAN.md` |
+| Podcast / Education | presenter | S29 → `docs/PRESENTER_PLAN.md`. The registry mechanism itself (`shot_planner._SCOPE_SYSTEM_PROMPTS`) shipped 2026-07-18 with only `general`/`commerce` migrated — a `podcast` row is one dict entry away once S29 Phase 0 clears. |
 | UGC / Testimonial | product + presenter | small delta |
 
 **Not scopes:** *Ad Campaign* = Product Ad × N variants (a **batch flag**);

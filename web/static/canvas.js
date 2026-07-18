@@ -197,7 +197,11 @@
   // T3: a manually chosen length must never be overwritten by a suggestion.
   $("length") && $("length").addEventListener("change", () => { $("length").dataset.userSet = "1"; });
 
+  // Distinguishes the S28 auto-default (below) from a real operator choice — the
+  // T3 rule applies to audio too: a manually chosen mode is never overwritten.
+  let audioAutoSetting = false;
   $("audio-mode").addEventListener("change", () => {
+    if (!audioAutoSetting) $("audio-mode").dataset.userSet = "1";
     const m = $("audio-mode").value;
     $("voice-id").hidden = m !== "voiceover";
     // Song upload doubles as the optional BED under narration in voiceover mode.
@@ -920,6 +924,17 @@
     el.hidden = false;
     el.innerHTML = `<b>${label}</b> — ${sf.dialogue} dialogue · ${sf.narration} narrated · ${sf.silent} silent
       <span class="muted">(detected per shot from who speaks — flip any shot's form in its Inspector)</span>`;
+    // S28 → audio: a story WITH spoken lines defaults Final-Cut audio to 🎙 VO —
+    // a narrated story silently rendering music-only was the #1 "where is my
+    // narration?" trap. Only flips the untouched factory default (Suno Music);
+    // an operator's own choice (dataset.userSet) is never overwritten (T3 rule).
+    const am = $("audio-mode");
+    if (am && !am.dataset.userSet && am.value === "generate" && sf.form && sf.form !== "silent") {
+      audioAutoSetting = true;
+      am.value = "voiceover";
+      am.dispatchEvent(new Event("change"));   // reveals the voice picker + bed upload
+      audioAutoSetting = false;
+    }
   }
 
   // T1 Degradation Ledger — the render's quality receipt. Alerts scream, warns list,
@@ -2047,23 +2062,26 @@
     try {
       if (gen) {
         const stage = gen.getAttribute("data-stage");
-        // Characters-first soft gate (AI stories): unlocked faces at Key Frames time is
-        // how cross-shot drift happens — warn BEFORE the spend, but the operator decides.
-        if (stage === "keyframes" && (lastCanvas?.story_type === "ai")) {
-          const unlocked = (lastCanvas.characters || []).filter((c) => !c.ref_path && c.id !== "narrator");
+        // Asset-first gate, now enforced SERVER-side (409 when a character has no
+        // locked face — the thing that made the same character drift every shot).
+        // The confirm is the operator's explicit escape; OK sends force:true.
+        let kfForce = false;
+        if (stage === "keyframes") {
+          const unlocked = (lastCanvas?.characters || []).filter((c) => !c.ref_path && c.id !== "narrator");
           if (unlocked.length) {
             const names = unlocked.map((c) => c.role || c.name || c.label || c.id).join(", ");
-            if (!confirm(`⚠ ${unlocked.length} character(s) have no locked face yet (${names}).\n\nWithout one, their look may DRIFT between shots.\n\nOK = generate Key Frames anyway · Cancel = lock faces first (🎨 in the Character sheet)`)) {
+            if (!confirm(`⚠ ${unlocked.length} character(s) have no locked face yet (${names}).\n\nWithout one, their look WILL drift between shots.\n\nOK = generate anyway · Cancel = lock faces first (📎/🎨 in the Character sheet)`)) {
               renderCharacters(lastCanvas.characters);
               $("characters").scrollIntoView({ behavior: "smooth", block: "center" });
               return;
             }
+            kfForce = true;
           }
         }
         gen.disabled = true; gen.textContent = "Working…";
         let d;
         if (stage === "keyframes") {
-          d = await api(`/api/canvas/${runId}/keyframes`, {});           // cheap stills only
+          d = await api(`/api/canvas/${runId}/keyframes`, kfForce ? { force: true } : {});  // cheap stills only
         } else if (stage === "video") {
           d = await api(`/api/canvas/${runId}/video`, {});               // clips only (gated by Key Frames)
         } else if (stage === "finalcut") {

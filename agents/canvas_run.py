@@ -810,7 +810,12 @@ def set_character(state: dict, char_id: str, *, ref_path: str = "",
     ref = char.get("ref_path", "")
     appearance = _character_appearance(char)
     for f in state["frames"]:
-        if f.get("speaker_id") != char_id:
+        # Match on the VISUAL subject, not just who's speaking — a third-person
+        # protagonist (e.g. a mythological character) is depicted in shots whose
+        # speaker_id is the narrator, since they're narrated about, not quoted.
+        # visual_subject_id defaults to speaker_id (cast.py), so first-person
+        # stories where they're always the same person are unaffected.
+        if (f.get("visual_subject_id") or f.get("speaker_id")) != char_id:
             continue
         if ref:
             f["character_ref_path"] = ref

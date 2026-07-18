@@ -566,3 +566,718 @@ class CanvasAuthTests(unittest.TestCase):
         i = src.index('def api_canvas_plan(')
         self.assertIn("@auth.require_operator()", src[max(0, i - 200):i])
         self.assertIn("operator", inspect.signature(web_app.api_canvas_plan).parameters)
+
+
+class OrientationDimsTests(unittest.TestCase):
+    """Canvas orientation dropdown offers portrait/landscape/square; _run_inner used to
+    resolve dims with its own inline ternary that only checked for "portrait", so
+    "square" silently fell through to landscape (1920x1080) instead of (1080, 1080).
+    Fixed by routing through the one function (_orient_wh) that already knew all three."""
+
+    def test_orient_wh_covers_all_three_canvas_orientations(self):
+        self.assertEqual(web_app._orient_wh("portrait"), (1080, 1920))
+        self.assertEqual(web_app._orient_wh("landscape"), (1920, 1080))
+        self.assertEqual(web_app._orient_wh("square"), (1080, 1080))
+
+    def test_run_inner_resolves_dims_via_orient_wh_not_a_duplicate_branch(self):
+        import inspect
+        src = inspect.getsource(web_app._run_inner)
+        self.assertIn("_orient_wh(orientation)", src)
+        self.assertNotIn('== "portrait" else (1920, 1080)', src)
+
+
+class ScopeRegistryTests(unittest.TestCase):
+    """S29 Phase 1a / S31 scope registry: validation and prompt-pick must read the
+    SAME table (not two independent branches that can drift, the exact bug class
+    OrientationDimsTests caught in web_app). Zero output diff on existing scopes."""
+
+    def test_registry_has_exactly_the_shipped_scopes(self):
+        from agents import shot_planner
+        self.assertEqual(set(shot_planner._SCOPE_SYSTEM_PROMPTS),
+                          {"general", "commerce"})
+
+    def test_unknown_scope_falls_back_to_general_system_prompt(self):
+        from agents import shot_planner
+        calls = []
+        fake_response = json.dumps({"frames": []})
+
+        def fake_chat(messages, **kw):
+            calls.append(messages[0]["content"])
+            return fake_response
+
+        import unittest.mock as mock
+        with mock.patch("agents.llm.chat", side_effect=fake_chat):
+            shot_planner.plan("a brief that will not cache-hit " + os.urandom(8).hex(),
+                              scope="nonsense")
+        self.assertTrue(calls[0].startswith(shot_planner._GENERAL_SYSTEM))
+
+    def test_auto_mode_token_budget_covers_a_dense_dialogue_script(self):
+        """A live 'Jai Hanuman' cinematic-dialogue brief (~40 beats, full spoken-line
+        captions) truncated mid-JSON under the original 130 tok/shot budget (5200
+        total) -> planner LLM failed -> 8-shot generic sentence-split fallback,
+        which is what then tripped the story-review slideshow warnings (uniform
+        framing/duration). A second, harder case (a live 'Ocean crossing' brief
+        with 11 FRAME markers) then silently truncated valid-but-incomplete JSON
+        even under a first attempted fix (220 tok/shot) — confirmed live: a 24-shot
+        response exactly saturated the 8800-token ceiling at ~367 tok/shot actually
+        used, well above the 220 estimate. Current budget: 380 tok/shot, and a
+        markerless brief (this test's) sizes off word count, not a flat guess."""
+        from agents import shot_planner
+        import unittest.mock as mock
+        captured = {}
+
+        def fake_chat(messages, **kw):
+            captured["max_tokens"] = kw.get("max_tokens")
+            return json.dumps({"frames": []})
+
+        with mock.patch("agents.llm.chat", side_effect=fake_chat):
+            shot_planner.plan("brief " + os.urandom(8).hex(), scope="general")
+        self.assertEqual(captured["max_tokens"], 15200)   # 40 (word-count floor) * 380
+        self.assertGreater(captured["max_tokens"], 5200)
+
+    def test_marker_briefs_now_bypass_the_llm_entirely(self):
+        """SUPERSEDED budget test: marker-structured briefs used to get a scaled
+        LLM token budget (est_shots = markers*4) — since compile mode landed they
+        never reach the LLM at all, which retires that truncation class outright.
+        The word-count budget proxy still governs unstructured prose briefs
+        (covered by test_auto_mode_token_budget_covers_a_dense_dialogue_script)."""
+        from agents import shot_planner
+        import unittest.mock as mock
+        brief = "\n\n".join(f"FRAME {i}: something happens {os.urandom(4).hex()}."
+                            for i in range(1, 12))
+        with mock.patch("agents.llm.chat") as chat:
+            frames = shot_planner.plan(brief, scope="general")
+        chat.assert_not_called()
+        self.assertEqual(len(frames), 11)   # one authored frame = one shot
+
+    def test_commerce_and_general_still_select_their_own_system_prompt(self):
+        from agents import shot_planner
+        calls = {}
+        fake_response = json.dumps({"frames": []})
+
+        def fake_chat(messages, **kw):
+            calls["system"] = messages[0]["content"]
+            return fake_response
+
+        import unittest.mock as mock
+        for scope, expected in (("general", shot_planner._GENERAL_SYSTEM),
+                                 ("commerce", shot_planner._COMMERCE_SYSTEM)):
+            with mock.patch("agents.llm.chat", side_effect=fake_chat):
+                shot_planner.plan("brief " + os.urandom(8).hex(), scope=scope)
+            self.assertTrue(calls["system"].startswith(expected))
+
+
+class ScriptCompileModeTests(unittest.TestCase):
+    """Root-cause fix: an AUTHORED FRAME/SCENE/SHOT script is COMPILED verbatim —
+    zero LLM — instead of re-invented by the planner. The bug class this kills,
+    all observed live: dialogue attribution discarded then re-guessed wrong (a
+    line written SUGRIVA: rendered as Rama), truncation silently dropping the
+    back half of a story, camera notes paraphrased away, [Sound:] cues lost."""
+
+    SCRIPT = """FRAME 1: The Command
+Camera Angle: Wide establishing, low sun behind the army
+SUGRIVA (commanding, final):
+"Cross this ocean and find Sita, or do not return to this shore."
+[Sound: conch horn blast]
+
+FRAME 2: The Doubt
+Camera Angle: Low-angle, looking UP at Hanuman against the sky
+Narrative: Hanuman stands apart, uncertain. The other vanaras retreat behind Hanuman.
+
+FRAME 3: The Reminder
+JAMBAVAN (ancient, gentle):
+"You have forgotten yourself, Hanuman."
+JAMBAVAN (continuing):
+"Remember what you are — and cross."
+"""
+
+    def _compile(self, brief=None):
+        from agents import shot_planner
+        return shot_planner._compile_frames(brief or self.SCRIPT)
+
+    def test_dialogue_attribution_is_verbatim_never_guessed(self):
+        frames = self._compile()
+        f01 = frames[0]
+        self.assertEqual(f01["speaker_id"], "sugriva")        # the Sugriva→Rama bug
+        self.assertEqual(f01["caption"],
+                         "Cross this ocean and find Sita, or do not return to this shore.")
+        self.assertEqual(f01["voice_direction"], "commanding, final")
+
+    def test_one_shot_per_dialogue_line(self):
+        frames = self._compile()
+        jamb = [f for f in frames if f["speaker_id"] == "jambavan"]
+        self.assertEqual(len(jamb), 2)                        # two speeches → two shots
+        self.assertEqual(len(frames), 4)                      # 1 + 1 silent + 2
+
+    def test_camera_notes_survive_verbatim(self):
+        frames = self._compile()
+        self.assertIn("Camera Angle: Wide establishing, low sun behind the army",
+                      frames[0]["director_note"])
+
+    def test_sound_cue_becomes_audio_intent_on_first_shot(self):
+        frames = self._compile()
+        self.assertEqual(frames[0].get("audio_intent"), "conch horn blast")
+
+    def test_silent_block_infers_most_mentioned_subject(self):
+        frames = self._compile()
+        silent = frames[1]
+        self.assertEqual(silent["caption"], "")
+        self.assertEqual(silent["speaker_id"], "narrator")       # nobody talks
+        self.assertEqual(silent["visual_subject_id"], "hanuman")  # but he's on screen
+        self.assertEqual(silent["photo_spec"], "ai_portrait")
+
+    def test_shot_style_timings_and_reference_identity(self):
+        brief = ("Reference Yamraj from Image 1 (identity). Dark 90s look.\n\n"
+                 "Shot 1 (0–4s): Extreme close-up of an oil lamp. Camera locked-off.\n\n"
+                 "Shot 2 (4–10s): Wide shot, Yamraj emerges. Dramatic crash zoom.\n")
+        frames = self._compile(brief)
+        self.assertEqual(len(frames), 2)                      # preamble is NOT a shot
+        self.assertEqual([f["duration"] for f in frames], [4.0, 6.0])
+        self.assertEqual(frames[0]["photo_spec"], "ai_symbolic")   # lamp
+        self.assertEqual(frames[1]["visual_subject_id"], "yamraj")  # never speaks —
+        self.assertEqual(frames[1]["photo_spec"], "ai_portrait")    # named via Reference
+        self.assertEqual(frames[1]["motion_override"], "crash zoom in")
+        self.assertIn("[style] Reference Yamraj", frames[0]["director_note"])
+
+    def test_production_note_headers_are_not_speakers(self):
+        brief = ("FRAME 1: A\nTONE: Mystical thriller\nHANUMAN:\n\"Rama.\"\n\n"
+                 "FRAME 2: B\nCAMERA WORK: wide shots\nNarrative: The cave sits empty.\n")
+        frames = self._compile(brief)
+        speakers = {f["speaker_id"] for f in frames}
+        self.assertIn("hanuman", speakers)                    # quoted → real dialogue
+        self.assertNotIn("tone", speakers)                    # unquoted → not cast
+        self.assertNotIn("camera_work", speakers)
+
+    def test_substantial_visuals_cues_become_their_own_ordered_silent_shots(self):
+        """Delta A (galleri5 23-vs-19 gap): a long [VISUALS:] cue is an authored
+        SHOT — it gets its own silent beat IN ORDER, with the subject inferred
+        from the cue itself; short cues stay note garnish, never shots."""
+        brief = (
+            "FRAME 1: The Arrival\n"
+            "YAMRAJ (grinding):\n\"Hanuman.\"\n"
+            "[VISUALS: A skeletal hand grips the cave entrance arch from the darkness "
+            "as Yamraj emerges slowly from deep shadow, tall and crowned.]\n"
+            "[VISUALS: wind stirs]\n"
+            "YAMRAJ (stepping into view):\n\"Your time has come.\"\n\n"
+            "FRAME 2: The Doubt\nNarrative: Hanuman waits alone against the sky.\n")
+        from agents import shot_planner
+        frames = shot_planner._compile_frames(brief)
+        kinds = [(f["caption"] != "", f["visual_subject_id"]) for f in frames]
+        # order: dialogue → promoted visual (silent, Yamraj on screen) → dialogue → silent block
+        self.assertEqual(kinds[0], (True, "yamraj"))
+        self.assertEqual(kinds[1], (False, "yamraj"))       # promoted, subject from cue
+        self.assertIn("skeletal hand grips", frames[1]["director_note"])
+        self.assertEqual(kinds[2], (True, "yamraj"))
+        self.assertEqual(len(frames), 4)
+        # the short cue stayed garnish in the shared note, not a shot
+        self.assertIn("[on screen] wind stirs", frames[0]["director_note"])
+
+    def test_compiled_frames_are_marked_and_cast_llm_is_skipped(self):
+        from agents import cast
+        import unittest.mock as mock
+        frames = self._compile()
+        self.assertTrue(all(f["_cast_detected"] and f["compiled"] for f in frames))
+        with mock.patch("agents.llm.chat") as chat:
+            members = cast.detect_cast(frames)                # idempotent path
+        chat.assert_not_called()
+        self.assertIn("sugriva", {m["id"] for m in members})
+
+    def test_plan_routes_structured_scripts_to_compile_no_llm(self):
+        from agents import shot_planner
+        import unittest.mock as mock
+        brief = self.SCRIPT + f"\n{os.urandom(6).hex()}"      # cache-buster
+        with mock.patch("agents.llm.chat") as chat:
+            frames = shot_planner.plan(brief, scope="general")
+        chat.assert_not_called()
+        self.assertEqual(len(frames), 4)
+
+    def test_unstructured_brief_still_uses_the_llm_planner(self):
+        from agents import shot_planner
+        import unittest.mock as mock
+        with mock.patch("agents.llm.chat",
+                        return_value=json.dumps({"frames": []})) as chat:
+            shot_planner.plan("a chai seller's story " + os.urandom(6).hex(),
+                              scope="general")
+        chat.assert_called_once()
+
+    def test_compile_failure_falls_open_to_the_llm_planner(self):
+        from agents import shot_planner
+        import unittest.mock as mock
+        with mock.patch.object(shot_planner, "_compile_frames",
+                               side_effect=RuntimeError("boom")), \
+             mock.patch("agents.llm.chat",
+                        return_value=json.dumps({"frames": []})) as chat:
+            shot_planner.plan(self.SCRIPT + os.urandom(6).hex(), scope="general")
+        chat.assert_called_once()                             # never a dead plan
+
+
+class CharacterRefHardGateTests(unittest.TestCase):
+    """Asset-first gate: paid still generation 409s while an on-screen character
+    has no locked face (per canvas-controls-philosophy: the error names the fix,
+    `force: true` is the explicit escape — never a silent trap)."""
+
+    def setUp(self):
+        # test_operator_auth_gates_money_routes_and_roles pops HOB_AUTH_DISABLED
+        # and leaks that env state; these tests target the REF gate, not auth.
+        self._auth_prev = os.environ.get("HOB_AUTH_DISABLED")
+        os.environ["HOB_AUTH_DISABLED"] = "1"
+        self.addCleanup(lambda: (os.environ.__setitem__("HOB_AUTH_DISABLED", self._auth_prev)
+                                 if self._auth_prev is not None
+                                 else os.environ.pop("HOB_AUTH_DISABLED", None)))
+
+    def _canvas(self, ref=""):
+        from agents import canvas_run, run_store
+        import unittest.mock as mock, uuid
+        with mock.patch("agents.shot_planner.plan", return_value=[
+                {"frame_id": "f01", "caption": "x", "photo_spec": "ai_portrait",
+                 "duration": 5.0}]):
+            state = canvas_run.new_canvas("brief", story_type="ai")
+        state["frames"][0]["visual_subject_id"] = "hanuman"
+        state["characters"] = [{"id": "hanuman", "name": "Hanuman", "ref_path": ref}]
+        rid = f"gate-{uuid.uuid4()}"
+        run_store.save(rid, status="canvas",
+                       payload={"mode": "canvas", "session_id": rid, "canvas": state})
+        return rid
+
+    def test_unlocked_character_blocks_keyframes_with_a_named_error(self):
+        rid = self._canvas(ref="")
+        with app.test_client() as c:
+            r = c.post(f"/api/canvas/{rid}/keyframes", json={})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("Hanuman", r.get_json()["error"])
+        self.assertEqual(r.get_json()["unlocked_characters"], ["Hanuman"])
+
+    def test_force_is_the_explicit_escape(self):
+        rid = self._canvas(ref="")
+        import unittest.mock as mock
+        with app.test_client() as c, \
+             mock.patch.object(web_app, "_track_render") as tr:
+            r = c.post(f"/api/canvas/{rid}/keyframes", json={"force": True})
+        self.assertEqual(r.status_code, 200)
+        tr.assert_called_once()
+
+    def test_locked_character_passes_without_force(self):
+        rid = self._canvas(ref="/abs/hanuman.jpg")
+        import unittest.mock as mock
+        with app.test_client() as c, \
+             mock.patch.object(web_app, "_track_render") as tr:
+            r = c.post(f"/api/canvas/{rid}/keyframes", json={})
+        self.assertEqual(r.status_code, 200)
+        tr.assert_called_once()
+
+
+class KieR2VAdapterTests(unittest.TestCase):
+    """HappyHorse 1.1 R2V via Kie.ai (the galleri5 A/B winner's model class).
+    Contract verified live 2026-07-19: model slug accepted, auth OK, zero spend
+    (tools/kie_probe.py). These lock the payload shape + polling parser."""
+
+    def test_submit_builds_the_documented_payload(self):
+        import unittest.mock as mock
+        from agents import kie_video
+        captured = {}
+
+        def fake_post(url, headers=None, json=None, timeout=0):
+            captured.update(url=url, headers=headers, body=json)
+            r = mock.Mock(ok=True)
+            r.json.return_value = {"data": {"taskId": "task_abc"}}
+            return r
+
+        with mock.patch.dict(os.environ, {"KIE_API_KEY": "k-test"}), \
+             mock.patch("agents.kie_video.requests.post", side_effect=fake_post):
+            tid = kie_video.submit("happyhorse_r2v",
+                                   ["https://x/char.png", "https://x/plate.png"],
+                                   "Yamraj emerges. [Image 1] is his identity.",
+                                   duration=6, aspect_ratio="16:9")
+        self.assertEqual(tid, "task_abc")
+        self.assertTrue(captured["url"].endswith("/jobs/createTask"))
+        self.assertEqual(captured["headers"]["Authorization"], "Bearer k-test")
+        body = captured["body"]
+        self.assertEqual(body["model"], "happyhorse-1-1/reference-to-video")
+        self.assertEqual(body["input"]["reference_image"],
+                         ["https://x/char.png", "https://x/plate.png"])
+        self.assertEqual(body["input"]["duration"], 6)
+
+    def test_poll_parses_resultjson_string_and_downloads(self):
+        import unittest.mock as mock, tempfile
+        from agents import kie_video
+        out = tempfile.mktemp(suffix=".mp4")
+
+        def fake_get(url, headers=None, params=None, timeout=0):
+            r = mock.Mock(ok=True)
+            if "recordInfo" in url:
+                r.json.return_value = {"data": {
+                    "state": "success",
+                    "resultJson": json.dumps({"resultUrls": ["https://cdn/video.mp4"]})}}
+            else:
+                r.content = b"MP4DATA"
+                r.raise_for_status = lambda: None
+            return r
+
+        with mock.patch.dict(os.environ, {"KIE_API_KEY": "k-test"}), \
+             mock.patch("agents.kie_video.requests.get", side_effect=fake_get):
+            kie_video.poll_and_download("task_abc", out)
+        self.assertEqual(open(out, "rb").read(), b"MP4DATA")
+        os.remove(out)
+
+    def test_failed_task_raises_with_the_vendor_message(self):
+        import unittest.mock as mock
+        from agents import kie_video
+        r = mock.Mock(ok=True)
+        r.json.return_value = {"data": {"state": "fail", "failMsg": "insufficient credits"}}
+        with mock.patch.dict(os.environ, {"KIE_API_KEY": "k-test"}), \
+             mock.patch("agents.kie_video.requests.get", return_value=r), \
+             self.assertRaises(RuntimeError) as cm:
+            kie_video.poll_and_download("task_abc", "/tmp/never.mp4")
+        self.assertIn("insufficient credits", str(cm.exception))
+
+    def test_config_registers_the_model_and_its_price(self):
+        cfg = json.load(open("config/models.json"))
+        m = cfg["models"]["happyhorse_r2v"]
+        self.assertEqual(m["backend"], "kie")
+        self.assertEqual(m["kie_model"], "happyhorse-1-1/reference-to-video")
+        self.assertIn("happyhorse_r2v", cfg["routing"]["video"]["face"]["premium"])
+        pricing = json.load(open("config/pricing.json"))
+        section, key = m["pricing_key"].split(".")
+        self.assertGreater(pricing[section][key], 0)
+
+    def test_assignments_carry_the_r2v_reference_paths(self):
+        data = {"orientation": "portrait", "detect_speakers": False,
+                "frames": [{"frame_id": "f01", "caption": "x",
+                            "photo_spec": "ai_portrait",
+                            "character_ref_path": "/abs/char.png",
+                            "location_ref_path": "/abs/plate.png"}]}
+        frames = web_app._build_frames_from_payload(data, 5.0)
+        self.assertEqual(frames[0]["character_ref_path"], "/abs/char.png")
+        self.assertEqual(frames[0]["location_ref_path"], "/abs/plate.png")
+
+
+class OrientationThreadingTests(unittest.TestCase):
+    """A/B-test-surfaced bugs (2026-07-19): still generation hardcoded 9:16 sizes
+    and Gate B hardcoded the portrait expectation, so a deliberate 16:9 reel got
+    portrait stills (center-cropped at assembly) and every correctly-landscape
+    image burned 3 QC retries before grudging acceptance."""
+
+    def _img(self, w, h):
+        import tempfile
+        from PIL import Image
+        import random
+        img = Image.new("RGB", (w, h))
+        img.putdata([(random.randint(0, 255),) * 3 for _ in range(w * h)])
+        p = tempfile.mktemp(suffix=".jpg")
+        img.save(p, quality=95)
+        return p
+
+    def test_gate_b_accepts_the_requested_orientation(self):
+        from agents.safety import check_face_sanity
+        land = self._img(640, 360)
+        port = self._img(360, 640)
+        self.assertTrue(check_face_sanity(land, "t1", orientation="landscape"))
+        self.assertFalse(check_face_sanity(land, "t2", orientation="portrait"))
+        self.assertTrue(check_face_sanity(port, "t3", orientation="portrait"))
+        self.assertFalse(check_face_sanity(port, "t4", orientation="landscape"))
+        self.assertTrue(check_face_sanity(land, "t5", orientation="square"))  # square: any
+        for p in (land, port):
+            os.remove(p)
+
+    def test_size_table_covers_all_three_orientations_and_backends(self):
+        from agents import image_generator as ig
+        for o in ("portrait", "landscape", "square"):
+            self.assertTrue(ig._size(o, "fal"))
+            self.assertIn("x", ig._size(o, "openai"))
+        self.assertEqual(ig._size("landscape", "fal"), "landscape_16_9")
+        self.assertEqual(ig._size("", "fal"), "portrait_16_9")        # default safe
+        self.assertEqual(ig._size("nonsense", "fal"), "portrait_16_9")
+
+    def test_frames_carry_the_reel_orientation(self):
+        data = {"orientation": "landscape",
+                "frames": [{"frame_id": "f01", "caption": "x", "photo_spec": "ai_portrait"}],
+                "detect_speakers": False}
+        frames = web_app._build_frames_from_payload(data, 5.0)
+        self.assertEqual(frames[0]["orientation"], "landscape")
+
+    def test_disclosure_png_fallback_renders(self):
+        """No-drawtext ffmpeg builds must still burn the provenance disclosure —
+        the old path silently shipped an UNLABELED reel (governance failure)."""
+        from agents import assembler
+        p = assembler._disclosure_png("AI likeness · real person depicted", 1080)
+        self.assertTrue(os.path.exists(p) and os.path.getsize(p) > 500)
+        os.remove(p)
+
+
+class VoiceoverBedTests(unittest.TestCase):
+    """Red-team finding: VO mode skipped bed generation entirely (the gate at
+    _canvas_render_thread only fired for music_type=='generate'), so narration
+    played over dead silence unless the operator manually uploaded a song — while
+    the assembler's VO+ducked-bed mixer (brand path) sat unused. The fix generates
+    the same bed and routes it to bg_music_path instead of music_path (which in VO
+    mode carries the narration track itself)."""
+
+    def _run(self, data):
+        import unittest.mock as mock, pathlib, tempfile
+        def fake_generate_music(brief, path):
+            pathlib.Path(path).write_bytes(b"mp3")
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(web_app, "_execute_pipeline") as ep, \
+             mock.patch("agents.music_generator.generate_music",
+                        side_effect=fake_generate_music), \
+             mock.patch("agents.music_generator.compose_music_brief",
+                        return_value="brief"):
+            web_app._canvas_render_thread("vo-bed-test", data, pathlib.Path(td))
+            self.assertTrue(ep.called)   # render always proceeds
+        return data
+
+    def test_voiceover_mode_generates_a_bed_as_bg_music(self):
+        data = self._run({"music_type": "voiceover",
+                          "frames": [{"caption": "a line"}], "canvas_run_id": ""})
+        self.assertTrue(data.get("bg_music_path", "").endswith("music.mp3"))
+        # music_path must stay free — the VO branch fills it with the narration track.
+        self.assertNotIn("music_path", data)
+
+    def test_generate_mode_behaviour_unchanged(self):
+        data = self._run({"music_type": "generate",
+                          "frames": [{"caption": "a line"}], "canvas_run_id": ""})
+        self.assertTrue(data.get("music_path", "").endswith("music.mp3"))
+        self.assertNotIn("bg_music_path", data)
+
+    def test_operator_uploaded_bed_is_never_overwritten(self):
+        data = self._run({"music_type": "voiceover", "bg_music_path": "/abs/my_song.mp3",
+                          "frames": [{"caption": "a line"}], "canvas_run_id": ""})
+        self.assertEqual(data["bg_music_path"], "/abs/my_song.mp3")
+
+    def test_bed_failure_degrades_to_vo_only_and_still_renders(self):
+        import unittest.mock as mock, pathlib, tempfile
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(web_app, "_execute_pipeline") as ep, \
+             mock.patch("agents.music_generator.generate_music",
+                        side_effect=RuntimeError("suno down")), \
+             mock.patch("agents.music_generator.compose_music_brief",
+                        return_value="brief"):
+            data = {"music_type": "voiceover",
+                    "frames": [{"caption": "a line"}], "canvas_run_id": ""}
+            web_app._canvas_render_thread("vo-bed-fail", data, pathlib.Path(td))
+            self.assertTrue(ep.called)          # narration still renders
+        self.assertNotIn("bg_music_path", data)  # no half-written bed
+
+
+class VisualSubjectIdentityTests(unittest.TestCase):
+    """Third-person narration bug: a mythological/fictional protagonist (e.g.
+    Hanuman) is narrated ABOUT, not quoted — speaker_id correctly stays 'narrator'
+    (the narrator's voice reads the line) but detect_cast previously had no way to
+    say someone else is DEPICTED, so every such shot fell back to the narrator's
+    face (i.e. no locked face at all) -> age/appearance drifted shot to shot.
+    visual_subject_id is the new field: who's on screen, independent of who's
+    talking. All tests hermetic — llm.chat mocked, zero API spend."""
+
+    def test_detect_cast_gives_a_narrated_protagonist_their_own_visual_subject_id(self):
+        from agents import cast
+        import unittest.mock as mock
+        frames = [{"frame_id": "f01", "caption": "Sugriva gave the command."},
+                  {"frame_id": "f02", "caption": "Hanuman stood at the ocean's edge."},
+                  {"frame_id": "f03", "caption": "Jambavan approached him."}]
+        fake_response = json.dumps({
+            "cast": [{"id": "narrator", "label": "Narrator", "gender": "male", "age_bracket": "adult"},
+                     {"id": "hanuman", "label": "Hanuman", "gender": "male", "age_bracket": "adult"},
+                     {"id": "jambavan", "label": "Jambavan", "gender": "male", "age_bracket": "elderly"}],
+            "by_frame": [
+                {"frame_id": "f01", "speaker_id": "narrator", "visual_subject_id": "narrator"},
+                {"frame_id": "f02", "speaker_id": "narrator", "visual_subject_id": "hanuman"},
+                {"frame_id": "f03", "speaker_id": "narrator", "visual_subject_id": "jambavan"},
+            ],
+        })
+        with mock.patch("agents.llm.chat", return_value=fake_response):
+            members = cast.detect_cast(frames)
+        self.assertEqual({m["id"] for m in members}, {"narrator", "hanuman", "jambavan"})
+        f02 = next(f for f in frames if f["frame_id"] == "f02")
+        self.assertEqual(f02["speaker_id"], "narrator")          # voice: still the narrator
+        self.assertEqual(f02["visual_subject_id"], "hanuman")    # face: Hanuman, not the narrator
+        self.assertEqual(f02["visual_subject_label"], "Hanuman")
+
+    def test_detect_cast_synthesizes_a_member_the_model_forgot_to_declare(self):
+        """Schema doesn't enforce that every by_frame id appears in cast[] — if the
+        model references a visual_subject_id without declaring it, that must not
+        silently collapse back to the narrator (the exact bug this fix targets)."""
+        from agents import cast
+        import unittest.mock as mock
+        frames = [{"frame_id": "f01", "caption": "Hanuman leapt."}]
+        fake_response = json.dumps({
+            "cast": [{"id": "narrator", "label": "Narrator", "gender": "male", "age_bracket": "adult"}],
+            "by_frame": [{"frame_id": "f01", "speaker_id": "narrator", "visual_subject_id": "hanuman"}],
+        })
+        with mock.patch("agents.llm.chat", return_value=fake_response):
+            members = cast.detect_cast(frames)
+        self.assertIn("hanuman", {m["id"] for m in members})
+        self.assertEqual(frames[0]["visual_subject_id"], "hanuman")
+
+    def test_apply_defaults_visual_subject_to_speaker_for_single_narrator(self):
+        from agents import cast
+        frames = [{"frame_id": "f01", "caption": "x"}]
+        cast._apply(frames, cast._narrator_member("", ""))
+        self.assertEqual(frames[0]["visual_subject_id"], "narrator")
+
+    def test_apply_cast_preserves_existing_visual_subject_id(self):
+        """Carried back from the UI after a prior detect_cast pass — apply_cast (the
+        no-LLM render-path resolver) must not clobber it, and must resolve that
+        member's OWN gender/age, not the speaker's."""
+        from agents import cast
+        frames = [{"frame_id": "f01", "speaker_id": "narrator",
+                   "visual_subject_id": "hanuman"}]
+        cast_list = [{"id": "narrator", "label": "Narrator", "gender": "female", "age_bracket": "adult"},
+                     {"id": "hanuman", "label": "Hanuman", "gender": "male", "age_bracket": "adult"}]
+        cast.apply_cast(frames, cast_list)
+        self.assertEqual(frames[0]["visual_subject_id"], "hanuman")
+        self.assertEqual(frames[0]["visual_subject_gender"], "male")     # Hanuman's, not the narrator's
+        self.assertEqual(frames[0]["speaker_gender"], "female")          # unaffected
+
+    def test_apply_cast_defaults_visual_subject_for_frames_predating_the_field(self):
+        from agents import cast
+        frames = [{"frame_id": "f01", "speaker_id": "son"}]   # no visual_subject_id at all
+        cast_list = [{"id": "narrator", "label": "Narrator", "gender": "female", "age_bracket": "adult"},
+                     {"id": "son", "label": "Son", "gender": "male", "age_bracket": "child"}]
+        cast.apply_cast(frames, cast_list)
+        self.assertEqual(frames[0]["visual_subject_id"], "son")
+        self.assertEqual(frames[0]["visual_subject_gender"], "male")
+
+    def test_subject_descriptor_prefers_visual_subject_over_speaker(self):
+        from agents import cast
+        frame = {"speaker_id": "narrator", "speaker_gender": "female", "speaker_age_bracket": "adult",
+                 "visual_subject_id": "hanuman", "visual_subject_gender": "male",
+                 "visual_subject_age_bracket": "adult", "visual_subject_label": "Hanuman"}
+        desc = cast.subject_descriptor(frame, narrator_description="a woman telling her story")
+        self.assertIn("Hanuman", desc)
+        self.assertIn("man", desc)
+
+    def test_subject_descriptor_falls_back_to_speaker_for_old_frames(self):
+        from agents import cast
+        frame = {"speaker_id": "son", "speaker_gender": "male", "speaker_age_bracket": "child",
+                 "speaker_label": "Son"}   # no visual_subject_* at all
+        desc = cast.subject_descriptor(frame)
+        self.assertIn("boy", desc)
+        self.assertIn("Son", desc)
+
+    def test_subject_descriptor_narrator_visual_subject_uses_narrator_description(self):
+        from agents import cast
+        frame = {"speaker_id": "narrator", "visual_subject_id": "narrator"}
+        self.assertEqual(cast.subject_descriptor(frame, "a tall man"), "a tall man")
+
+    def test_cast_from_frames_collects_visual_only_subjects(self):
+        """Idempotent rebuild path (already-tagged frames) must not lose a
+        narrated-about subject that never appears as a speaker_id."""
+        from agents import cast
+        frames = [{"frame_id": "f01", "speaker_id": "narrator", "speaker_label": "Narrator",
+                   "speaker_gender": "female", "speaker_age_bracket": "adult",
+                   "visual_subject_id": "hanuman"}]
+        members = cast._cast_from_frames(frames)
+        self.assertIn("hanuman", {m["id"] for m in members})
+
+    def test_scene_intelligence_reaches_narrated_visual_subject(self):
+        """The actual trigger point that was still broken after cast.py alone was
+        fixed: design_all_scenes only asked cast.subject_descriptor for a non-
+        narrator SPEAKER, so a narrated-about (speaker=narrator) visual subject
+        like Hanuman never reached the image prompt at all — every one of his
+        shots silently kept using the operator's generic story-level subject
+        description instead of his own. Mocks both LLM-backed helpers; asserts
+        only on which subject_description/subject_name reached design_scene."""
+        from agents import scene_intelligence
+        import unittest.mock as mock
+        frame = {"frame_id": "f01", "caption": "Hanuman leapt across the ocean.",
+                 "photo_spec": "ai_portrait", "speaker_id": "narrator",
+                 "speaker_label": "Narrator", "visual_subject_id": "hanuman",
+                 "visual_subject_label": "Hanuman", "visual_subject_gender": "male",
+                 "visual_subject_age_bracket": "adult"}
+        captured = {}
+
+        def fake_design_scene(story_beat, subject_name="", **kw):
+            captured["subject_name"] = subject_name
+            captured["subject_description"] = kw.get("subject_description", "")
+            return {"emotion": "awe", "motion_prompt": "m", "camera_angle": "wide",
+                    "image_prompt": "p"}
+
+        with mock.patch.object(scene_intelligence, "design_treatment", return_value=None), \
+             mock.patch.object(scene_intelligence, "design_scene", side_effect=fake_design_scene):
+            scene_intelligence.design_all_scenes(
+                [frame], subject_name="Amit", subject_description="a tech founder")
+        self.assertEqual(captured["subject_name"], "Hanuman")
+        self.assertIn("Hanuman", captured["subject_description"])
+        self.assertNotIn("tech founder", captured["subject_description"])
+
+    def test_silent_beat_uses_director_note_instead_of_empty_prompt(self):
+        """The 'fish, tower, teenager' bug: a caption-less beat (no dialogue —
+        legitimate for pure-visual storytelling, e.g. 'his fist glows') always
+        returned image_prompt="", discarding director_note entirely. The
+        storyboard sketch (and the real render, which reads the same
+        scene.image_prompt) then had literally nothing to draw and produced
+        unrelated generic content. Must not call design_scene (LLM) — silent
+        beats stay free, same as before this fix."""
+        from agents import scene_intelligence
+        import unittest.mock as mock
+        frame = {"frame_id": "f14", "caption": "", "photo_spec": "ai_portrait",
+                 "director_note": "Extreme close-up on Hanuman's fist at his heart. "
+                                   "A faint warm glow pulses once."}
+        with mock.patch.object(scene_intelligence, "design_treatment", return_value=None), \
+             mock.patch.object(scene_intelligence, "design_scene") as mock_design:
+            out = scene_intelligence.design_all_scenes([frame])
+        mock_design.assert_not_called()
+        scene = out[0]["scene"]
+        self.assertIn("fist at his heart", scene["image_prompt"])
+        self.assertEqual(scene["emotion"], "silence")
+
+    def test_original_first_person_hob_story_is_byte_identical(self):
+        """The canonical use case this whole module exists for (its own docstring):
+        ONE narrator (the mother) quotes her son mid-story. This is the ENTIRE
+        pre-existing product before third-person narration existed — proves the
+        full detect_cast -> design_all_scenes chain produces identical speaker
+        attribution and identical subject descriptions to before this session's
+        changes, for the case every existing story/run actually is."""
+        from agents import cast, scene_intelligence
+        import unittest.mock as mock
+        frames = [
+            {"frame_id": "f01", "caption": "Eighteen years on this street."},
+            {"frame_id": "f02", "caption": "Mom, where is father gone?"},
+            {"frame_id": "f03", "caption": "I never had an answer for him."},
+        ]
+        fake_cast_response = json.dumps({
+            "cast": [{"id": "narrator", "label": "Mother", "gender": "female", "age_bracket": "adult"},
+                     {"id": "son", "label": "Son", "gender": "male", "age_bracket": "child"}],
+            "by_frame": [
+                {"frame_id": "f01", "speaker_id": "narrator", "visual_subject_id": "narrator"},
+                {"frame_id": "f02", "speaker_id": "son", "visual_subject_id": "son"},
+                {"frame_id": "f03", "speaker_id": "narrator", "visual_subject_id": "narrator"},
+            ],
+        })
+        with mock.patch("agents.llm.chat", return_value=fake_cast_response):
+            cast.detect_cast(frames, "Mother", "a 45-year-old street vendor")
+
+        # speaker_id/visual_subject_id are identical for EVERY frame — first-person
+        # has no split by construction. This is the property that guarantees zero
+        # regression: nothing downstream can observe a difference.
+        for f in frames:
+            self.assertEqual(f["speaker_id"], f["visual_subject_id"])
+
+        captured = []
+
+        def fake_design_scene(story_beat, subject_name="", **kw):
+            captured.append((subject_name, kw.get("subject_description", "")))
+            return {"emotion": "e", "motion_prompt": "m", "camera_angle": "c", "image_prompt": "p"}
+
+        with mock.patch.object(scene_intelligence, "design_treatment", return_value=None), \
+             mock.patch.object(scene_intelligence, "design_scene", side_effect=fake_design_scene):
+            scene_intelligence.design_all_scenes(
+                frames, subject_name="Mother", subject_description="a 45-year-old street vendor")
+
+        # f01/f03 (narrator): the OPERATOR's own description, exactly as before —
+        # never routed through cast.subject_descriptor at all.
+        self.assertEqual(captured[0], ("Mother", "a 45-year-old street vendor"))
+        self.assertEqual(captured[2], ("Mother", "a 45-year-old street vendor"))
+        # f02 (quoted son): gender/age-accurate descriptor, exactly the pre-existing
+        # "quoted speaker" behaviour this module's docstring describes.
+        self.assertEqual(captured[1][0], "Son")
+        self.assertIn("boy", captured[1][1])
+
+    def test_genuinely_contentless_silent_beat_stays_empty(self):
+        """No caption AND no director_note — nothing to draw; unchanged behaviour."""
+        from agents import scene_intelligence
+        import unittest.mock as mock
+        frame = {"frame_id": "f01", "caption": "", "director_note": ""}
+        with mock.patch.object(scene_intelligence, "design_treatment", return_value=None):
+            out = scene_intelligence.design_all_scenes([frame])
+        self.assertEqual(out[0]["scene"]["image_prompt"], "")

@@ -64,9 +64,18 @@ def build_props(frames: list[dict], timecodes: list[tuple], total_seconds: float
     return {"durationSeconds": round(max(total_seconds, 1.0), 3), "captions": caps}
 
 
-def render_overlay(props: dict, out_mov: str) -> str:
-    """Render the transparent caption track. Raises on ANY problem (missing node,
-    npm deps, Chromium failure, empty output) — the caller falls back to libass."""
+def render_overlay(props: dict, out_mov: str, width: int = 1080,
+                   height: int = 1920) -> str:
+    """Render the transparent caption track AT THE REEL'S DIMENSIONS. Raises on
+    ANY problem (missing node, npm deps, Chromium failure, empty output) — the
+    caller falls back to the libass burn.
+
+    width/height override the composition's default 1080×1920 (Root.tsx): the
+    layout anchors captions relatively (bottom-px / %-top), so it holds at any
+    canvas. Without the override a LANDSCAPE reel composited a portrait-sized
+    overlay whose bottom-anchored captions sat ~1700px down — below the visible
+    1080px, i.e. captions rendered fine but OFF-SCREEN (found live, 2026-07-19
+    Yamraj A/B reel)."""
     cfg = config().get("remotion") or {}
     proj = os.path.abspath(cfg.get("project_dir") or "tools/remotion-captions")
     comp = cfg.get("composition") or "CaptionOverlay"
@@ -75,7 +84,10 @@ def render_overlay(props: dict, out_mov: str) -> str:
     if not os.path.exists(os.path.join(proj, "node_modules", "remotion")):
         raise RuntimeError(f"remotion deps not installed in {proj} (run npm install)")
 
-    key = hashlib.md5(json.dumps(props, sort_keys=True).encode()).hexdigest()[:12]
+    # Dims join the cache key — a portrait-cached overlay must never serve a
+    # landscape re-render of the same captions.
+    key = hashlib.md5(json.dumps(props, sort_keys=True).encode()
+                      + f"|{width}x{height}".encode()).hexdigest()[:12]
     cache = os.path.join(os.path.dirname(out_mov), f"capoverlay_{key}.mov")
     if os.path.exists(cache) and os.path.getsize(cache) > 50_000:
         shutil.copy2(cache, out_mov)
@@ -87,11 +99,12 @@ def render_overlay(props: dict, out_mov: str) -> str:
         json.dump(props, f, ensure_ascii=False)
     try:
         print(f"[Remotion] rendering caption overlay ({len(props['captions'])} captions, "
-              f"{props['durationSeconds']}s)…")
+              f"{props['durationSeconds']}s, {width}x{height})…")
         r = subprocess.run(
             ["npx", "remotion", "render", "src/index.ts", comp, out_mov,
              "--codec=prores", "--prores-profile=4444",
              "--pixel-format=yuva444p10le", "--image-format=png", "--muted",
+             f"--width={width}", f"--height={height}",
              f"--props={props_path}", "--log=error"],
             cwd=proj, capture_output=True, text=True, timeout=1800)
         if r.returncode != 0:

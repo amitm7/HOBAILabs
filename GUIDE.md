@@ -453,7 +453,12 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **cuts on the beat** (hard cut on a beat, soft dissolve off it) instead of a uniform
   crossfade — so it reads as a film, not a slideshow. Even with no music, cuts follow a
   steady **tempo** (set by the mood); voiceover keeps gentle cuts so they don't fight
-  the narration. Each shot's clip
+  the narration. **Voice-over reels get a music bed automatically** — the same
+  generated score, played quietly UNDER the narration (voice full, music ducked); to
+  use your own bed instead, upload a song via **⬆ Music bed**. And when your story has
+  spoken lines (narrated / dialogue / mixed form), the **Audio selector defaults to
+  🎙 ElevenLabs VO** by itself — you no longer have to remember to switch it off
+  🎵 Music; your own choice, once made, always wins. Each shot's clip
   appears on its card as it finishes, then the full reel plays in a panel below the
   board with a download link. The render reuses the same proven pipeline as the other
   modes, so models, costs, and safety/spend gates are identical. Stage cards show a
@@ -481,6 +486,22 @@ Studio mode** link in the header. See [docs/MODE3_PLAN.md](docs/MODE3_PLAN.md).
 - **Brief → shots** — pick a scope (*Commerce* for product/fashion/jewelry ads, or
   *General* for any idea), write a plain-language brief, and click **✨ Plan shots**.
   The AI drafts editable shot cards: on-screen line, camera move, and shot size.
+- **Faces must be locked before Key Frames spend.** If any on-screen character has
+  no locked face (📎 photo or 🎨 generated), Key Frames now **refuses to generate**
+  and names them — an unlocked face is how the same character used to come out
+  different in every shot. Confirming the warning proceeds anyway (your call, made
+  explicitly — never a silent drift). Big `[VISUALS: …]` moments in an authored
+  script also now become their **own shots** (the lamp close-up, the skeletal hand)
+  instead of being folded into a dialogue shot's notes.
+- **Authored scripts are followed exactly (compile mode).** If your brief is already
+  a shot list — blocks headed `FRAME 1:` / `SCENE 1:` / `Shot 1 (0–4s):` — the tool
+  **doesn't re-imagine it**: every dialogue line becomes its own shot with the
+  speaker you wrote (`SUGRIVA (commanding): "…"` stays Sugriva's line, verbatim),
+  camera/lighting notes go to the image untouched, `Shot n (a–bs)` timings set the
+  durations, `[Sound: …]` cues are captured per shot, and a preamble like
+  `Reference Yamraj from Image 1 (identity)` registers a character who never
+  speaks so their face can still be locked. Free — no AI call is spent planning a
+  script you already wrote. Plain-prose briefs keep the creative AI planner.
 - **Product fidelity** — on shots you mark **🛍 Product beat**, the *real* product
   image is used directly (never re-generated), so logos and fine detail stay exact.
 - **Per-shot controls** — each card has a **Talent**/**Product** selector, a

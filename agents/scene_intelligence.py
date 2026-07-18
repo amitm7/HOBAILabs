@@ -359,11 +359,20 @@ def design_all_scenes(frames: list[dict], subject_name: str = "",
         photo_spec = f.get("photo_spec", "")
 
         if not caption:
+            # A silent beat (no dialogue/VO) still has a SCENE — director_note is
+            # exactly that, and was being silently discarded here: image_prompt was
+            # always "", so the storyboard sketch and (via the same empty prompt)
+            # the real render had nothing to draw and produced unrelated/generic
+            # content. Free (no LLM call, unlike a captioned beat's design_scene
+            # pass) — director_note is already full prose the image model can use
+            # directly. Genuinely contentless beats (no caption, no note either)
+            # keep the previous fully-generic behaviour.
+            note = note.strip()
             return f, {
                 "emotion":      "silence",
                 "motion_prompt": "Very slow zoom out, still, contemplative",
                 "camera_angle": "eye level",
-                "image_prompt": "",
+                "image_prompt": note,
             }
 
         has_photo = (
@@ -376,15 +385,19 @@ def design_all_scenes(frames: list[dict], subject_name: str = "",
             "portrait"
         )
 
-        # Speaker-aware subject: a quoted speaker (kid, father) is depicted as
-        # THAT person; narrator frames keep the operator's subject description.
+        # Subject-aware description: keyed on who's DEPICTED (visual_subject_id),
+        # not who's speaking — a quoted speaker (kid, father) is depicted as THAT
+        # person, and so is a third-person protagonist the narrator describes but
+        # who rarely speaks (e.g. a mythological character). visual_subject_id
+        # defaults to speaker_id, so first-person stories are unaffected.
         spk_name, spk_desc = subject_name, subject_description
-        if f.get("speaker_id", "narrator") != "narrator":
+        visual_subject_id = f.get("visual_subject_id") or f.get("speaker_id", "narrator")
+        if visual_subject_id != "narrator":
             from agents import cast as cast_mod
             descriptor = cast_mod.subject_descriptor(f, subject_description)
-            spk_name = f.get("speaker_label") or "speaker"
+            spk_name = f.get("visual_subject_label") or f.get("speaker_label") or "speaker"
             spk_desc = (f"ON SCREEN: {descriptor}. Depict THIS person — their stated "
-                        "gender and age — a quoted/secondary speaker, NOT the narrator.")
+                        "gender and age — consistently, NOT the narrator.")
 
         scene = design_scene(caption, spk_name,
                              has_real_photo=has_photo,

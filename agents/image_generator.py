@@ -29,7 +29,22 @@ def _get_openai():
     return _openai_client
 
 
-def _flux_generate(prompt: str, out_path: str) -> str:
+# Per-orientation size specs for each backend. The reel's orientation (canvas
+# setting, ridden on every frame dict) must reach STILL generation too — stills
+# were hardcoded 9:16, so a 16:9 reel got portrait stills that the assembler then
+# center-cropped (found live in the Yamraj A/B test, 2026-07-19).
+_SIZES = {
+    "portrait":  {"fal": "portrait_16_9",  "openai": "1024x1536", "prose": "9:16 vertical"},
+    "landscape": {"fal": "landscape_16_9", "openai": "1536x1024", "prose": "16:9 widescreen"},
+    "square":    {"fal": "square_hd",      "openai": "1024x1024", "prose": "1:1 square"},
+}
+
+
+def _size(orientation: str, backend: str) -> str:
+    return _SIZES.get(orientation or "portrait", _SIZES["portrait"])[backend]
+
+
+def _flux_generate(prompt: str, out_path: str, orientation: str = "portrait") -> str:
     """Call Flux 2 Pro via fal.ai REST API and save the result to out_path."""
     fal_key = os.environ.get("FAL_API_KEY", "")
     if not fal_key:
@@ -43,7 +58,7 @@ def _flux_generate(prompt: str, out_path: str) -> str:
         },
         json={
             "prompt": prompt,
-            "image_size": "portrait_16_9",   # 9:16 vertical portrait
+            "image_size": _size(orientation, "fal"),
             "output_format": "jpeg",
             "safety_tolerance": "4",          # storytelling content, relax safety slightly
             "sync_mode": True,                # wait for result in single call (no polling)
@@ -70,13 +85,13 @@ def _flux_generate(prompt: str, out_path: str) -> str:
     return out_path
 
 
-def _openai_generate(prompt: str, out_path: str) -> str:
+def _openai_generate(prompt: str, out_path: str, orientation: str = "portrait") -> str:
     """Call gpt-image-2 and save the result to out_path."""
     client = _get_openai()
     resp = client.images.generate(
         model="gpt-image-2",
         prompt=prompt,
-        size="1024x1536",
+        size=_size(orientation, "openai"),
         quality="high",
         n=1,
     )
@@ -85,7 +100,8 @@ def _openai_generate(prompt: str, out_path: str) -> str:
     return out_path
 
 
-def _fal_image_generate(model_id: str, prompt: str, out_path: str) -> str:
+def _fal_image_generate(model_id: str, prompt: str, out_path: str,
+                        orientation: str = "portrait") -> str:
     """Generate an image via any fal.ai-hosted model (Seedream, Nano Banana, …)."""
     from agents import fal_client
     endpoint = model_router.model_field(model_id, "fal_endpoint")
@@ -93,7 +109,7 @@ def _fal_image_generate(model_id: str, prompt: str, out_path: str) -> str:
         raise RuntimeError(f"no fal_endpoint configured for image model '{model_id}'")
     result = fal_client.run_sync(endpoint, {
         "prompt":        prompt,
-        "image_size":    "portrait_16_9",   # 9:16 vertical
+        "image_size":    _size(orientation, "fal"),
         "num_images":    1,
         "output_format": "jpeg",
         "sync_mode":     True,
@@ -104,19 +120,21 @@ def _fal_image_generate(model_id: str, prompt: str, out_path: str) -> str:
     return fal_client.download_media(url, out_path)
 
 
-def _generate_with_model(model_id: str, prompt: str, out_path: str) -> str:
+def _generate_with_model(model_id: str, prompt: str, out_path: str,
+                         orientation: str = "portrait") -> str:
     """Dispatch image generation to the backend named in config/models.json."""
     backend = model_router.model_field(model_id, "backend")
     if backend == "flux":
-        return _flux_generate(prompt, out_path)
+        return _flux_generate(prompt, out_path, orientation)
     if backend == "openai":
-        return _openai_generate(prompt, out_path)
+        return _openai_generate(prompt, out_path, orientation)
     if backend == "fal":
-        return _fal_image_generate(model_id, prompt, out_path)
+        return _fal_image_generate(model_id, prompt, out_path, orientation)
     raise RuntimeError(f"unknown image backend '{backend}' for model '{model_id}'")
 
 
-def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str) -> str:
+def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str,
+                    orientation: str = "portrait") -> str:
     """
     Try the chosen model, then its full configured cross-vendor fallback chain
     (Gap #8), so a single flaky/over-quota provider never breaks a render. The
@@ -134,7 +152,7 @@ def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str) ->
             ordered.append(mid)
     result, used = model_router.run_with_fallback(
         ordered,
-        lambda mid: _generate_with_model(mid, prompt, out_path),
+        lambda mid: _generate_with_model(mid, prompt, out_path, orientation),
         axis="image", logger=print,
     )
     if used != chosen:
@@ -144,7 +162,8 @@ def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str) ->
 
 def _generate_image_checked(model_id: str, prompt: str, out_path: str,
                             fallback: str, frame_id: str,
-                            max_retries: int = 2, generator=None) -> str:
+                            max_retries: int = 2, generator=None,
+                            orientation: str = "portrait") -> str:
     """
     Generate, then run Gate B (fast sanity check) and Gate B2 (vision-LLM
     critique: anachronisms, wrong age, deformed anatomy, baked-in text);
@@ -154,10 +173,12 @@ def _generate_image_checked(model_id: str, prompt: str, out_path: str,
     (used by reference-guided generation).
     """
     from agents.safety import check_face_sanity, critique_image
-    gen = generator or (lambda: _generate_image(model_id, prompt, out_path, fallback))
+    gen = generator or (lambda: _generate_image(model_id, prompt, out_path, fallback,
+                                                orientation))
     for attempt in range(max_retries + 1):
         gen()
-        if check_face_sanity(out_path, frame_id) and critique_image(out_path, frame_id, prompt):
+        if check_face_sanity(out_path, frame_id, orientation=orientation) \
+                and critique_image(out_path, frame_id, prompt):
             return out_path
         if attempt < max_retries:
             print(f"[Safety] Gate B: {frame_id} — regenerating (attempt {attempt + 2}/{max_retries + 1})")
@@ -249,7 +270,12 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
     use_ref = bool(reference_path) and os.path.exists(reference_path)
     chosen  = "gpt_image_ref" if use_ref else (model_id or "flux")
     seed = frame.get("scene", {}).get("_redo_seed", "")
-    hash_src = prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "") + seed
+    # Orientation joins the hash only when non-default, so every pre-existing
+    # portrait cache stays valid while landscape/square (previously WRONG — stills
+    # were hardcoded 9:16) regenerate correctly.
+    orientation = frame.get("orientation") or "portrait"
+    ohash = f"|or:{orientation}" if orientation != "portrait" else ""
+    hash_src = prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "") + seed + ohash
     out_path = os.path.join(
         assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, hash_src, frame_id)}.jpg")
 
@@ -269,10 +295,12 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
         print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via reference edit "
               f"(face from {os.path.basename(reference_path)})…")
         _generate_image_checked("", prompt, out_path, "", frame_id,
-                                generator=lambda: edit_image(reference_path, ref_prompt, out_path))
+                                generator=lambda: edit_image(reference_path, ref_prompt, out_path),
+                                orientation=orientation)
     else:
         print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
-        _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
+        _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id,
+                                orientation=orientation)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path
 
@@ -347,7 +375,9 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
     chosen = "gpt_image_ref" if use_plate else (model_id or "gpt_image")
     # _redo_seed is injected by redo-still so even the same prompt produces a new file.
     seed = frame.get("scene", {}).get("_redo_seed", "")
-    hash_src = prompt + (f"|plate:{_file_hash(plate)}" if use_plate else "") + seed
+    orientation = frame.get("orientation") or "portrait"
+    ohash = f"|or:{orientation}" if orientation != "portrait" else ""
+    hash_src = prompt + (f"|plate:{_file_hash(plate)}" if use_plate else "") + seed + ohash
     out_path = os.path.join(
         assets_dir, f"ai_symbolic_{frame_id}_{_prompt_hash(chosen, hash_src, frame_id)}.jpg")
 
@@ -367,10 +397,12 @@ def generate_symbolic_image(frame: dict, assets_dir: str, model_id: str = "") ->
         print(f"[ImageGen] Symbolic ({frame_id}) [{scene.get('emotion', '')}] via plate edit "
               f"(location from {os.path.basename(plate)})…")
         _generate_image_checked("", prompt, out_path, "", frame_id,
-                                generator=lambda: edit_image(plate, plate_prompt, out_path))
+                                generator=lambda: edit_image(plate, plate_prompt, out_path),
+                                orientation=orientation)
     else:
         print(f"[ImageGen] Symbolic ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
-        _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id)
+        _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id,
+                                orientation=orientation)
     print(f"[ImageGen] Saved → {out_path}")
     return out_path
 
@@ -395,12 +427,21 @@ def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: 
     character-sheet-first). Used once per character in AI/fiction mode; the result becomes
     that character's reference so every shot conditions on the SAME face (via the pluggable
     identity path). Front-facing, neutral background — a clean face lock."""
+    # Recipe upgraded 2026-07-19 from the galleri5 pipeline anatomy (their actual
+    # Yamraj sheet prompt): single-figure FULL BODY, explicit anti-grid negatives,
+    # photoreal material texture. Deliberately KEPT flat/even lighting over their
+    # dramatic side light — S30 confirmed flat-lit single-frontal refs condition
+    # downstream generation better.
     prompt = (
-        "Character reference sheet — ONE character, front-facing, three-quarter framing "
-        "(head to knees) so the FULL OUTFIT is clearly visible, neutral studio background, "
-        "soft even lighting, clear unobstructed face, looking at camera. "
-        f"{appearance}. {world_clause}. Consistent character design, highly detailed face "
-        "and wardrobe, no text, no watermark, vertical 9:16."
+        "ONE clean single-figure full-body portrait of a character, standing in a "
+        "neutral front-facing pose on a plain uncluttered background, full body "
+        "visible from head to feet, centered, soft even lighting, clear "
+        f"unobstructed face, looking at camera. {appearance}. {world_clause}. "
+        "Photorealistic rendering — real skin texture, natural material surfaces "
+        "on clothing and props. Consistent character design, highly detailed face "
+        "and wardrobe. NOT a multi-pose grid, NOT a turnaround sheet, NOT a panel "
+        "layout — one single clean portrait. No labels, no text, no watermarks, "
+        "no borders. Vertical 9:16."
     )
     chosen = model_id or "flux"           # face-strong model for a clean canonical portrait
     os.makedirs(out_dir, exist_ok=True)
@@ -416,21 +457,29 @@ def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: 
 
 def generate_location_plate(description: str, out_dir: str, *, world_clause: str = "",
                             time_of_day: str = "", loc_id: str = "loc",
-                            model_id: str = "", variant: int = 0) -> str:
+                            model_id: str = "", variant: int = 0,
+                            lighting_arc: str = "", orientation: str = "portrait") -> str:
     """Generate a CANONICAL location plate (S30 Phase 1 — the 'character sheet for
     places'). Plate discipline stolen from the galleri5 teardown (§10.4 item 5): the
     environment is generated EMPTY — no people, clear negative space at center for the
     characters, lighting headroom for later drama — so shots condition on the place
     without fighting a baked-in subject. The plate becomes the location's reference;
-    the invariant clause (canvas_run._location_clause) rides every shot's prompt."""
+    the invariant clause (canvas_run._location_clause) rides every shot's prompt.
+    lighting_arc (galleri5 anatomy, 2026-07-19): the plate ANTICIPATES the story's key
+    light moment (e.g. 'room for divine golden radiance to flood the space later') so
+    late-story lighting reads as revealed, not repainted. orientation follows the reel."""
+    _prose = _SIZES.get(orientation or "portrait", _SIZES["portrait"])["prose"]
     prompt = (
         "Location reference plate — a single clean establishing view of ONE place, "
-        f"vertical 9:16. {description.strip()}"
+        f"{_prose}. {description.strip()}"
         + (f" Time of day: {time_of_day.strip()}." if time_of_day.strip() else "")
         + (f" {world_clause.strip()}." if world_clause.strip() else "")
         + " EMPTY environment: no people, no characters, no animals. Keep clear space "
           "at the center of frame for characters to occupy later, and lighting headroom "
-          "(don't blow out highlights). Consistent, memorable geometry. "
+          "(don't blow out highlights)."
+        + (f" Leave room for this later in the story: {lighting_arc.strip()}."
+           if lighting_arc.strip() else "")
+        + " Consistent, memorable geometry. "
           "No text, no labels, no borders, no watermark."
     )
     chosen = model_id or "flux"
@@ -445,7 +494,8 @@ def generate_location_plate(description: str, out_dir: str, *, world_clause: str
     # Checked path on purpose: Gate B treats no-face images as valid (symbolic frames
     # have no people by design) and Gate B2 catches baked-in text / era mismatches —
     # both real failure modes for an establishing plate.
-    _generate_image_checked(chosen, prompt, out_path, "gpt_image", loc_id)
+    _generate_image_checked(chosen, prompt, out_path, "gpt_image", loc_id,
+                            orientation=orientation)
     return out_path
 
 

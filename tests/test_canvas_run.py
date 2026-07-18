@@ -393,7 +393,7 @@ def test_paid_plate_conditions_faceless_shots(tmp_path, monkeypatch):
     Image.new("RGB", (64, 64)).save(plate)
     seen = {}
 
-    def fake_checked(model, prompt, out, fb, fid, generator=None):
+    def fake_checked(model, prompt, out, fb, fid, generator=None, **kw):
         if generator:
             generator()
         else:
@@ -436,6 +436,46 @@ def test_set_location_can_skip_propagation(monkeypatch):
     canvas_run.set_location(state, "cave", plate_path="/p.png")   # this one propagates
     assert "new" in state["frames"][0]["location_clause"]
     assert state["frames"][0]["location_ref_path"] == "/p.png"
+
+
+def test_set_character_matches_visual_subject_not_just_speaker(monkeypatch):
+    """The Hanuman bug: a third-person protagonist is narrated about (speaker_id
+    stays 'narrator', since the narrator's voice reads the line) but IS the visual
+    subject of the shot (visual_subject_id = the character). Before this fix,
+    set_character only matched frames whose speaker_id equalled the character —
+    so an uploaded reference photo for a narrated-about protagonist attached to
+    ZERO of their shots. Also checks a first-person frame (speaker_id ==
+    visual_subject_id, the common case) still matches exactly as before."""
+    monkeypatch.setattr("agents.shot_planner.plan", lambda *a, **k: _frames())
+    state = canvas_run.new_canvas("brief")
+    state["characters"] = [{"id": "hanuman", "name": "Hanuman", "ref_path": "",
+                            "consent": False, "species": "", "clothing": ""}]
+    for f in state["frames"]:
+        f["speaker_id"] = "narrator"           # narrator's voice reads every caption
+        f["visual_subject_id"] = "hanuman"      # but Hanuman is on screen throughout
+    canvas_run.set_character(state, "hanuman", ref_path="/abs/hanuman.jpg")
+    assert all(f["character_ref_path"] == "/abs/hanuman.jpg" for f in state["frames"])
+
+    # First-person case: speaker IS the visual subject — must keep matching too.
+    state2 = canvas_run.new_canvas("brief")
+    state2["characters"] = [{"id": "son", "name": "Son", "ref_path": ""}]
+    state2["frames"][0]["speaker_id"] = "son"
+    state2["frames"][0]["visual_subject_id"] = "son"
+    canvas_run.set_character(state2, "son", ref_path="/abs/son.jpg")
+    assert state2["frames"][0]["character_ref_path"] == "/abs/son.jpg"
+    assert "character_ref_path" not in state2["frames"][1]   # untouched, different subject
+
+
+def test_set_character_falls_back_to_speaker_id_for_old_frames(monkeypatch):
+    """Frames created before this fix have no visual_subject_id at all — set_character
+    must still match on speaker_id so pre-existing first-person runs are unaffected."""
+    monkeypatch.setattr("agents.shot_planner.plan", lambda *a, **k: _frames())
+    state = canvas_run.new_canvas("brief")
+    state["characters"] = [{"id": "son", "name": "Son", "ref_path": ""}]
+    state["frames"][0]["speaker_id"] = "son"
+    assert "visual_subject_id" not in state["frames"][0]
+    canvas_run.set_character(state, "son", ref_path="/abs/son.jpg")
+    assert state["frames"][0]["character_ref_path"] == "/abs/son.jpg"
 
 
 def test_replan_brief_rebuilds_in_place_and_resets(monkeypatch):

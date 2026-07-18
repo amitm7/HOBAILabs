@@ -97,14 +97,19 @@ def has_person(image_path: str) -> bool:
         return False
 
 
-def check_face_sanity(image_path: str, frame_id: str) -> bool:
+def check_face_sanity(image_path: str, frame_id: str,
+                      orientation: str = "portrait") -> bool:
     """
     Gate B: Validate a generated image before it enters the clip-build step.
     Returns True if the image passes; False means regenerate.
 
     Checks (in order):
       1. File exists and size > 10 KB (not empty/corrupt)
-      2. PIL can open it and dimensions are portrait (h > w)
+      2. PIL can open it and dimensions MATCH the requested orientation —
+         portrait expects h>w, landscape expects w>h, square skips the check.
+         (Was hardcoded portrait: a deliberate 16:9 reel had every landscape
+         still rejected 3x before being grudgingly accepted — found live in the
+         Yamraj A/B test, 2026-07-19.)
       3. [optional] OpenCV face count: 0–3 faces (>3 = likely deformed generation)
 
     OpenCV check is silently skipped when cv2 is not installed.
@@ -126,8 +131,11 @@ def check_face_sanity(image_path: str, frame_id: str) -> bool:
         if w == 0 or h == 0:
             print(f"[Safety] Gate B: {frame_id} — zero image dimensions.")
             return False
-        if w > h:
+        if orientation == "portrait" and w > h:
             print(f"[Safety] Gate B: {frame_id} — landscape orientation ({w}×{h}), expected portrait.")
+            return False
+        if orientation == "landscape" and h > w:
+            print(f"[Safety] Gate B: {frame_id} — portrait orientation ({w}×{h}), expected landscape.")
             return False
     except Exception as e:
         print(f"[Safety] Gate B: {frame_id} — PIL cannot open image: {e}")

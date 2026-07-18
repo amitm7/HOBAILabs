@@ -50,8 +50,9 @@ _CAST_SCHEMA = {"name": "cast", "schema": {
             "properties": {
                 "frame_id":  {"type": "string"},
                 "speaker_id": {"type": "string"},
+                "visual_subject_id": {"type": "string"},
             },
-            "required": ["frame_id", "speaker_id"],
+            "required": ["frame_id", "speaker_id", "visual_subject_id"],
         }},
     },
     "required": ["cast", "by_frame"],
@@ -75,6 +76,10 @@ def _apply(frames: list[dict], member: dict):
         f["speaker_label"]       = member["label"]
         f["speaker_gender"]      = member["gender"]
         f["speaker_age_bracket"] = member["age_bracket"]
+        f["visual_subject_id"]           = member["id"]
+        f["visual_subject_label"]        = member["label"]
+        f["visual_subject_gender"]       = member["gender"]
+        f["visual_subject_age_bracket"]  = member["age_bracket"]
 
 
 def detect_cast(frames: list[dict], narrator_name: str = "",
@@ -101,23 +106,35 @@ def detect_cast(frames: list[dict], narrator_name: str = "",
     beat_list = "\n".join(f"{f['frame_id']}: {f.get('caption','').strip()}"
                           for f in captioned)
     sys = (
-        "You analyse a first-person story reel script. ONE person narrates "
-        f"(id '{NARRATOR_ID}', {narrator.get('label')}). Most beats are the narrator. "
-        "But a beat may QUOTE someone else (a child, father, friend) or depict a "
-        "DIFFERENT person/age of the subject (e.g. the narrator as a young child). "
-        "For each such beat, the on-screen person should be that speaker, not the "
-        "narrator.\n"
-        "Build a small cast and assign every beat to a speaker. Reuse the SAME "
-        "speaker id when the same person recurs (so their face stays consistent). "
-        "Use short, stable ids like 'narrator', 'son', 'father', 'young_self'. "
-        "gender ∈ {female,male}; age_bracket ∈ {child,adult,elderly}. "
-        "When unsure, assign the narrator."
+        "You analyse a story reel script — either FIRST-PERSON (one narrator tells "
+        "their own story) or THIRD-PERSON (an unseen narrator describes someone else, "
+        "e.g. a mythological/fictional character). Two separate questions per beat:\n"
+        f"1. speaker_id — whose VOICE is producing this beat's words? Usually "
+        f"'{NARRATOR_ID}' ({narrator.get('label')}), unless the beat is a direct quote "
+        "in someone else's mouth (a child, father, friend).\n"
+        "2. visual_subject_id — who is DEPICTED on screen in this beat? For a "
+        "first-person story this is normally the SAME id as speaker_id. For "
+        "third-person narration, a recurring protagonist who is described/narrated "
+        "about (not directly quoted) should still get their OWN visual_subject_id — "
+        "do not default them to the narrator just because they rarely speak. The "
+        "narrator has no face; they never belong in visual_subject_id unless truly "
+        "no one else is on screen (e.g. an establishing shot).\n"
+        "Build a small cast covering every id used as EITHER speaker_id or "
+        "visual_subject_id. Reuse the SAME id when the same person recurs (so their "
+        "face and voice stay consistent) — this matters most for visual_subject_id, "
+        "since that is what locks a recurring character's face across shots. Use "
+        "short, stable ids like 'narrator', 'son', 'father', 'young_self', or a "
+        "character's own name lowercased ('hanuman'). gender ∈ {female,male}; "
+        "age_bracket ∈ {child,adult,elderly}. When unsure about speaker_id, assign "
+        "the narrator; when unsure about visual_subject_id for a third-person beat, "
+        "assign it to the story's main recurring character, not the narrator."
     )
     user = (f"Narrator: {narrator.get('label')}"
             + (f" — {narrator_description}" if narrator_description else "")
             + f"\n\nBeats:\n{beat_list}\n\n"
             'Reply ONLY as JSON: {"cast":[{"id","label","gender","age_bracket"}],'
-            ' "by_frame":[{"frame_id","speaker_id"}]}. Always include the narrator in cast.')
+            ' "by_frame":[{"frame_id","speaker_id","visual_subject_id"}]}. Always '
+            'include the narrator in cast.')
 
     try:
         from agents import llm
@@ -147,32 +164,57 @@ def detect_cast(frames: list[dict], narrator_name: str = "",
             "age_bracket": m.get("age_bracket") if m.get("age_bracket") in _AGE_BRACKETS else "adult",
         }
 
-    by_frame = {row.get("frame_id"): row.get("speaker_id")
-                for row in data.get("by_frame", []) if row.get("frame_id")}
-    n_non_narrator = 0
-    for f in frames:
-        sid = by_frame.get(f["frame_id"], NARRATOR_ID)
-        member = cast.get(sid, narrator)
-        f["speaker_id"]          = member["id"]
-        f["speaker_label"]       = member["label"]
-        f["speaker_gender"]      = member["gender"]
-        f["speaker_age_bracket"] = member["age_bracket"]
-        if member["id"] != NARRATOR_ID:
-            n_non_narrator += 1
+    by_frame = {row.get("frame_id"): row for row in data.get("by_frame", [])
+                if row.get("frame_id")}
 
-    if n_non_narrator:
-        print(f"[Cast] {len(cast)} speakers; {n_non_narrator} beat(s) reassigned from narrator")
+    def _member(mid: str) -> dict:
+        mid = (mid or "").strip() or NARRATOR_ID
+        if mid in cast:
+            return cast[mid]
+        # The model referenced an id it forgot to declare in "cast" (schema doesn't
+        # enforce that cross-reference) — synthesize a member rather than silently
+        # collapsing a real visual subject back onto the narrator, which is the
+        # exact bug this two-field split exists to fix.
+        member = {"id": mid, "label": mid.replace("_", " ").title(),
+                  "gender": "male", "age_bracket": "adult"}
+        cast[mid] = member
+        return member
+
+    n_non_narrator = n_visual_only = 0
+    for f in frames:
+        row = by_frame.get(f["frame_id"], {})
+        spk = _member(row.get("speaker_id") or NARRATOR_ID)
+        vis = _member(row.get("visual_subject_id") or spk["id"])
+        f["speaker_id"]          = spk["id"]
+        f["speaker_label"]       = spk["label"]
+        f["speaker_gender"]      = spk["gender"]
+        f["speaker_age_bracket"] = spk["age_bracket"]
+        f["visual_subject_id"]          = vis["id"]
+        f["visual_subject_label"]       = vis["label"]
+        f["visual_subject_gender"]      = vis["gender"]
+        f["visual_subject_age_bracket"] = vis["age_bracket"]
+        if spk["id"] != NARRATOR_ID:
+            n_non_narrator += 1
+        if vis["id"] != spk["id"]:
+            n_visual_only += 1
+
+    if n_non_narrator or n_visual_only:
+        print(f"[Cast] {len(cast)} speakers; {n_non_narrator} beat(s) reassigned from "
+              f"narrator; {n_visual_only} narrated beat(s) given a distinct on-screen subject")
         for f in frames:
-            if f.get("speaker_id") != NARRATOR_ID:
-                print(f"  {f['frame_id']} → {f['speaker_label']} "
-                      f"({f['speaker_gender']}/{f['speaker_age_bracket']})")
+            if f.get("speaker_id") != NARRATOR_ID or f.get("visual_subject_id") != f.get("speaker_id"):
+                print(f"  {f['frame_id']} → speaks: {f['speaker_label']} "
+                      f"({f['speaker_gender']}/{f['speaker_age_bracket']}) "
+                      f"| on screen: {f['visual_subject_id']}")
     for f in frames:
         f["_cast_detected"] = True
     return list(cast.values())
 
 
 def _cast_from_frames(frames: list[dict]) -> list[dict]:
-    """Rebuild the cast list from already-tagged frames (idempotent detect_cast path)."""
+    """Rebuild the cast list from already-tagged frames (idempotent detect_cast path).
+    Collects ids from BOTH speaker_id and visual_subject_id, so a narrated-about
+    on-screen subject (never a speaker) survives a second, idempotent pass."""
     seen: dict[str, dict] = {}
     for f in frames:
         sid = f.get("speaker_id")
@@ -180,6 +222,10 @@ def _cast_from_frames(frames: list[dict]) -> list[dict]:
             seen[sid] = {"id": sid, "label": f.get("speaker_label", sid),
                          "gender": f.get("speaker_gender", "female"),
                          "age_bracket": f.get("speaker_age_bracket", "adult")}
+        vid = f.get("visual_subject_id")
+        if vid and vid not in seen:
+            seen[vid] = {"id": vid, "label": vid.replace("_", " ").title(),
+                         "gender": "male", "age_bracket": "adult"}
     return list(seen.values()) or [_narrator_member("", "")]
 
 
@@ -200,6 +246,15 @@ def apply_cast(frames: list[dict], cast: list[dict],
         f["speaker_label"]       = member.get("label", "")
         f["speaker_gender"]      = member.get("gender", "female")
         f["speaker_age_bracket"] = member.get("age_bracket", "adult")
+        # Preserve an existing visual_subject_id (carried back from the UI after a
+        # prior detect_cast pass); default to speaker_id for older frames that
+        # predate this field, so first-person stories are unaffected either way.
+        vis_id = f.get("visual_subject_id") or member["id"]
+        vis = by_id.get(vis_id, member)
+        f["visual_subject_id"]          = vis_id
+        f["visual_subject_label"]       = vis.get("label", "")
+        f["visual_subject_gender"]      = vis.get("gender", "female")
+        f["visual_subject_age_bracket"] = vis.get("age_bracket", "adult")
         f["_cast_detected"]      = True   # operator-applied cast → detect_cast won't override
 
 
@@ -278,15 +333,18 @@ def voice_for_frame(frame: dict, default_voice_id: str = "",
 
 def subject_descriptor(frame: dict, narrator_description: str = "") -> str:
     """A short 'who is on screen' phrase for the image prompt, derived from the
-    frame's speaker. Narrator frames keep the operator's rich description; quoted
-    speakers get a gender/age-accurate descriptor."""
-    if frame.get("speaker_id", NARRATOR_ID) == NARRATOR_ID:
+    frame's VISUAL SUBJECT — who is depicted, which for third-person narration
+    (a mythological/fictional protagonist rarely directly quoted) differs from
+    speaker_id (whose voice reads the line). Falls back to speaker_* fields for
+    frames from before this distinction existed, so old runs are unaffected."""
+    subj_id = frame.get("visual_subject_id") or frame.get("speaker_id", NARRATOR_ID)
+    if subj_id == NARRATOR_ID:
         return narrator_description or ""
-    gender = frame.get("speaker_gender", "female")
-    age    = frame.get("speaker_age_bracket", "adult")
+    gender = frame.get("visual_subject_gender") or frame.get("speaker_gender", "female")
+    age    = frame.get("visual_subject_age_bracket") or frame.get("speaker_age_bracket", "adult")
     noun = ({("female", "child"): "young girl", ("male", "child"): "young boy",
              ("female", "elderly"): "elderly woman", ("male", "elderly"): "elderly man",
              ("female", "adult"): "woman", ("male", "adult"): "man"}
             .get((gender, age), "person"))
-    label = frame.get("speaker_label", "").strip()
+    label = (frame.get("visual_subject_label") or frame.get("speaker_label", "")).strip()
     return f"{noun} ({label})" if label and label.lower() not in noun else noun

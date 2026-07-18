@@ -180,7 +180,16 @@ Strict JSON enforced via `_TREATMENT_SCHEMA`. On LLM error, returns an empty dic
   say "infer from the story itself" — no hardcoded defaults.
 - **`has_real_photo`** flag tells the director to design *motion only* and skip the image prompt.
 - **Caching:** `MD5(caption, note, visual_type, subject_name, subject_description, has_real_photo)` → JSON in `~/.hob_cache/scene_designs/`.
-- **Parallelism:** `ThreadPoolExecutor(max_workers=min(n,10))`. Silent frames get a canned slow-zoom-out scene.
+- **Parallelism:** `ThreadPoolExecutor(max_workers=min(n,10))`. Silent frames (no
+  caption — legitimate for pure-visual/wordless beats) skip the LLM call and get a
+  canned `emotion/motion_prompt/camera_angle` (still image), but as of 2026-07-18
+  **`image_prompt` is `director_note`** when present, not `""`. Before this fix
+  the description was silently discarded even when rich — a shot planned as "the
+  fist glows" or "the leap" reached the storyboard sketch (and the real render,
+  same `scene.image_prompt` field) with an EMPTY scene, producing unrelated
+  generic/hallucinated content (found live: a story's silent beats came back as
+  an unrelated teenager/fish/tower sketch). A caption-less frame with no
+  director_note either still gets `image_prompt=""` — genuinely nothing to draw.
 - **Fallback:** on LLM error, a generic photoreal prompt + slow push-in is returned (never raises).
 
 ### 3c. Vision-grounded motion
@@ -294,6 +303,35 @@ One LLM reasoning call on the full script text. Returns a list of cast members:
 `apply_cast()` assigns `frame["speaker_id"]` per frame based on the LLM output.
 A `[speaker:]` script annotation overrides the detected speaker.
 
+### speaker_id vs. visual_subject_id (2026-07-18)
+Two separate frame keys, both set by `detect_cast`/`apply_cast`/`_apply`:
+- **`speaker_id`** — whose VOICE reads this beat (drives `voice_for_frame`, lip-sync).
+- **`visual_subject_id`** — who is DEPICTED on screen (drives face-lock continuity
+  and the image prompt's subject description). Defaults to `speaker_id` when unset
+  or equal — the overwhelmingly common first-person case (the narrator tells their
+  own story: same person speaks and is shown) is unaffected either way.
+
+They diverge for **third-person narration** about a recurring character who is
+rarely directly quoted (e.g. a mythological/fictional protagonist): `speaker_id`
+correctly stays `narrator` (an unseen storyteller reads the prose) while
+`visual_subject_id` is the character, so their face still locks consistently
+across every shot. Before this split, `detect_cast`'s prompt only reasoned about
+"who's speaking" — a narrated-about, rarely-quoted protagonist was never
+recognized as a distinct cast member, every one of their shots silently fell back
+to the narrator (who has no face), and identity/age drifted shot to shot with no
+error surfaced (found live, 2026-07-18, on a third-person mythological brief —
+not yet assigned an L99_ARCH_PLAN ledger row). Downstream consumers redirected
+to prefer `visual_subject_id` (all default to `speaker_id` when unset):
+`canvas_run.set_character` (frame matching — an uploaded reference for a
+narrated-about character now propagates to ALL their shots, not zero/one),
+`web_app._build_frames_from_payload` → `character_ref_path` resolution and the D1
+`first_portrait_by_speaker` auto-reuse lock, and
+`scene_intelligence.design_all_scenes`'s gate for calling `subject_descriptor` at
+all (previously gated on speaker≠narrator, which is exactly backwards for this
+case — fixed to gate on visual_subject≠narrator).
+Companion fields mirroring `speaker_label/gender/age_bracket`:
+`visual_subject_label/gender/age_bracket`.
+
 ### Voice resolution
 **`voice_for_frame(frame, default_voice_id, voice_map) -> str`**
 
@@ -304,9 +342,13 @@ Priority chain (first non-empty wins):
 4. `voices.json roles[gender_age_bracket]` — e.g. `female_adult`, `child`
 5. `default_voice_id` — the global voice picker
 
+Deliberately still keyed on `speaker_id`, not `visual_subject_id` — audio must stay
+with whoever is actually talking (the narrator), not the on-screen subject.
+
 **`subject_descriptor(frame, narrator_description) -> str`**
 Returns a visual description of who should be on screen for this frame — `narrator_description`
-for narrator frames, or the cast member's description for quoted-speaker frames. Used by
+for narrator-visual-subject frames, or the visual subject's own descriptor otherwise (falls
+back to the older speaker_* fields for frames predating the split above). Used by
 `image_generator` as the subject in AI portrait prompts (never hardcoded).
 
 **config/voices.json:**
@@ -391,6 +433,95 @@ the SAME `frames[]` schema the other doors produce, so `_build_frames_from_paylo
   `~/.hob_cache/shot_plans/<md5>.json` (key = brief+scope+talent+product).
 - `scope="commerce"` → one locked subject × N camera setups (intro→…→product
   hero→final), product beats flagged. `scope="general"` → emotional beats.
+- **Scope registry** (`_SCOPE_SYSTEM_PROMPTS`, S29 Phase 1a / S31): a `scope →
+  system_prompt` dict is the single source both validation and prompt-pick read,
+  so adding a scope (e.g. the S29 `podcast` scope) is one dict entry, not two
+  branches that can drift — see the `orientation`/`_orient_wh` bug this pattern
+  was adopted to avoid a repeat of (§ canvas settings route above). Today it
+  holds only `general`/`commerce`; `podcast` is not added — still gated behind
+  the golden-face spike in `docs/PRESENTER_PLAN.md` Phase 0.
+- **COMPILE mode (2026-07-19, root-cause fix):** a brief with ≥2 `FRAME n` /
+  `SCENE n` / `SHOT n` markers is an AUTHORED shot list — `_compile_frames()`
+  parses it deterministically (zero LLM, zero spend) instead of re-inventing it:
+  one dialogue line = one shot (caption + `speaker_id` verbatim — kills the
+  attribution class where a line written `SUGRIVA:` rendered as Rama); camera/
+  lighting/composition lines survive verbatim in `director_note`; `[VISUALS:]` →
+  note, `[Sound:]`/`Sound:` → **`audio_intent`** (first shot of the block);
+  delivery notes `(ancient, gentle)` → **`voice_direction`**; `Shot n (a–bs)`
+  timings → durations; shot_size/motion from keyword maps on the shot's own
+  direction. Preamble before the first marker is DIRECTION, not a scene: its
+  text rides every shot as a `[style]` note-line, and `Reference <Name>` lines
+  register never-speaking characters (identity lock for a silent antagonist).
+  Vocatives inside dialogue ("…, Hanuman.") also register cast. Silent blocks
+  infer `visual_subject_id` by mention frequency over the registered cast only
+  (never arbitrary proper nouns — place names stay out). Compiled frames carry
+  `_cast_detected=True` (cast LLM pass skipped — `_cast_from_frames` rebuilds
+  the sheet from tags) and `compiled=True`; speaker gender/age default to
+  male/adult, edited on the Character sheet. Compile failure falls OPEN to the
+  LLM planner; unstructured prose briefs use the LLM path unchanged. New frame
+  keys: `audio_intent`, `voice_direction`, `compiled` (audio_intent is the
+  future SFX driver; voice_direction awaits TTS style support).
+- **2026-07-19 batch (post-A/B adoption):** ① `remotion_overlay.render_overlay`
+  takes `width/height` (CLI `--width/--height`, dims join the overlay cache key) —
+  the portrait-default overlay on a landscape reel composited captions ~1700px
+  down, i.e. rendered fine but OFF-SCREEN (the "captions missing" reel). ②
+  `generate_character_portrait` adopts the galleri5 canonical-sheet recipe
+  (single figure, FULL body head-to-feet, anti-grid/turnaround negatives,
+  photoreal texture; flat-even lighting kept deliberately — S30). ③
+  `generate_location_plate` gains `lighting_arc` (plate anticipates the story's
+  key light moment; canvas passes the reel `mood`) + `orientation` (was
+  hardcoded 9:16). ④ Compile mode promotes `[VISUALS:]` cues ≥60 chars to their
+  OWN ordered silent shots (subject inferred from the cue; shorter cues stay
+  note garnish) — the galleri5 23-vs-19 breakdown gap; Yamraj script now
+  compiles 29 shots. ⑤ `/api/canvas/<id>/keyframes` HARD-gates on unlocked
+  faces: 409 naming the characters when an on-screen character has no
+  `ref_path`/frame ref (narrator + real/passthrough excluded); `force: true` is
+  the explicit escape; the UI confirm sends it.
+- **kie_video.py — HappyHorse R2V backend (2026-07-19, the A/B response):**
+  `agents/kie_video.py` drives Kie.ai's jobs API (`createTask`/`recordInfo`,
+  Bearer `KIE_API_KEY`) for `models.json` entries with `backend: "kie"` +
+  `kie_model` slug — first entry `happyhorse_r2v` (`happyhorse-1-1/reference-to-video`,
+  slug live-verified free via `tools/kie_probe.py`). Reference-to-video: up to 9
+  `reference_image` URLs define subject IDENTITY (not first frame); the prompt may
+  address them as `[Image 1]`… Native audio, 3–15s, 720/1080p. `clip_builder` adds
+  a `kie` deferred-pool branch: refs = `character_ref_path` + `location_ref_path` +
+  the still (hosted to public URLs via Higgsfield's uploader), and the refs join
+  the clip cache key (changed ref → regenerate). Assignments + the
+  `_build_frames_from_payload` rebuild now thread `character_ref_path`/
+  `location_ref_path`. Routed FIRST in premium face/hero/dialogue lanes; falls
+  back higgsfield→seedance→kling_pro (i2v from the still — identity conditioning
+  lost, render survives). Pricing `kie.happyhorse_r2v_5s_usd` (estimate — VERIFY
+  credits conversion).
+- **Payload-rebuild field drop (fixed 2026-07-19):** `_build_frames_from_payload`
+  REBUILDS frame dicts field-by-field, silently dropping anything unlisted —
+  `location_clause`/`location_ref_path` (S30 anchoring — canvas plates never
+  conditioned renders through this path), `character_appearance`, and the
+  compile-mode `audio_intent`/`voice_direction` were all being lost. All five now
+  whitelisted. When adding a frame key consumed at render time, ADD IT THERE.
+- **Orientation threading (fixed 2026-07-19, A/B-test-surfaced):** frames now carry
+  `orientation` (set in `_build_frames_from_payload` from the reel setting);
+  `image_generator._SIZES` maps it per backend (fal `image_size` / openai `size` /
+  prompt prose) — stills were hardcoded 9:16 so a 16:9 reel got portrait stills,
+  center-cropped at assembly. `safety.check_face_sanity(…, orientation=)` now
+  validates against the REQUESTED orientation (was portrait-only → every correct
+  landscape still burned 3 QC retries). Orientation joins the still cache hash
+  only when non-portrait (`|or:landscape`), so all pre-existing portrait caches
+  stay valid. Location-plate generation is still orientation-blind (follow-up).
+  Also `assembler.apply_brand_overlay`: on ffmpeg builds without drawtext
+  (Homebrew default), the disclosure now renders via a PIL PNG + plain `overlay`
+  instead of silently shipping an UNLABELED reel; any overlay-pass failure now
+  fires `degradation.report("provenance", "alert", …)` — a lost disclosure is a
+  governance gap, not a cosmetic one.
+- **Sharp edge (fixed 2026-07-18):** Auto-length's token budget was 130 tok/shot ×
+  a flat 40-shot guess (5200 total) — sized for short narration captions. A dense
+  cinematic-dialogue brief (full spoken-line captions, ~30-40 beats) silently
+  truncated the LLM response mid-JSON; `llm.json_loads_lenient`'s bracket-slice
+  recovery can't fix a genuinely cut-off response (no real closing bracket exists),
+  so it throws and `plan()` falls back to an 8-shot generic sentence-split — which
+  is what then trips `story_review`'s slideshow warnings (uniform framing/duration),
+  making a token-budget bug look like a content problem. Now 220 tok/shot, 16000
+  ceiling. Verified live on a 31-beat dialogue script that truncated every time
+  under the old budget.
 - Graceful fallback to a sentence/line split so a failure never blocks the user.
 - `DEFAULT_NEGATIVE` is the per-shot negative prompt prefilled on each frame.
 
@@ -852,7 +983,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/asset` | POST (operator) | Attach an uploaded image to shot(s) (`canvas_run.attach_asset`): **real** (non-AI `photo_spec` → `model_router` PASSTHROUGH, the moat), **reference** (real face → AI likeness, kept `ai_portrait`+`character_ref_path`), or **scene**. `all_talent` applies to every people-shot. Path validated via `_path_allowed`; image first uploaded through `/upload-photo` |
 | `/api/canvas/<run_id>/keyframes` | POST (operator) | Render the **cheap stills only** (reuses `_execute_preview`); lets the operator review/re-roll before committing to video. Sets `render_phase="keyframes"`. The later full render shares the run dir → reuses these stills (content-hash cache, no re-spend) |
 | `/api/canvas/<run_id>/video` | POST (operator) | **Video stage** — animate the approved Key Frames into clips ONLY (`_run_inner` with `stop_after="clips"`); gated behind Key Frames approval. Clips persist in the run dir + content-hash cache so Final Cut reuses them (no re-spend). Per-shot reveal via `clip_ready`. |
-| `/api/canvas/<run_id>/render` | POST (operator) | **Final Cut** — gated behind **Video** approval; reuses the cached stills AND clips, only does audio + assembly. Render the board into a reel via `_canvas_render_thread` → generates a music bed (Suno, best-effort) so the engine's **beat-aware cutting** snaps cuts to the beat (anti-slideshow, P1). **Suno-independent:** sets `beat_grid_bpm` (`_canvas_tempo_bpm` from mood) so `assembler.beat_overlaps(fallback_bpm=)` cuts on a synthetic tempo grid even with no music. **Audio options** (body): `music_type` = generate (Suno) / upload (`music_path`, validated `_path_allowed`; song uploaded via `/upload-photo`) / voiceover (`voice_id` from `/voices`; sets `beat_grid_bpm=0` for gentle cuts; optional `bg_music_path` = operator-supplied bed played looped + ducked UNDER the narration via the assembler's brand-mode VO-over-bed mix — validated `_path_allowed`, skipped if missing) / none. Then dispatches `_execute_pipeline`. **Reuses the Key Frames render dir** so stills are cached. Sets `render_phase="full"`. Same governance gates as `/run`. (`/rendered` reconciles paid stage chips by `render_phase` so Key Frames-done ≠ Video-done). **Silent-output surfacing (the Suno-credits incident):** a music-generation failure sets `state["audio_warning"]` via `_set_canvas_audio_warning` (cleared when a new Final Cut starts and on music success), and after `_execute_pipeline` an output QC probe (`_output_is_silent` — ffmpeg volumedetect, `max_volume < -60 dB`, best-effort/no false alarms) re-checks the finished file whenever `music_type != none`. Exposed as `public_state.audio_warning`; the board shows a red 🔇 strip and the render status reads "done — ⚠ NO AUDIO" instead of "done ✓". |
+| `/api/canvas/<run_id>/render` | POST (operator) | **Final Cut** — gated behind **Video** approval; reuses the cached stills AND clips, only does audio + assembly. Render the board into a reel via `_canvas_render_thread` → generates a music bed (Suno, best-effort) so the engine's **beat-aware cutting** snaps cuts to the beat (anti-slideshow, P1). **Suno-independent:** sets `beat_grid_bpm` (`_canvas_tempo_bpm` from mood) so `assembler.beat_overlaps(fallback_bpm=)` cuts on a synthetic tempo grid even with no music. **Audio options** (body): `music_type` = generate (Suno) / upload (`music_path`, validated `_path_allowed`; song uploaded via `/upload-photo`) / voiceover (`voice_id` from `/voices`; sets `beat_grid_bpm=0` for gentle cuts; `bg_music_path` = bed played looped + ducked UNDER the narration via the assembler's brand-mode VO-over-bed mix — operator-supplied (validated `_path_allowed`) **or, since 2026-07-19, auto-generated**: `_canvas_render_thread` now generates the same Suno bed for VO renders too and routes it to `bg_music_path` (never `music_path`, which carries the narration track in VO mode) — previously VO mode skipped bed generation entirely and narration played over dead silence; a bed failure degrades to VO-only with a `warn` (not the no-soundtrack `alert`) since the story still has its narration) / none. Then dispatches `_execute_pipeline`. **Reuses the Key Frames render dir** so stills are cached. Sets `render_phase="full"`. Same governance gates as `/run`. (`/rendered` reconciles paid stage chips by `render_phase` so Key Frames-done ≠ Video-done). **Silent-output surfacing (the Suno-credits incident):** a music-generation failure sets `state["audio_warning"]` via `_set_canvas_audio_warning` (cleared when a new Final Cut starts and on music success), and after `_execute_pipeline` an output QC probe (`_output_is_silent` — ffmpeg volumedetect, `max_volume < -60 dB`, best-effort/no false alarms) re-checks the finished file whenever `music_type != none`. Exposed as `public_state.audio_warning`; the board shows a red 🔇 strip and the render status reads "done — ⚠ NO AUDIO" instead of "done ✓". |
 | `/api/canvas/<run_id>/rendered` | POST (operator) | Per-shot rendered media read from the render dir (survives reloads) + reconciles paid stage statuses to the render's real status (so the rail can't stick on 'generating'). **Reconcile NEVER downgrades an `approved` stage** — it only unsticks `generating`→`done`; a late poll must not reset an operator-approved Key Frames back to `done` (that silently un-approved it and 409'd the Video stage forever). |
 | *(asset-QC gate)* | — | `image_matcher.exif_upright(frames, out_dir)` — called by `match-photos`, `rematch` and `asset` (mode=real): any matched real IMAGE with EXIF orientation ≠ upright gets a pixel-rotated copy in `RUNS_DIR/<canvas_id>/upright/` and `visual_path` repointed (original never modified — real-media preservation). Complements `clip_builder`'s pre-Kling transpose so Ken Burns/assembly/board paths agree. `check-matches` vision prompt also flags rotated pixels / watermarks / unreadable full-frame documents → `match_flag`. Canvas caption default is the engine's storytelling style (`_CANVAS_CAPTION_DEFAULT`: Baskerville 52, 2 lines); UI target-length default is 60s (default-only; operator keeps Auto). |
 | *(L99 hardening pass, 2026-07-03)* | — | **Degradation Ledger (T1):** `agents/degradation.py` — `bind(run_id)`/`report(step, severity∈info\|warn\|alert, msg)`/`drain()`; instrumented at `model_router.run_with_fallback` (all vendor failovers), `image_editor.edit_image` (identity chain; total failure = alert), safety Gate A/B2 skips, canvas music failure + output-silence QC. Persisted as `state["render_report"]` (full render + keyframes stage), exposed via `public_state.render_report`, rendered as the 🧾 panel. **State safety (T2):** per-run RLock + `state["rev"]` + `_canvas_mutate(run_id, apply_fn)` (atomic re-load→narrow-merge→save); storyboard/restore/check jobs write per-frame merges, never their stale copy. **Media-type sniffing (B1):** `llm._image_bytes_and_format` reads magic bytes (generators write PNG into .jpg paths; wrong declared type made strict vision APIs reject → Gate B2 silently dead). **Identity phrasing (B2):** ref-edit prompt uses character-consistency language (the "EXACT person's face" wording tripped fal's content checker → 422 → silent identity loss). **Consistency (T11):** `species` character attr; `_character_appearance` phrases wardrobe/anatomy as invariants; portrait = three-quarter/full-outfit framing; ref-prompt demands same outfit. **Motion (T12):** physics negatives in `DEFAULT_KLING_NEGATIVE` + keyword-routed `_MOTION_PRESETS` (strain/kneel/walk/rise) in `_kling_motion_prompt`; `motion_override` wins. **Voices (T4):** `voice_id` character attr → `_canvas_render_data.voice_map` → `generate_voiceover_track(..., voice_map)` → `cast.voice_for_frame` per spoken frame. |
@@ -867,7 +998,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/fidelity-suggest` | POST (operator) | **Reality–Fidelity auto-suggest (ladder rung 1d):** `canvas_run.score_fidelity` scores every REAL shot via `restore.quality_score` (ffprobe resolution + OpenCV Laplacian-variance sharpness) and stores a recommended rung on each frame (`fidelity_suggested`/`fidelity_reason`/`quality_score`). Read-only — **no spend, no media change**. Person shots are never pushed past Restore. Degrades to 'unknown→passthrough' without OpenCV/ffprobe |
 | `/api/canvas/<run_id>/fidelity` | POST (operator) | Set a shot's rung. **Restore/Re-create are dispatched by the UI to the verified `/restore`+`/recreate` routes** (reused untouched); this route handles **Passthrough** (`canvas_run.revert_passthrough`) — drop the override and restore the shot to its **untouched original** real media (preserved as `orig_visual`). Cascade-invalidates downstream |
 | `/api/canvas/<run_id>/characters` | POST (operator) | **Cast detection (Characters stage):** `canvas_run.derive_characters` runs `cast.detect_cast(frames)` to surface the REAL people in the story (narrator + named speakers), stored on `state["characters"]` (`{id,name,gender,age,consent,ref_path}`). Idempotent; safe to re-run. Returns `public_state.characters` |
-| `/api/canvas/<run_id>/character` | POST (operator) | Update one **story-level character** (`canvas_run.set_character`): real reference photo + consent AND appearance **`attrs`** (role/name/gender/age/skin_tone/hair/clothing/source). Propagates to every shot whose `speaker_id==char_id`: `character_ref_path` (face identity) + a `character_appearance` clause (`_character_appearance`) that `image_generator.generate_contextual_image` injects into the prompt — so the character's look stays consistent across the reel. Per-frame overrides still win. Path validated `_path_allowed`. |
+| `/api/canvas/<run_id>/character` | POST (operator) | Update one **story-level character** (`canvas_run.set_character`): real reference photo + consent AND appearance **`attrs`** (role/name/gender/age/skin_tone/hair/clothing/source). Propagates to every shot whose `visual_subject_id==char_id` (falls back to `speaker_id` for older frames — see §6 speaker_id vs. visual_subject_id): `character_ref_path` (face identity) + a `character_appearance` clause (`_character_appearance`) that `image_generator.generate_contextual_image` injects into the prompt — so the character's look stays consistent across the reel, including a narrated-about (rarely-quoted) protagonist. Per-frame overrides still win. Path validated `_path_allowed`. |
 | `/api/canvas/<run_id>/character-portrait` | POST (operator) | **P1 character-sheet-first:** generate a CANONICAL portrait for one character from its sheet attributes + the world style (`image_generator.generate_character_portrait`, face-strong model + QC gates), set it as that character's `ref_path`, and link it to their shots (`set_character`) so every shot conditions on the SAME face via the pluggable identity path. AI/fiction characters (generated → no real-person consent gate). Spend-gated. |
 | `/api/canvas/<run_id>/locations` | POST (operator) | **S30 Phase 1 location anchoring (the S28 "character sheet for places"):** `canvas_run.derive_locations` — one reasoning-tier LLM pass (`_LOCATION_SCHEMA`) → the story's distinct places at slugline granularity (deduped, 1–4 typical), stored on `state["locations"]` (`{id,label,description,time_of_day,plate_path,source}`) and tagging `frames[].location_id` (the place-level `speaker_id`). Re-derive merges operator work by id. Degrades to a **no-op** (frames unanchored + `degradation.report("plan","info",…)`). Free. |
 | `/api/canvas/<run_id>/location` | POST (operator) | Update one location's `attrs` (label/description/time_of_day) — `canvas_run.set_location` re-propagates the **invariant clause** (`_location_clause`, T11 phrasing: "this EXACT location… same geometry, same light direction") onto every frame tagged with it as `frames[].location_clause`; `image_generator.generate_contextual_image` appends it to the prompt (part of the cache-hash → edits regenerate stills). Also stamps `frames[].location_ref_path` (the plate) — **reserved for the D5 multi-ref follow-up**; the FACE ref wins today's single-ref edit path (identity beats place, S19/S20). Cascade-invalidates keyframes. |
