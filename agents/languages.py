@@ -58,6 +58,34 @@ def catalogue() -> list[dict]:
     return [{"code": code, **names} for code, names in SUPPORTED_LANGUAGES.items()]
 
 
+# Script-block → language (detect→declare, S28 pattern). Devanagari is shared by
+# Hindi and Marathi — it maps to "hi" (India-primary default; the operator's
+# explicit language choice always wins over detection).
+_SCRIPT_RANGES = (
+    ("hi", "ऀ", "ॿ"),   # Devanagari
+    ("bn", "ঀ", "৿"),   # Bengali
+    ("pa", "਀", "੿"),   # Gurmukhi
+)
+
+
+def detect_language(texts) -> str:
+    """Detect the AUTHORED language from caption text by script block: a story
+    written in Devanagari/Bengali/Gurmukhi returns its code when ≥20% of the
+    letters are in that script; Latin/unknown → "" (caller keeps its default).
+    Why: a Hindi-authored script previously rendered with NO language flag —
+    captions burned in a font with no Devanagari glyphs (tofu) and the voice
+    resolver never reached the native-Hindi voice table."""
+    joined = " ".join(t for t in (texts or []) if t)
+    letters = [ch for ch in joined if ch.isalpha()]
+    if not letters:
+        return ""
+    for code, lo, hi in _SCRIPT_RANGES:
+        n = sum(1 for ch in letters if lo <= ch <= hi)
+        if n / len(letters) >= 0.2:
+            return code
+    return ""
+
+
 # T13a: caption font per script. Latin house fonts (Baskerville/Montserrat/Satoshi)
 # have NO Devanagari/Gurmukhi/Bengali glyphs — a Hindi caption in Baskerville renders
 # tofu (□□). Bundled Noto Serif faces (deploy/fonts/) keep the serif storytelling look

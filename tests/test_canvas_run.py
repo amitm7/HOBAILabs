@@ -466,6 +466,34 @@ def test_set_character_matches_visual_subject_not_just_speaker(monkeypatch):
     assert "character_ref_path" not in state2["frames"][1]   # untouched, different subject
 
 
+def test_use_locked_face_flips_generic_back_to_likeness(monkeypatch):
+    """The 'AI generic vs their face' trap: generic strips identity by design and
+    nothing restored it. use_locked_face is the one-click counterpart — AI
+    likeness from the character's LOCKED sheet ref, clearing the generic flag."""
+    monkeypatch.setattr("agents.shot_planner.plan", lambda *a, **k: _frames())
+    state = canvas_run.new_canvas("brief")
+    state["characters"] = [{"id": "mom", "name": "Mom", "ref_path": "/abs/mom.jpg"}]
+    state["frames"][0]["visual_subject_id"] = "mom"
+    state["frames"][0]["uses_talent"] = True
+    canvas_run.set_ai_generic(state, "f01")
+    f = state["frames"][0]
+    assert f.get("forced_ai") and "character_ref_path" not in f     # generic = no identity
+    state = canvas_run.use_locked_face(state, "f01")
+    f = next(x for x in state["frames"] if x["frame_id"] == "f01")
+    assert f["character_ref_path"] == "/abs/mom.jpg"                # her face is back
+    assert f["photo_spec"] == "ai_portrait" and f.get("ai_likeness")
+    assert not f.get("forced_ai")
+
+
+def test_use_locked_face_refuses_without_a_locked_ref(monkeypatch):
+    monkeypatch.setattr("agents.shot_planner.plan", lambda *a, **k: _frames())
+    state = canvas_run.new_canvas("brief")
+    state["characters"] = [{"id": "mom", "name": "Mom", "ref_path": ""}]
+    state["frames"][0]["visual_subject_id"] = "mom"
+    with pytest.raises(ValueError, match="Mom"):
+        canvas_run.use_locked_face(state, "f01")
+
+
 def test_set_character_falls_back_to_speaker_id_for_old_frames(monkeypatch):
     """Frames created before this fix have no visual_subject_id at all — set_character
     must still match on speaker_id so pre-existing first-person runs are unaffected."""

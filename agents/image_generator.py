@@ -163,7 +163,8 @@ def _generate_image(model_id: str, prompt: str, out_path: str, fallback: str,
 def _generate_image_checked(model_id: str, prompt: str, out_path: str,
                             fallback: str, frame_id: str,
                             max_retries: int = 2, generator=None,
-                            orientation: str = "portrait") -> str:
+                            orientation: str = "portrait",
+                            likeness_ref: str = "") -> str:
     """
     Generate, then run Gate B (fast sanity check) and Gate B2 (vision-LLM
     critique: anachronisms, wrong age, deformed anatomy, baked-in text);
@@ -172,13 +173,14 @@ def _generate_image_checked(model_id: str, prompt: str, out_path: str,
     generator: optional zero-arg callable replacing the default model dispatch
     (used by reference-guided generation).
     """
-    from agents.safety import check_face_sanity, critique_image
+    from agents.safety import check_face_sanity, check_likeness, critique_image
     gen = generator or (lambda: _generate_image(model_id, prompt, out_path, fallback,
                                                 orientation))
     for attempt in range(max_retries + 1):
         gen()
         if check_face_sanity(out_path, frame_id, orientation=orientation) \
-                and critique_image(out_path, frame_id, prompt):
+                and critique_image(out_path, frame_id, prompt) \
+                and check_likeness(out_path, likeness_ref, frame_id):
             return out_path
         if attempt < max_retries:
             print(f"[Safety] Gate B: {frame_id} — regenerating (attempt {attempt + 2}/{max_retries + 1})")
@@ -222,7 +224,7 @@ def _inject_world(frame: dict, prompt: str) -> str:
 
 
 def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
-                              reference_path: str = "") -> str:
+                              reference_path: str = "", sketch_path: str = "") -> str:
     """
     Generate an age/era-accurate portrait for a story beat.
     model_id selects the image model (router-chosen); defaults to Flux 2 Pro.
@@ -268,14 +270,20 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
     prompt = _inject_world(frame, prompt)   # P2: global art-direction / world
 
     use_ref = bool(reference_path) and os.path.exists(reference_path)
-    chosen  = "gpt_image_ref" if use_ref else (model_id or "flux")
+    # Sketch-as-composition (probe-verified 2026-07-20): an APPROVED storyboard
+    # sketch rides as a second conditioning image — composition/framing from the
+    # sketch, identity from the face ref, photoreal output (no pencil bleed).
+    use_sketch = bool(sketch_path) and os.path.exists(sketch_path)
+    chosen  = "gpt_image_ref" if (use_ref or use_sketch) else (model_id or "flux")
     seed = frame.get("scene", {}).get("_redo_seed", "")
     # Orientation joins the hash only when non-default, so every pre-existing
     # portrait cache stays valid while landscape/square (previously WRONG — stills
     # were hardcoded 9:16) regenerate correctly.
     orientation = frame.get("orientation") or "portrait"
     ohash = f"|or:{orientation}" if orientation != "portrait" else ""
-    hash_src = prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "") + seed + ohash
+    hash_src = (prompt + (f"|ref:{_file_hash(reference_path)}" if use_ref else "")
+                + (f"|sk:{_file_hash(sketch_path)}" if use_sketch else "")
+                + seed + ohash)
     out_path = os.path.join(
         assets_dir, f"ai_portrait_{frame_id}_{_prompt_hash(chosen, hash_src, frame_id)}.jpg")
 
@@ -283,20 +291,34 @@ def generate_contextual_image(frame: dict, assets_dir: str, model_id: str = "",
         print(f"[ImageGen] Portrait ({frame_id}) — reusing cached image ({os.path.getsize(out_path)//1024}KB)")
         return out_path
 
-    if use_ref:
+    if use_ref or use_sketch:
         from agents.image_editor import edit_image
         # Character-consistency phrasing on purpose: "keep this EXACT person's face and
         # identity" reads as a deepfake instruction to vendor content checkers (fal 422
         # content_policy_violation → silent fallback → no face conditioning at all).
-        ref_prompt = ("The reference image shows a recurring character from this story. "
-                      "Depict the SAME character — consistent facial features, the SAME "
-                      "outfit and wardrobe as the reference, consistent anatomy and "
-                      "character design, photorealistic. New scene: " + prompt)
+        refs, parts = [], []
+        if use_ref:
+            refs.append(reference_path)
+            parts.append("The FIRST image shows a recurring character from this "
+                         "story. Depict the SAME character — consistent facial "
+                         "features, the SAME outfit and wardrobe as the reference, "
+                         "consistent anatomy and character design.")
+        if use_sketch:
+            refs.append(sketch_path)
+            parts.append(f"The {'SECOND' if use_ref else 'FIRST'} image is a rough "
+                         "pencil STORYBOARD sketch — follow its COMPOSITION, framing "
+                         "and blocking exactly (where the subject sits in frame, the "
+                         "camera angle, the negative space), but render a finished "
+                         "PHOTOREALISTIC cinematic still — no pencil lines, no sketch "
+                         "style, no monochrome, no arrows.")
+        ref_prompt = " ".join(parts) + " Photorealistic. New scene: " + prompt
+        srcs = " + ".join(os.path.basename(p) for p in refs)
         print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via reference edit "
-              f"(face from {os.path.basename(reference_path)})…")
+              f"({srcs})…")
         _generate_image_checked("", prompt, out_path, "", frame_id,
-                                generator=lambda: edit_image(reference_path, ref_prompt, out_path),
-                                orientation=orientation)
+                                generator=lambda: edit_image(refs, ref_prompt, out_path),
+                                orientation=orientation,
+                                likeness_ref=reference_path if use_ref else "")
     else:
         print(f"[ImageGen] Portrait ({frame_id}) [{scene.get('emotion', '')}] via {chosen}…")
         _generate_image_checked(chosen, prompt, out_path, "gpt_image", frame_id,
@@ -422,11 +444,18 @@ STORYBOARD_STYLE = (
 
 def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: str = "",
                                 char_id: str = "char", model_id: str = "",
-                                variant: int = 0) -> str:
+                                variant: int = 0, reference_path: str = "") -> str:
     """Generate a CANONICAL character reference portrait from the sheet attributes (P1
     character-sheet-first). Used once per character in AI/fiction mode; the result becomes
     that character's reference so every shot conditions on the SAME face (via the pluggable
-    identity path). Front-facing, neutral background — a clean face lock."""
+    identity path). Front-facing, neutral background — a clean face lock.
+
+    reference_path (likeness chain, 2026-07-20): when a REAL photo of the character
+    exists, the canonical portrait is generated FROM it via the identity path
+    (edit_image) instead of from text — same recipe, but the face is the person's,
+    not an invention. Candid crops make weak refs (angle, blur, expression baked
+    in); this converts them into the flat-lit front-facing sheet that conditions
+    downstream shots best, WITHOUT losing the identity."""
     # Recipe upgraded 2026-07-19 from the galleri5 pipeline anatomy (their actual
     # Yamraj sheet prompt): single-figure FULL BODY, explicit anti-grid negatives,
     # photoreal material texture. Deliberately KEPT flat/even lighting over their
@@ -445,13 +474,29 @@ def generate_character_portrait(appearance: str, out_dir: str, *, world_clause: 
     )
     chosen = model_id or "flux"           # face-strong model for a clean canonical portrait
     os.makedirs(out_dir, exist_ok=True)
+    use_ref = bool(reference_path) and os.path.exists(reference_path)
     # variant participates in the cache key: 0 reuses a prior identical portrait (bulk
     # flow); any other value forces a FRESH sample — the operator's "↻ New face" redo.
-    out_path = os.path.join(out_dir, f"charref_{char_id}_{_prompt_hash(chosen, prompt, f'{char_id}_v{variant}')}.jpg")
+    # The real-photo ref joins the key too — swapping the photo must re-derive the sheet.
+    key_extra = f"{char_id}_v{variant}" + (f"|ref:{_file_hash(reference_path)}" if use_ref else "")
+    out_path = os.path.join(out_dir, f"charref_{char_id}_{_prompt_hash(chosen, prompt, key_extra)}.jpg")
     if _image_cached(out_path):
         return out_path
-    print(f"[ImageGen] Canonical character portrait ({char_id}) via {chosen}…")
-    _generate_image_checked(chosen, prompt, out_path, "gpt_image", char_id)
+    if use_ref:
+        from agents.image_editor import edit_image
+        ref_prompt = (
+            "The attached image shows a REAL person — this exact person, same face, "
+            "same identity. Re-render them as: " + prompt +
+            " Keep the face IDENTICAL to the reference — same bone structure, eyes, "
+            "nose, mouth, skin tone, age. Do not beautify, de-age, or stylize the face."
+        )
+        print(f"[ImageGen] Canonical portrait ({char_id}) FROM real photo (identity path)…")
+        _generate_image_checked("", ref_prompt, out_path, "", char_id,
+                                generator=lambda: edit_image(reference_path, ref_prompt, out_path),
+                                likeness_ref=reference_path)
+    else:
+        print(f"[ImageGen] Canonical character portrait ({char_id}) via {chosen}…")
+        _generate_image_checked(chosen, prompt, out_path, "gpt_image", char_id)
     return out_path
 
 

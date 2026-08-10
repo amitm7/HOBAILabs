@@ -248,6 +248,7 @@
         <p class="be-sub">Each shot becomes a card, left→right in cut order. You generate and approve one stage at a time from the bar below — nothing is charged until you approve it.</p>
       </div>`;
       $("timeline-strip").innerHTML = "";
+      renderLanes([]);
       if ($("board-hint")) $("board-hint").hidden = true;
       $("inspector").hidden = true;
       return;
@@ -264,9 +265,63 @@
     $("board").innerHTML = board.map((c, i) => shotCard(c, i, board.length)).join("");
     renderStageBar(stages);
     renderTimelineStrip(board);
+    renderLanes(board);
     if (activeFrameId) {
       renderInspector(activeFrameId);
     }
+  }
+
+  // ── S33.2 stage lanes — one strip per pipeline layer, board-aligned columns ──
+  // Sketches (storyboard_art) → Key Frames (stills) → Video (clips) → Audio (who
+  // carries each beat). Every cell opens the SAME Shot Inspector; still/clip
+  // updates flow through here automatically because showStillOnCard/showClipOnCard
+  // re-run renderBoard. Cells reuse .video-poster so hover-play works unchanged.
+  function laneCell(inner, fid, extra) {
+    const active = (fid === activeFrameId) ? " active" : "";
+    return `<div class="lane-cell${extra || ""}${active}" data-frame="${fid}">${inner}</div>`;
+  }
+  function renderLanes(board) {
+    const sk = $("lane-sketch"), fr = $("lane-frames"), vd = $("lane-video"), au = $("lane-audio");
+    if (!sk || !fr || !vd || !au) return;
+    sk.innerHTML = board.map((c, i) => laneCell(
+      `<div class="lc-media">${c.storyboard_art
+        ? `<img class="thumb sketch" src="${mediaUrl(c.storyboard_art)}" alt="storyboard sketch">`
+        : `<div class="lc-empty">✏️</div>`}</div>
+       <div class="lc-foot"><span class="lc-n">${i + 1}</span>
+         <span>${c.storyboard_art ? escapeHtml(c.camera || "") : "not sketched"}</span></div>`,
+      c.frame_id)).join("");
+    fr.innerHTML = board.map((c, i) => {
+      const still = stillsCache[c.frame_id] || c.real_path || "";
+      const badge = c.asset_kind === "real"
+        ? `<span class="kindbadge kb-real">REAL</span>`
+        : `<span class="kindbadge kb-${c.asset_kind}">${c.asset_kind === "ai_person" ? "AI FACE" : "AI"}</span>`;
+      return laneCell(
+        `<div class="lc-media">${still ? mediaThumb(still, "key frame") : `<div class="lc-empty">${i + 1}</div>`}${badge}</div>
+         <div class="lc-foot"><span class="lc-n">${i + 1}</span>${reviewChip(c.review)}
+           <span>${still ? escapeHtml(c.shot_size || "") : "no frame yet"}</span></div>`,
+        c.frame_id);
+    }).join("");
+    vd.innerHTML = board.map((c, i) => {
+      const still = stillsCache[c.frame_id] || c.real_path || "";
+      const clip = clipsCache[c.frame_id] || "";
+      const media = clip
+        ? `<div class="frame video-poster" data-clip="${escapeHtml(clip)}" data-still="${escapeHtml(still)}" data-frame="${c.frame_id}">
+             ${mediaThumb(still, "video poster")}<span class="play-icon">▶</span></div>`
+        : `<div class="lc-empty">${i + 1}</div>`;
+      return laneCell(
+        `<div class="lc-media">${media}</div>
+         <div class="lc-foot"><span class="lc-n">${i + 1}</span>
+           <span>${clip ? (c.duration ? c.duration + "s" : "clip ready") : "no clip yet"}</span></div>`,
+        c.frame_id);
+    }).join("");
+    const FORM_ICON = { dialogue: "🎬", silent: "🌫" };
+    const FORM_FALLBACK = { dialogue: "(dialogue beat)", silent: "(silent beat)" };
+    au.innerHTML = board.map((c, i) => laneCell(
+      `<span class="lc-n">${i + 1}</span>
+       <span class="form-tag form-${c.form || "narration"}" title="Storytelling form (S28)">${FORM_ICON[c.form] || "🎙"}</span>
+       <span class="lc-line">${escapeHtml(c.caption || FORM_FALLBACK[c.form] || "(no line)")}</span>
+       ${c.duration ? `<span class="sb-dur" style="margin-left:auto">${c.duration}s</span>` : ""}`,
+      c.frame_id, " lc-audio")).join("");
   }
 
   // ── Storyboard (S31) ───────────────────────────────────────────────────────
@@ -328,6 +383,7 @@
         <div class="sb-head">
           <span class="sb-n">${index + 1}</span>
           <span class="form-tag form-${c.form || "narration"}" title="Storytelling form (S28): 🎬 dialogue · 🎙 narration · 🌫 silent. Override in the Inspector.">${formIcon}</span>
+          ${c.on_screen ? `<span class="form-tag" title="Who is ON SCREEN in this shot (may differ from who speaks — the narrator can describe someone else)">👤 ${escapeHtml(c.on_screen)}</span>` : ""}
           <span class="sb-head-sp"></span>
           ${reviewChip(c.review)}${badge}
         </div>
@@ -546,11 +602,12 @@
               📎 Real photo
               <input type="file" accept="image/*" data-frame="${fid}" data-mode="real" hidden>
             </label>
-            <label class="btn-primary attach-btn" style="display:flex;align-items:center;justify-content:center">
-              👤 Likeness ref
+            <button class="btn-primary locked-face" data-frame="${fid}" title="AI-generate this shot with the on-screen character's LOCKED face (from the Character sheet) — same person, staged moment. Labeled as AI likeness.">🎭 Their face (AI)</button>
+            <label class="btn-secondary attach-btn" style="display:flex;align-items:center;justify-content:center" title="Upload a DIFFERENT photo as the face reference for this one shot">
+              👤 Other face…
               <input type="file" accept="image/*" data-frame="${fid}" data-mode="reference" hidden>
             </label>
-            <button class="btn-secondary ai-gen" data-frame="${fid}">🎭 Use AI generic</button>
+            <button class="btn-secondary ai-gen" data-frame="${fid}" title="Fully AI-generated with NO identity — an anonymous figure/scene. Use when nobody's real face should appear.">👻 Generic (no face)</button>
           </div>
         </details>
 
@@ -633,10 +690,8 @@
 
   function selectFrame(fid) {
     activeFrameId = fid;
-    document.querySelectorAll(".sb-card").forEach((el) => {
-      el.classList.toggle("active", el.getAttribute("data-frame") === fid);
-    });
-    document.querySelectorAll(".cv2-timeline-card").forEach((el) => {
+    // One selection, every representation: board card, timeline tile, stage lanes.
+    document.querySelectorAll(".sb-card, .cv2-timeline-card, .lane-cell").forEach((el) => {
       el.classList.toggle("active", el.getAttribute("data-frame") === fid);
     });
     $("inspector").hidden = false;
@@ -710,7 +765,16 @@
     try {
       const d = await api(`/api/canvas/${runId}/ai-source`, { frame_id: fid });
       render(d.canvas);
-      $("match-hint").textContent = "✓ shot replaced with a fully AI-generated image";
+      $("match-hint").textContent = "✓ shot set to GENERIC AI — no identity. For their face, use 🎭";
+    } catch (e) { err(e.message); if (btn) btn.disabled = false; }
+  }
+  async function useLockedFace(fid, btn) {
+    if (!runId) return;
+    err(""); if (btn) btn.disabled = true;
+    try {
+      const d = await api(`/api/canvas/${runId}/use-locked-face`, { frame_id: fid });
+      render(d.canvas);
+      $("match-hint").textContent = "✓ shot will be AI-generated with their locked face (labeled AI likeness)";
     } catch (e) { err(e.message); if (btn) btn.disabled = false; }
   }
   async function revertReal(fid) {
@@ -848,8 +912,12 @@
       renderLocations(canvas.locations);
     }
     const hasBoard = canvas.board && canvas.board.length > 0;
-    // Don't force the board visible while the stage view owns the screen (they'd stack).
-    if ($("stage-view").hidden) setView(hasBoard);   // a planned board IS page 2
+    setView(hasBoard);   // a planned board IS page 2
+    // S33: the Script zone is always on screen — same don't-clobber-typing rule as
+    // the sheets, and hands-off while the translation review owns the panel.
+    if (hasBoard && !langReview && !$("script-panel").contains(document.activeElement)) {
+      renderScript(canvas.board);
+    }
     // Brand panel rides the scope: an ad is what Commerce means. Publish rides an actual
     // render — there is nothing to post, prove or measure until the reel exists.
     if ($("brand-panel")) $("brand-panel").hidden = !(hasBoard && canvas.scope === "commerce");
@@ -864,6 +932,7 @@
     }
     const rid = canvas.render_id || "";
     if ($("publish-panel")) $("publish-panel").hidden = !rid;
+    if ($("out-locked")) $("out-locked").hidden = !!rid;   // the Output zone's "not yet" hint
     if (rid) {
       $("export-link").href = "/export/" + rid;
       $("prov-link").href = "/provenance/" + rid;
@@ -882,12 +951,10 @@
     const vid = (canvas.stages || []).find((s) => s.id === "video");
     const videoApproved = vid && vid.status === "approved";
     $("render-btn").hidden = !hasBoard;
-    // S31: the stage-view toggle + settings gear appear once there's a film to show.
-    if ($("view-toggle")) $("view-toggle").hidden = !hasBoard;
+    // S33: the workspace jumplist, zoomer + settings gear appear once there's a film.
     if ($("settings-gear")) $("settings-gear").hidden = !hasBoard;
-    // If the stage view is open, keep it in sync with this data refresh (unless a shot
-    // sheet is mid-render, to avoid clobbering a focused field — same rule as the board).
-    if (!$("stage-view").hidden && !$("sv-center").contains(document.activeElement)) renderStageView();
+    if ($("cv-jump")) $("cv-jump").hidden = !hasBoard;
+    if ($("cv-zoom")) $("cv-zoom").hidden = !hasBoard;
     $("render-btn").disabled = !videoApproved;
     // T13: language versions unlock exactly when Final Cut does.
     if ($("lang-controls")) $("lang-controls").hidden = !(hasBoard && videoApproved);
@@ -913,6 +980,12 @@
     renderReport([...(canvas.render_report || []), ...planEvents, ...formEvents]);
     renderFormBadge(canvas.story_form);
     if (canvas.render_id) syncRendered();   // fill cards from disk + reconnect if running
+    // S33: zones are content-sized — re-run the layout pass now the content is in,
+    // and glide the first board of the session into view.
+    if (hasBoard) {
+      cvLayout();
+      if (!cvFitted) { cvFitted = true; cvGlideTo("zone-board"); cvShowHint(); }
+    }
   }
 
   // S28 detect→declare: the story-level form verdict, always visible once planned.
@@ -1043,6 +1116,7 @@
   function resetRunCaches() {
     stillsCache = {}; clipsCache = {}; assetCache = null;
     activeFrameId = null; canvasMusicPath = "";
+    cvFitted = false;               // a different run gets its own first-fit glide
     $("inspector").hidden = true;
     $("timeline-strip").innerHTML = "";
   }
@@ -1201,15 +1275,15 @@
     if (ev.target.value) loadCanvas(ev.target.value);
   });
 
-  // On open: list recents + voices, resume the last canvas (URL ?run= or localStorage).
+  // On open: list recents + voices. Resume ONLY when the URL names a run
+  // (?run=) — a bare /canvas means "new story" (prompt-first, S31); silently
+  // teleporting into the last session made starting fresh feel impossible.
+  // Closed-tab recovery lives one click away in the Resume… picker.
   loadRecents();
   loadVoices();
   (function initResume() {
     const fromUrl = new URLSearchParams(location.search).get("run");
-    let last = null;
-    try { last = localStorage.getItem("hob_canvas_run"); } catch (e) { /* ignore */ }
-    const id = fromUrl || last;
-    if (id) loadCanvas(id);
+    if (fromUrl) loadCanvas(fromUrl);
   })();
 
   // Re-roll one shot — regenerate its still + clip (~1–2 min; reuses the pipeline).
@@ -1290,7 +1364,7 @@
 
   // Delegated re-roll / re-create / select / picker clicks.
   function handleBoardOrInspectorClick(ev) {
-    const cell = ev.target.closest(".sb-card");
+    const cell = ev.target.closest(".sb-card, .lane-cell");
     if (cell && !ev.target.closest("button") && !ev.target.closest("input") && !ev.target.closest("select") && !ev.target.closest(".picker")) {
       const fid = cell.getAttribute("data-frame");
       selectFrame(fid);
@@ -1332,6 +1406,8 @@
     if (up) { ev.preventDefault(); upscaleShot(up.getAttribute("data-frame"), up); return; }
     const ag = ev.target.closest(".ai-gen");
     if (ag) { ev.preventDefault(); aiGeneric(ag.getAttribute("data-frame"), ag); return; }
+    const lf = ev.target.closest(".locked-face");
+    if (lf) { ev.preventDefault(); useLockedFace(lf.getAttribute("data-frame"), lf); return; }
     const rr = ev.target.closest(".revert-real");
     if (rr) { ev.preventDefault(); revertReal(rr.getAttribute("data-frame")); return; }
     const fs = ev.target.closest(".fid-suggest");
@@ -1375,6 +1451,10 @@
 
   $("board").addEventListener("click", handleBoardOrInspectorClick);
   $("inspector").addEventListener("click", handleBoardOrInspectorClick);
+  // S33.2: each stage lane routes through the same handler — same selection rules.
+  ["lane-sketch", "lane-frames", "lane-video", "lane-audio"].forEach((id) => {
+    if ($(id)) $(id).addEventListener("click", handleBoardOrInspectorClick);
+  });
 
   $("timeline-strip").addEventListener("click", (ev) => {
     const card = ev.target.closest(".cv2-timeline-card");
@@ -1674,12 +1754,14 @@
           <textarea class="lang-line" data-lang="${lang}" data-frame="${c.frame_id}" rows="1">${escapeHtml(lines[c.frame_id] || "")}</textarea>
         </div>`).join("");
     $("script-panel").querySelectorAll("textarea").forEach(_autosize);
-    $("script-panel").hidden = false; $("board-viewport").hidden = true;
+    cvLayout();               // the review adds rows — re-measure before gliding
+    cvGlideTo("zone-script"); // S33: the panel is permanent; the camera goes to it
   }
 
   function closeLangReview() {
     langReview = null;
-    $("script-panel").hidden = true; $("board-viewport").hidden = false;
+    renderScript((lastCanvas && lastCanvas.board) || []);
+    cvLayout();
   }
 
   $("script-panel").addEventListener("click", async (ev) => {
@@ -1697,9 +1779,8 @@
     }
   });
 
-  // 📄 Script view — read/edit the story as narration prose BEFORE generating anything.
+  // 📄 Script zone (S33) — the film line by line, ALWAYS on the canvas (zone 01).
   // Review-first: the captions ARE the script; edits save straight to the shots.
-  let scriptView = false;
   function _autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
   function renderScript(board) {
     $("script-panel").innerHTML =
@@ -1714,19 +1795,6 @@
         </div>`).join("");
     $("script-panel").querySelectorAll("textarea").forEach(_autosize);
   }
-  $("script-btn") && $("script-btn").addEventListener("click", () => {
-    if (!runId || !lastCanvas) { err("Plan a story first."); return; }
-    scriptView = !scriptView;
-    $("script-btn").classList.toggle("on", scriptView);
-    $("script-btn").textContent = scriptView ? "📄 Back to board" : "📄 Script";
-    if (scriptView) {
-      renderScript(lastCanvas.board || []);
-      $("script-panel").hidden = false; $("board-viewport").hidden = true;
-    } else {
-      $("script-panel").hidden = true; $("board-viewport").hidden = false;
-      if (lastCanvas) render(lastCanvas);
-    }
-  });
   $("script-panel").addEventListener("input", (ev) => {
     const t = ev.target.closest(".script-line"); if (t) _autosize(t);
   });
@@ -1767,12 +1835,8 @@
   $("storyboard-btn") && $("storyboard-btn").addEventListener("click", async () => {
     if (!runId) { err("Plan a story first."); return; }
     err("");
-    if (scriptView) {   // leaving the Script view
-      scriptView = false; $("script-btn").classList.remove("on"); $("script-btn").textContent = "📄 Script";
-      $("script-panel").hidden = true; $("board-viewport").hidden = false;
-    }
     if (!lastCanvas || (lastCanvas.board || []).every((c) => c.storyboard_art)) {
-      $("match-hint").textContent = "✏️ storyboard panels ready — see the Storyboard column";
+      $("match-hint").textContent = "✏️ storyboard panels ready — see the Sketches lane";
       return;
     }
     const btn = $("storyboard-btn"); btn.disabled = true;
@@ -2102,266 +2166,187 @@
   $("board").addEventListener("click", handleStageClick);
   $("stage-bar") && $("stage-bar").addEventListener("click", handleStageClick);
 
-  // ══ Stage view (S31) — the film built step by step. A NEW view toggled from the board;
-  // REUSES renderInspector, the cast/location sheets and the stage generate/approve markup,
-  // so every control on the board is reachable here too (nothing reimplemented, nothing lost).
-  const SV_STAGES = [
-    {id:"script",     nm:"Script",         kind:"stage", desc:"The story turned into a shot list. Edit any line; everything downstream re-plans from it."},
-    {id:"storyboard", nm:"Shot Breakdown", kind:"stage", desc:"Each beat as a shot — camera move, timing, framing. The production guide every later stage follows."},
-    {id:"characters", nm:"Characters",     kind:"cast",  desc:"Lock each person once — a real photo keeps the face exact across every shot (the thing that stops the face drifting)."},
-    {id:"locations",  nm:"Locations",      kind:"loc",   desc:"Lock each place once; a plate keeps the same set across every shot filmed there."},
-    {id:"keyframes",  nm:"Key Frames",     kind:"stage", desc:"The anchor image for every shot. Click a shot to edit it — real media is never re-generated."},
-    {id:"video",      nm:"Video",          kind:"stage", desc:"Each key frame becomes a moving shot. Generate them one at a time and preview before the final cut."},
-    {id:"finalcut",   nm:"Final Cut",      kind:"stage", desc:"Every approved clip assembled — beat-synced cuts, narration, captions — into the finished 9:16 reel."},
-  ];
-  let svActive = "keyframes";
-  let svKfMode = "frames";   // Key Frames grid shows "frames" or the "sketches" (storyboard panels, drawn after approval)
-  let svOrig = null;   // original DOM parents of the reused elements, to restore on exit
+  // ══ The infinite canvas (S33) — one pannable, zoomable surface ══════════════
+  // The five workspaces (Script → Cast → Locations → Storyboard → Output) are
+  // absolutely-positioned zones on #cv-world, moved by ONE transform. Figma
+  // grammar: drag pans, wheel pans, ⌘/ctrl+wheel zooms to the cursor, ⇧1 fits,
+  // the jumplist glides to a workspace. Pipeline actions, cost and chat stay
+  // docked — governance must never be pannable out of view.
+  let cvX = 0, cvY = 0, cvK = 1;
+  let cvFitted = false;   // the first board of a run auto-fits once, then hands over
+  const cvClampK = (v) => Math.min(2.5, Math.max(0.12, v));
 
-  function svStageMeta(id){ return (lastCanvas && (lastCanvas.stages||[]).find(x=>x.id===id)) || {status:"pending"}; }
-  function svStatusClass(st){ return (st==="done"||st==="approved") ? "done" : (st==="generating" ? "work" : "wait"); }
-  function svBoard(){ return (lastCanvas && lastCanvas.board) || []; }
-  function svStillFor(c){ return stillsCache[c.frame_id] || c.real_path || ""; }
-
-  function svCount(item){
-    const b = svBoard(), n = b.length;
-    if (item.kind === "cast") return String(((lastCanvas&&lastCanvas.characters)||[]).length || 0);
-    if (item.kind === "loc")  return String(((lastCanvas&&lastCanvas.locations)||[]).length || 0);
-    if (item.id === "keyframes") return `${b.filter(c=>svStillFor(c)).length}/${n}`;
-    if (item.id === "video")     return `${Object.keys(clipsCache).length}/${n}`;
-    const st = svStageMeta(item.id).status;
-    return (st==="done"||st==="approved") ? "✓" : (st==="generating" ? "…" : "—");
+  function cvApply() {
+    $("cv-world").style.transform = `translate(${cvX}px, ${cvY}px) scale(${cvK})`;
+    if ($("zoom-pct")) $("zoom-pct").textContent = Math.round(cvK * 100) + "%";
   }
-  function svClass(item){
-    if (item.kind === "cast") return ((lastCanvas&&lastCanvas.characters)||[]).length ? "done" : "wait";
-    if (item.kind === "loc")  return ((lastCanvas&&lastCanvas.locations)||[]).length ? "done" : "wait";
-    if (item.id === "keyframes") return svBoard().some(svStillFor) ? "done" : "wait";
-    if (item.id === "video")     return Object.keys(clipsCache).length ? "work" : "wait";
-    return svStatusClass(svStageMeta(item.id).status);
+  function cvGlideOn() {
+    const w = $("cv-world");
+    w.classList.add("gliding");
+    setTimeout(() => w.classList.remove("gliding"), 500);
   }
 
-  function renderStageView(){
-    if (!lastCanvas) return;
-    // ribbon
-    const ribbon = SV_STAGES.map((it,i)=>{
-      const cls = svClass(it), thumb = svBoard()[Math.min(i, svBoard().length-1)];
-      const th = (it.id==="keyframes"||it.id==="video") && svStillFor(thumb||{})
-        ? `<img src="${mediaUrl(svStillFor(thumb))}" alt="">` : `<span style="color:var(--mut);font-family:Georgia,serif">Aa</span>`;
-      const arrow = i < SV_STAGES.length-1 ? `<div class="rbn-ar">→</div>` : "";
-      return `<div class="rbn ${it.id===svActive?"active":""}" data-sv="${it.id}"><div class="rbn-th ${cls}">${th}</div><div class="rbn-nm">${it.nm}</div><div class="rbn-ct">${svCount(it)}</div></div>${arrow}`;
-    }).join("");
-    $("sv-ribbon").innerHTML = ribbon;
-    // spine
-    $("sv-spine").innerHTML = SV_STAGES.map(it=>{
-      const cls = svClass(it), dot = {done:"●",work:"◐",wait:"○"}[cls];
-      return `<button class="spn ${cls} ${it.id===svActive?"active":""}" data-sv="${it.id}"><span class="spn-dot">${dot}</span><span class="spn-nm">${it.nm}</span><span class="spn-ct">${svCount(it)}</span></button>`;
-    }).join("");
-    svSelectStage(svActive, true);
-  }
-
-  function svSelectStage(id, keep){
-    svActive = id;
-    document.querySelectorAll("#stage-view [data-sv]").forEach(e=>e.classList.toggle("active", e.dataset.sv===id));
-    const it = SV_STAGES.find(x=>x.id===id) || SV_STAGES[4];
-    $("sv-eyebrow").textContent = `Stage ${SV_STAGES.indexOf(it)+1} of ${SV_STAGES.length}`;
-    $("sv-title").textContent = it.nm;
-    $("sv-desc").textContent = it.desc;
-    svRenderActions(it);
-    svRenderCenter(it);
-  }
-
-  // Stage generate/approve — the SAME .gen/.appr markup the board's stage bar uses, so the
-  // existing handleStageClick (bound below) drives it. No new spend logic.
-  function svRenderActions(it){
-    const host = $("sv-actions");
-    if (it.kind === "cast" || it.kind === "loc"){ host.innerHTML = ""; return; }
-    const s = svStageMeta(it.id);
-    let btn = "";
-    if (it.id === "audio") btn = `<button disabled>set in Final Cut</button>`;
-    else if (s.status === "generating") btn = `<button disabled>Generating…</button>`;
-    else if (s.status === "done") btn = `<button class="appr" data-approve="${it.id}">Approve ✓</button>`;
-    else if (s.status === "approved") btn = `<button disabled>Approved ✓</button>`;
-    else if (s.ready) btn = `<button class="gen" data-stage="${it.id}">${s.paid?`Generate · ${usd(s.cost_usd)}`:"Generate"}</button>`;
-    else btn = `<button disabled>Locked</button>`;
-    host.innerHTML = btn;
-    // Key Frames: the pencil-sketch storyboard is drawn AFTER the frames exist (user flow).
-    if (it.id === "keyframes"){
-      host.insertAdjacentHTML("beforeend",
-        ` <button class="appr" id="sv-sketch-all" title="Draw a loose graphite storyboard panel per shot (framing + camera move) — a planning sketch, cheap">✏️ Sketch all shots</button>` +
-        ` <button class="appr" id="sv-kf-mode">${svKfMode==="sketches"?"🖼 Show frames":"✏️ Show sketches"}</button>`);
-    }
-  }
-
-  function svShotCard(c,i){
-    const still = svStillFor(c), clip = clipsCache[c.frame_id] || "";
-    const isReal = c.asset_kind === "real";
-    const badge = isReal ? `<span class="svc-badge b-real">REAL</span>`
-      : `<span class="svc-badge b-${c.asset_kind==="ai_person"?"person":"ai"}">${c.asset_kind==="ai_person"?"AI FACE":"AI"}</span>`;
-    const media = still ? `<img src="${mediaUrl(still)}" alt="">` : `<div class="svc-empty">${i+1}</div>`;
-    const play = (svActive==="video" && clip) ? `<span class="svc-play">▶</span>` : "";
-    return `<div class="svc" data-frame="${c.frame_id}"><div class="svc-media">${media}<span class="svc-n">${i+1}</span>${badge}${play}</div>
-      <div class="svc-body"><div class="svc-cap">${escapeHtml(c.caption||"(no line)")}</div>
-      <div class="svc-meta"><span>${escapeHtml(c.motion||"")}</span><span>${c.duration?c.duration+"s":""}</span></div></div></div>`;
-  }
-
-  function svRenderCenter(it){
-    const center = $("sv-center");
-    svUnmountSheets();                    // pull any moved sheet OUT before we touch innerHTML
-    if (it.kind === "cast"){ center.innerHTML=""; svMount($("characters"), center); $("characters").hidden = false; renderCharacters((lastCanvas&&lastCanvas.characters)||[]); return; }
-    if (it.kind === "loc"){  center.innerHTML=""; svMount($("locations"), center);  $("locations").hidden = false;  renderLocations((lastCanvas&&lastCanvas.locations)||[]); return; }
-    const b = svBoard();
-    if (it.id === "script"){    // the written lines
-      center.innerHTML = `<div class="sv-textlist">` + b.map((c,i)=>
-        `<div class="sv-line" data-frame="${c.frame_id}"><span class="n">${i+1}</span>${escapeHtml(c.caption||"(no line)")}</div>`
-      ).join("") + `</div>`;
-      return;
-    }
-    if (it.id === "storyboard"){ // the shot breakdown — the production guide (framing, camera, move)
-      center.innerHTML = `<div class="sv-textlist">` + b.map((c,i)=>
-        `<div class="sv-line" data-frame="${c.frame_id}">
-           <div><span class="n">${i+1}</span>${escapeHtml(c.caption||"(no line)")}</div>
-           <div class="svc-meta" style="margin-top:7px;gap:12px">
-             <span>▦ ${escapeHtml(c.shot_size||"shot")}</span>
-             <span>◎ ${escapeHtml(c.camera||"auto")}</span>
-             <span>➔ ${escapeHtml(c.motion||"slow push")}</span>
-             ${c.emotion?`<span>♥ ${escapeHtml(c.emotion)}</span>`:""}
-           </div>
-           ${c.note?`<div style="font-size:11px;color:var(--mut);margin-top:6px">${escapeHtml(c.note)}</div>`:""}
-         </div>`
-      ).join("") + `</div>`;
-      return;
-    }
-    if (it.id === "audio"){ center.innerHTML = `<p class="sv-mount">Audio (music / voiceover) is chosen in ⚙ Reel settings and mixed at Final Cut.</p>`; return; }
-    if (it.id === "finalcut"){
-      const rid = lastCanvas && lastCanvas.render_id;
-      center.innerHTML = rid
-        ? `<p class="sv-mount">Final cut is assembled. Use “🎬 Render reel” in the top bar to (re)assemble; the finished reel + downloads live in the board’s render panel.</p>`
-        : `<p class="sv-mount">Generate and approve Video, then render the Final Cut from the top bar.</p>`;
-      return;
-    }
-    if (it.id === "keyframes" && svKfMode === "sketches"){
-      center.innerHTML = `<div class="sv-grid">` + b.map((c,i)=>{
-        const art = c.storyboard_art;
-        const media = art ? `<img src="${mediaUrl(art)}" alt="" style="filter:contrast(1.05)">`
-          : `<div class="svc-empty">✏️<span style="font-size:11px;position:absolute;bottom:10px">not sketched</span></div>`;
-        return `<div class="svc" data-frame="${c.frame_id}"><div class="svc-media" style="aspect-ratio:3/4;background:#f4f2ec">${media}<span class="svc-n">${i+1}</span></div>
-          <div class="svc-body"><div class="svc-cap">${escapeHtml(c.caption||"")}</div>
-          <div class="svc-meta"><span>${escapeHtml(c.camera||"")}</span><span>${escapeHtml(c.motion||"")}</span></div></div></div>`;
-      }).join("") + `</div>`;
-      return;
-    }
-    // keyframes (frames view) / video → the shot grid
-    center.innerHTML = `<div class="sv-grid">` + b.map((c,i)=>svShotCard(c,i)).join("") + `</div>`;
-  }
-
-  // Reuse elements by MOVING them, restoring to their exact origin so the board still works.
-  // Two independent stores so closing the settings drawer never disturbs the stage view.
-  const SV_STORE = new Map(), SET_STORE = new Map();
-  function svMove(el, target, store){
-    if (!el) return;
-    if (!store.has(el)) store.set(el, {parent: el.parentNode, next: el.nextSibling, hidden: el.hidden});
-    target.appendChild(el);
-  }
-  function svHome(el, store){
-    const o = store.get(el); if (!o) return;
-    o.parent.insertBefore(el, o.next); el.hidden = o.hidden; store.delete(el);
-  }
-  function svRestoreAll(store){ Array.from(store.keys()).forEach(el=>svHome(el, store)); }
-  function svMount(el, target){ svMove(el, target, SV_STORE); }
-  // Re-home the cast/location SHEETS before any innerHTML replace would destroy them.
-  function svUnmountSheets(){ ["characters","locations"].forEach(id=>svHome($(id), SV_STORE)); }
-
-  function svShowInspector(){
-    svMount($("inspector"), $("sv-inspector-slot"));
-    $("inspector").hidden = false;
-    $("sv-inspector-slot").hidden = false; $("sv-chat-slot").hidden = true;
-    document.querySelectorAll(".sv-tab").forEach(t=>t.classList.toggle("active", t.dataset.tab==="shot"));
-    $("sv-tab-shot").disabled = false;
-  }
-  function svShowChat(){
-    $("sv-inspector-slot").hidden = true; $("sv-chat-slot").hidden = false;
-    document.querySelectorAll(".sv-tab").forEach(t=>t.classList.toggle("active", t.dataset.tab==="chat"));
-  }
-
-  function svChatBox(){
-    $("sv-chat-slot").innerHTML =
-      `<div class="sv-chatbox"><div class="sv-chatlog" id="sv-chatlog">
-         <div class="sv-msg ai">Tell me what to change in plain English — “make shot 3 warmer”, “add a rain shot”, “lock the vendor’s face”. I re-plan the shots from it.</div>
-       </div>
-       <div class="sv-chatin"><input id="sv-chat-input" placeholder="Tell the director what to change…"><button id="sv-chat-send">↑</button></div></div>`;
-    const send = async ()=>{
-      const inp = $("sv-chat-input"); const msg = inp.value.trim(); if(!msg||!runId) return;
-      const log = $("sv-chatlog");
-      log.insertAdjacentHTML("beforeend", `<div class="sv-msg you">${escapeHtml(msg)}</div>`);
-      inp.value=""; inp.disabled=true;
-      try{ const d = await api(`/api/canvas/${runId}/chat`, {message:msg});
-        log.insertAdjacentHTML("beforeend", `<div class="sv-msg ai">Re-planned ${((d.canvas&&d.canvas.board)||[]).length} shots.</div>`);
-        render(d.canvas); if(!$("stage-view").hidden) renderStageView();
-      }catch(e){ log.insertAdjacentHTML("beforeend", `<div class="sv-msg ai">${escapeHtml(e.message)}</div>`); }
-      finally{ inp.disabled=false; inp.focus(); log.scrollTop=log.scrollHeight; }
-    };
-    $("sv-chat-send").addEventListener("click", send);
-    $("sv-chat-input").addEventListener("keydown", e=>{ if(e.key==="Enter") send(); });
-  }
-
-  function enterStageView(){
-    $("stage-view").hidden = false; $("canvas-view").hidden = true;
-    $("view-toggle").textContent = "▦ Board";
-    svChatBox(); svShowChat();
-    renderStageView();
-  }
-  function exitStageView(){
-    $("sv-center").innerHTML = "";       // drop grid refs before restoring moved elements
-    svRestoreAll(SV_STORE);              // inspector + any sheet back to the board
-    $("stage-view").hidden = true; $("canvas-view").hidden = false;
-    $("view-toggle").textContent = "⊞ Stages";
-    if (lastCanvas) render(lastCanvas);
-  }
-
-  // wiring
-  $("view-toggle") && $("view-toggle").addEventListener("click", ()=> $("stage-view").hidden ? enterStageView() : exitStageView());
-  let svSketchPoll = null;
-  async function svSketchAll(){
-    if (!runId) return;
-    const btn = $("sv-sketch-all"); if(btn){ btn.disabled=true; btn.textContent="✏️ Sketching…"; }
-    try{
-      await api(`/api/canvas/${runId}/storyboard-art`, {});
-      // poll the canvas until the panels land, refreshing the sketches view
-      if (svSketchPoll) clearInterval(svSketchPoll);
-      svSketchPoll = setInterval(async ()=>{
-        try{ const d = await api(`/api/canvas/${runId}/state`); render(d.canvas);
-          const done = (d.canvas.board||[]).every(c=>c.storyboard_art);
-          if(!$("stage-view").hidden){ svKfMode="sketches"; renderStageView(); }
-          if(done){ clearInterval(svSketchPoll); svSketchPoll=null; }
-        }catch(e){}
-      }, 2500);
-    }catch(e){ err(e.message); if(btn){ btn.disabled=false; btn.textContent="✏️ Sketch all shots"; } }
-  }
-  $("stage-view").addEventListener("click", (ev)=>{
-    if (ev.target.closest("#sv-sketch-all")){ svSketchAll(); return; }
-    if (ev.target.closest("#sv-kf-mode")){ svKfMode = svKfMode==="sketches"?"frames":"sketches"; svSelectStage("keyframes"); return; }
-    const nav = ev.target.closest("[data-sv]");
-    if (nav){ svSelectStage(nav.dataset.sv); return; }
-    const card = ev.target.closest(".svc[data-frame], .sv-line[data-frame]");
-    if (card){ selectFrame(card.getAttribute("data-frame")); svShowInspector(); return; }
-    const tab = ev.target.closest(".sv-tab");
-    if (tab && !tab.disabled){ tab.dataset.tab==="shot" ? svShowInspector() : svShowChat(); return; }
-  });
-  // stage generate/approve reuse the board's handler
-  $("sv-actions").addEventListener("click", handleStageClick);
-
-  // settings drawer (gear) — move the reel-setting sections in; restore on close.
-  function openSettings(){
-    const slot = $("settings-slot");
-    // Reel settings = World / Audio / Captions / Brand / Publish. NOT #assets (that's the
-    // story tools — Cast/Locations, which are their own stages). Move them in; keep each
-    // section's own hidden state (brand/publish stay hidden until they apply).
-    document.querySelectorAll("#canvas-view .cv2-left > details.cv-sec").forEach(d=>{
-      if (d.id !== "assets") svMove(d, slot, SET_STORE);
+  // Deterministic layout pass — zones are content-sized (the board grows with the
+  // film, the sheets with the cast), so measure and place on every render:
+  // Script | Cast over Locations | Storyboard | Output, left→right; the world
+  // then hugs the result. The CSS left/top values are only the pre-layout fallback.
+  function cvLayout() {
+    const script = $("zone-script"), cast = $("zone-cast"), loc = $("zone-loc"),
+          out = $("zone-out");
+    if (!script || $("canvas-view").hidden) return;   // hidden = zero sizes; skip
+    const GAP = 90, TOP = 80, LEFT = 80;
+    script.style.left = LEFT + "px"; script.style.top = TOP + "px";
+    const castX = LEFT + script.offsetWidth + GAP;
+    cast.style.left = castX + "px"; cast.style.top = TOP + "px";
+    loc.style.left = castX + "px"; loc.style.top = (TOP + cast.offsetHeight + 56) + "px";
+    const boardX = castX + Math.max(cast.offsetWidth, loc.offsetWidth) + GAP;
+    // The film column (S33.2): Storyboard, then the stage lanes, stacked so every
+    // shot's column lines up — breakdown → sketch → still → clip → sound.
+    let y = TOP, filmW = 0;
+    ["zone-board", "zone-sketch", "zone-frames", "zone-video", "zone-audio"].forEach((id) => {
+      const z = $(id); if (!z) return;
+      z.style.left = boardX + "px"; z.style.top = y + "px";
+      y += z.offsetHeight + 56;
+      filmW = Math.max(filmW, z.offsetWidth);
     });
-    $("settings-drawer").hidden = false; $("settings-backdrop").hidden = false;
+    const outX = boardX + filmW + GAP;
+    out.style.left = outX + "px"; out.style.top = TOP + "px";
+    const w = $("cv-world");
+    w.style.width = (outX + out.offsetWidth + GAP) + "px";
+    w.style.height = (Math.max(TOP + script.offsetHeight,
+                               TOP + cast.offsetHeight + 56 + loc.offsetHeight,
+                               y - 56,
+                               TOP + out.offsetHeight) + GAP) + "px";
   }
-  function closeSettings(){ svRestoreAll(SET_STORE); $("settings-drawer").hidden = true; $("settings-backdrop").hidden = true; }
+
+  function cvFitRect(x, y, w, h, pad) {
+    const c = $("cv-canvas"), cw = c.clientWidth, ch = c.clientHeight;
+    if (!cw || !ch || !w || !h) return;
+    cvK = cvClampK(Math.min((cw - pad * 2) / w, (ch - pad * 2) / h));
+    cvX = (cw - w * cvK) / 2 - x * cvK;
+    cvY = (ch - h * cvK) / 2 - y * cvK;
+    cvApply();
+  }
+  function cvFitAll() {
+    const w = $("cv-world");
+    cvGlideOn(); cvFitRect(0, 0, w.offsetWidth, w.offsetHeight, 28);
+    cvMarkJump(null);
+  }
+  function cvGlideTo(zoneId) {
+    const el = $(zoneId);
+    if (!el || $("canvas-view").hidden) return;
+    cvGlideOn();
+    const c = $("cv-canvas"), cw = c.clientWidth, ch = c.clientHeight, pad = 46;
+    const x = el.offsetLeft, y = el.offsetTop - 30, w = el.offsetWidth, h = el.offsetHeight + 30;
+    const fitW = (cw - pad * 2) / w, fitH = (ch - pad * 2) / h;
+    if (Math.min(fitW, fitH) < 0.5) {
+      // Fitting the whole zone would shrink it to confetti (a 30-shot film, a long
+      // script). Glide to its HEAD at a readable scale instead — wheel pans the rest.
+      const k = cvClampK(Math.min(Math.max(fitW, fitH), 1));
+      cvK = k;
+      if (fitH >= fitW) {   // wide zone: pin its left edge, centre vertically
+        cvX = pad - x * k; cvY = (ch - h * k) / 2 - y * k;
+      } else {              // tall zone: pin its top edge, centre horizontally
+        cvX = (cw - w * k) / 2 - x * k; cvY = pad - y * k;
+      }
+      cvApply();
+    } else {
+      cvFitRect(x, y, w, h, pad);
+    }
+    cvMarkJump(zoneId);
+  }
+  function cvMarkJump(zoneId) {
+    document.querySelectorAll("#cv-jump button").forEach((b) =>
+      b.classList.toggle("on", b.dataset.zone === zoneId));
+  }
+  function cvShowHint() {
+    let seen = false;
+    try { seen = !!localStorage.getItem("hob_cv_hint"); } catch (e) { /* ignore */ }
+    if ($("cv-hint")) $("cv-hint").hidden = seen;
+  }
+
+  // Pan: drag anywhere that isn't a control or the inspector overlay. A drag that
+  // actually moved must NOT also be a click (it would select whatever card the
+  // pointer landed on), so the click that ends a pan is swallowed in capture phase.
+  let cvDrag = null, cvMoved = false;
+  const CV_NO_PAN = "input, textarea, select, button, summary, a, label, video, .cv2-right, .cv-nav-hint, .cv-dock";
+  $("cv-canvas").addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest(CV_NO_PAN)) return;
+    cvDrag = { sx: e.clientX, sy: e.clientY, ox: cvX, oy: cvY };
+    cvMoved = false;
+    $("cv-canvas").classList.add("grabbing");
+    $("cv-canvas").setPointerCapture(e.pointerId);
+  });
+  $("cv-canvas").addEventListener("pointermove", (e) => {
+    if (!cvDrag) return;
+    const dx = e.clientX - cvDrag.sx, dy = e.clientY - cvDrag.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 5) cvMoved = true;
+    cvX = cvDrag.ox + dx; cvY = cvDrag.oy + dy; cvApply();
+  });
+  const cvEndDrag = () => { cvDrag = null; $("cv-canvas").classList.remove("grabbing"); };
+  $("cv-canvas").addEventListener("pointerup", cvEndDrag);
+  $("cv-canvas").addEventListener("pointercancel", cvEndDrag);
+  $("cv-canvas").addEventListener("click", (e) => {
+    if (cvMoved) { e.stopPropagation(); e.preventDefault(); cvMoved = false; }
+  }, true);
+
+  // Wheel pans · ⌘/ctrl+wheel (and trackpad pinch) zooms to the cursor — the
+  // Figma rule. The inspector overlay keeps its own scroll.
+  $("cv-canvas").addEventListener("wheel", (e) => {
+    if (e.target.closest(".cv2-right")) return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      const r = $("cv-canvas").getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const k2 = cvClampK(cvK * Math.exp(-e.deltaY * 0.0022));
+      cvX = mx - (mx - cvX) * (k2 / cvK); cvY = my - (my - cvY) * (k2 / cvK); cvK = k2;
+    } else { cvX -= e.deltaX; cvY -= e.deltaY; }
+    cvApply();
+  }, { passive: false });
+
+  function cvZoomBy(f) {
+    const c = $("cv-canvas"), cx = c.clientWidth / 2, cy = c.clientHeight / 2;
+    const k2 = cvClampK(cvK * f);
+    cvX = cx - (cx - cvX) * (k2 / cvK); cvY = cy - (cy - cvY) * (k2 / cvK); cvK = k2;
+    cvGlideOn(); cvApply();
+  }
+  $("zoom-in") && $("zoom-in").addEventListener("click", () => cvZoomBy(1.25));
+  $("zoom-out") && $("zoom-out").addEventListener("click", () => cvZoomBy(0.8));
+  $("zoom-fit") && $("zoom-fit").addEventListener("click", cvFitAll);
+  $("cv-jump") && $("cv-jump").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-zone]");
+    if (b) cvGlideTo(b.dataset.zone);
+  });
+
+  // The inspector overlay closes from its ✕ or Esc; ⇧1 fits the whole canvas.
+  function closeInspector() {
+    activeFrameId = null;
+    $("inspector").hidden = true;
+    document.querySelectorAll(".sb-card.active, .cv2-timeline-card.active, .lane-cell.active")
+      .forEach((el) => el.classList.remove("active"));
+  }
+  $("insp-close") && $("insp-close").addEventListener("click", closeInspector);
+  $("cv-hint-x") && $("cv-hint-x").addEventListener("click", () => {
+    $("cv-hint").hidden = true;
+    try { localStorage.setItem("hob_cv_hint", "1"); } catch (e) { /* ignore */ }
+  });
+  document.addEventListener("keydown", (e) => {
+    const el = document.activeElement || {};
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || "");
+    if (e.key === "Escape") {
+      if (!$("settings-drawer").hidden) { closeSettings(); return; }
+      if (!$("inspector").hidden) closeInspector();
+      return;
+    }
+    if (!typing && e.shiftKey && e.code === "Digit1" && !$("canvas-view").hidden) {
+      e.preventDefault(); cvFitAll();
+    }
+  });
+
+  // Settings drawer (gear) — the output settings live HERE statically (S33);
+  // the gear only shows/hides the drawer (no more move-in/move-out).
+  function openSettings() { $("settings-drawer").hidden = false; $("settings-backdrop").hidden = false; }
+  function closeSettings() { $("settings-drawer").hidden = true; $("settings-backdrop").hidden = true; }
   $("settings-gear") && $("settings-gear").addEventListener("click", openSettings);
   $("settings-close") && $("settings-close").addEventListener("click", closeSettings);
   $("settings-backdrop") && $("settings-backdrop").addEventListener("click", closeSettings);

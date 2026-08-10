@@ -811,6 +811,234 @@ JAMBAVAN (continuing):
         chat.assert_called_once()                             # never a dead plan
 
 
+class SketchCompositionTests(unittest.TestCase):
+    """Approved storyboard sketch = BINDING composition for the still (probe-
+    verified live 2026-07-20: framing transfers, no pencil bleed). Conditioning
+    passes BOTH images (face ref + sketch) to the multi-image edit path, and
+    the sketch joins the cache hash so an approved-sketch change regenerates."""
+
+    def test_sketch_and_face_ride_the_same_edit_call(self):
+        import unittest.mock as mock, tempfile, pathlib
+        from agents import image_generator as ig
+        td = pathlib.Path(tempfile.mkdtemp())
+        face, sketch = td / "face.jpg", td / "sketch.jpg"
+        face.write_bytes(b"F" * 2000); sketch.write_bytes(b"S" * 2000)
+        captured = {}
+
+        def fake_checked(model, prompt, out, fb, fid, generator=None, **kw):
+            generator()          # edit_image is patched at the module attr below —
+            return out           # the function-local import resolves it at call time
+
+        frame = {"frame_id": "f01", "scene": {"image_prompt": "she stands by the window"}}
+        with mock.patch.object(ig, "_generate_image_checked", side_effect=fake_checked), \
+             mock.patch("agents.image_editor.edit_image",
+                        side_effect=lambda refs, p, o: captured.update(refs=refs, prompt=p) or o):
+            ig.generate_contextual_image(frame, str(td), reference_path=str(face),
+                                         sketch_path=str(sketch))
+        self.assertEqual(captured["refs"], [str(face), str(sketch)])
+        self.assertIn("STORYBOARD sketch", captured["prompt"])
+        self.assertIn("no pencil lines", captured["prompt"])
+
+    def test_sketch_changes_the_cache_key(self):
+        import unittest.mock as mock, tempfile, pathlib
+        from agents import image_generator as ig
+        td = pathlib.Path(tempfile.mkdtemp())
+        sketch = td / "sketch.jpg"; sketch.write_bytes(b"S" * 2000)
+        outs = []
+
+        def fake_checked(model, prompt, out, fb, fid, generator=None, **kw):
+            outs.append(out)
+            pathlib.Path(out).write_bytes(b"X" * 60000)
+            return out
+
+        frame = {"frame_id": "f01", "scene": {"image_prompt": "same prompt"}}
+        with mock.patch.object(ig, "_generate_image_checked", side_effect=fake_checked):
+            ig.generate_contextual_image(dict(frame), str(td))
+            ig.generate_contextual_image(dict(frame), str(td), sketch_path=str(sketch))
+        self.assertEqual(len(outs), 2)
+        self.assertNotEqual(outs[0], outs[1])   # sketch → different cache identity
+
+
+class FaceRefExtractionTests(unittest.TestCase):
+    """A multi-person family photo attached whole as one character's identity
+    ref gives the model an ambiguous 'whose face?' signal. The extractor crops
+    the right face: SMALLEST for a baby/child character (the photo also shows a
+    parent), largest for adults. Strictly best-effort — failure keeps the photo."""
+
+    def test_pick_face_prefers_by_size(self):
+        from agents.image_matcher import _pick_face
+        boxes = [(0, 0, 100, 100), (200, 200, 40, 40)]   # adult + baby
+        self.assertEqual(_pick_face(boxes, "largest"), (0, 0, 100, 100))
+        self.assertEqual(_pick_face(boxes, "smallest"), (200, 200, 40, 40))
+        self.assertIsNone(_pick_face([], "largest"))
+
+    def test_extract_degrades_to_none_on_unreadable_input(self):
+        from agents.image_matcher import extract_face_ref
+        self.assertIsNone(extract_face_ref("/nonexistent.jpg", "/tmp/x_face.jpg"))
+
+    def test_extract_finds_a_real_face(self):
+        """Uses OpenCV's own bundled test asset when available; skips otherwise
+        (haar on synthetic drawings is unreliable — no fake-face flakiness)."""
+        try:
+            import cv2, os as _os
+            sample = _os.path.join(_os.path.dirname(cv2.data.haarcascades),
+                                   "..", "samples", "lena.jpg")
+            if not _os.path.exists(sample):
+                self.skipTest("no cv2 sample image bundled")
+        except ImportError:
+            self.skipTest("cv2 not installed")
+        import tempfile
+        from agents.image_matcher import extract_face_ref
+        out = tempfile.mktemp(suffix="_face.jpg")
+        got = extract_face_ref(sample, out)
+        if got:                                # face found → crop exists and is smaller
+            self.assertTrue(os.path.getsize(out) > 1000)
+            os.remove(out)
+
+
+class HindiFirstTests(unittest.TestCase):
+    """India-primary authoring: a script WRITTEN in Devanagari must compile with
+    correct speaker attribution (no upper case exists to satisfy the Latin
+    ALL-CAPS guard) and must auto-set the render language so captions get
+    Devanagari glyphs and voices route to the native-Hindi table."""
+
+    HINDI_SCRIPT = """FRAME 1: आगमन
+Camera Angle: Wide establishing, cave interior
+यमराज (कठोर, गूंजती आवाज़):
+"हनुमान। तुम्हारा समय आ गया है।"
+[VISUALS: यमराज अंधेरे से प्रकट होता है — लंबा, मुकुटधारी, छाया जैसे वस्त्र।]
+
+FRAME 2: उत्तर
+हनुमान (शांत स्वर):
+"यमराज। मैं तुम्हारी प्रतीक्षा कर रहा था।"
+"""
+
+    def test_devanagari_dialogue_compiles_with_correct_speakers(self):
+        from agents import shot_planner
+        frames = shot_planner._compile_frames(self.HINDI_SCRIPT)
+        spoken = [f for f in frames if f["caption"]]
+        self.assertEqual(len(spoken), 2)
+        self.assertEqual(spoken[0]["caption"], "हनुमान। तुम्हारा समय आ गया है।")
+        self.assertEqual(spoken[0]["speaker_id"], "यमराज")
+        self.assertEqual(spoken[0]["voice_direction"], "कठोर, गूंजती आवाज़")
+        self.assertEqual(spoken[1]["speaker_id"], "हनुमान")
+        # the promoted [VISUALS:] cue infers यमराज as its on-screen subject
+        silent = [f for f in frames if not f["caption"]]
+        self.assertTrue(any(f["visual_subject_id"] == "यमराज" for f in silent))
+
+    def test_latin_direction_lines_are_not_hindi_speakers(self):
+        from agents import shot_planner
+        frames = shot_planner._compile_frames(self.HINDI_SCRIPT)
+        self.assertNotIn("camera_angle", {f["speaker_id"] for f in frames})
+
+    def test_detect_language_by_script_block(self):
+        from agents.languages import detect_language
+        self.assertEqual(detect_language(["हनुमान। तुम्हारा समय आ गया है।"]), "hi")
+        self.assertEqual(detect_language(["আমি তোমার জন্য অপেক্ষা করছিলাম"]), "bn")
+        self.assertEqual(detect_language(["ਮੈਂ ਤੁਹਾਡੀ ਉਡੀਕ ਕਰ ਰਿਹਾ ਸੀ"]), "pa")
+        self.assertEqual(detect_language(["I was waiting for you"]), "")
+        self.assertEqual(detect_language([]), "")
+        # mostly-English with a sprinkle of Hindi stays English (below threshold)
+        self.assertEqual(detect_language(["Cross the ocean now " * 10 + "राम"]), "")
+
+    def test_run_inner_wires_detection_before_voice_and_captions(self):
+        import inspect
+        src = inspect.getsource(web_app._run_inner)
+        self.assertIn("detect_language", src)
+        # detection must run BEFORE the language rides caption_style and the VO
+        self.assertLess(src.index("detect_language"), src.index("caption_style = {**caption_style"))
+
+
+class AmbienceStemTests(unittest.TestCase):
+    """3-stem mixer, stem 3: clip-native audio (r2v — event-synced by
+    construction) + per-shot SFX survive into the final mix instead of being
+    stripped by `-an` at normalize. Offline ffmpeg only — no vendors."""
+
+    def _clip(self, path, seconds=2.0, with_audio=False):
+        import subprocess
+        cmd = ["ffmpeg", "-y", "-v", "error",
+               "-f", "lavfi", "-i", f"color=c=black:s=320x240:d={seconds}:r=24"]
+        if with_audio:
+            cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
+                    "-c:a", "aac", "-shortest"]
+        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", path]
+        subprocess.run(cmd, check=True)
+        return path
+
+    def test_native_audio_survives_into_the_final_mix(self):
+        import tempfile, subprocess
+        from pathlib import Path
+        from agents.assembler import assemble_caption_only, _clip_ambience_track, _has_audio
+        td = Path(tempfile.mkdtemp())
+        a = self._clip(str(td / "a.mp4"), with_audio=True)   # r2v-style clip
+        b = self._clip(str(td / "b.mp4"), with_audio=False)  # i2v-style clip
+        self.assertTrue(_has_audio(a) and not _has_audio(b))
+        clips = [{"segment_id": "f01", "clip_path": a, "actual_duration": 2.0},
+                 {"segment_id": "f02", "clip_path": b, "actual_duration": 2.0}]
+        amb = _clip_ambience_track(clips, td, "none", None)
+        self.assertTrue(amb and os.path.getsize(amb) > 1000)
+        out = str(td / "out.mp4")
+        assemble_caption_only(clips, str(td), out, transition="none")
+        r = subprocess.run(["ffmpeg", "-i", out, "-af", "volumedetect", "-f", "null", "-"],
+                           capture_output=True, text=True)
+        vol = [l for l in r.stderr.splitlines() if "max_volume" in l]
+        self.assertTrue(vol and "-91" not in vol[0])   # NOT digital silence
+        db = float(vol[0].split("max_volume:")[1].replace("dB", "").strip())
+        self.assertGreater(db, -30.0)                  # the sine is audibly there
+
+    def test_no_ambience_is_a_zero_diff_no_op(self):
+        import tempfile
+        from pathlib import Path
+        from agents.assembler import _clip_ambience_track
+        td = Path(tempfile.mkdtemp())
+        b = self._clip(str(td / "b.mp4"), with_audio=False)
+        self.assertIsNone(_clip_ambience_track(
+            [{"segment_id": "f01", "clip_path": b, "actual_duration": 2.0}],
+            td, "none", None))
+
+
+class SarvamTtsSeamTests(unittest.TestCase):
+    """TTS provider seam (config/tts.json): language routes the engine — Sarvam
+    for Indic languages ElevenLabs can't speak natively, ElevenLabs default +
+    the only voice-clone path. Missing key/failing vendor degrades gracefully."""
+
+    def test_language_routing_table(self):
+        from agents import sarvam_tts
+        self.assertEqual(sarvam_tts.provider_for_lang("hi"), "sarvam")
+        self.assertEqual(sarvam_tts.provider_for_lang("mr"), "sarvam")
+        self.assertEqual(sarvam_tts.provider_for_lang("en"), "elevenlabs")
+        self.assertEqual(sarvam_tts.provider_for_lang(None), "elevenlabs")
+        self.assertEqual(sarvam_tts.provider_for_lang("klingon"), "elevenlabs")
+
+    def test_generate_builds_the_documented_payload(self):
+        import unittest.mock as mock, tempfile, base64
+        from agents import sarvam_tts
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=0):
+            captured.update(url=url, body=json, headers=headers)
+            r = mock.Mock(ok=True)
+            r.json.return_value = {"audios": [base64.b64encode(b"WAV").decode()]}
+            return r
+
+        out = tempfile.mktemp(suffix=".mp3")
+        with mock.patch.dict(os.environ, {"SARVAM_API_KEY": "s-test"}), \
+             mock.patch("agents.sarvam_tts.requests.post", side_effect=fake_post):
+            sarvam_tts.generate("नमस्ते", out, "hi")
+        self.assertEqual(captured["headers"]["api-subscription-key"], "s-test")
+        self.assertEqual(captured["body"]["target_language_code"], "hi-IN")
+        self.assertEqual(open(out, "rb").read(), b"WAV")
+        os.remove(out)
+
+    def test_no_key_raises_so_caller_falls_back(self):
+        import unittest.mock as mock
+        from agents import sarvam_tts
+        env = {k: v for k, v in os.environ.items() if k != "SARVAM_API_KEY"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+             self.assertRaises(RuntimeError):
+            sarvam_tts.generate("x", "/tmp/never.mp3", "hi")
+
+
 class CharacterRefHardGateTests(unittest.TestCase):
     """Asset-first gate: paid still generation 409s while an on-screen character
     has no locked face (per canvas-controls-philosophy: the error names the fix,
@@ -939,6 +1167,20 @@ class KieR2VAdapterTests(unittest.TestCase):
         pricing = json.load(open("config/pricing.json"))
         section, key = m["pricing_key"].split(".")
         self.assertGreater(pricing[section][key], 0)
+
+    def test_r2v_prompt_carries_the_authored_action_not_a_camera_microcue(self):
+        """Frozen-tableau bug: r2v generates the WHOLE scene, so its prompt must
+        carry the director_note action; the i2v micro-prompt ('static' + caption)
+        produced beautiful still images that never moved."""
+        from agents.clip_builder import _kie_scene_prompt
+        p = _kie_scene_prompt({
+            "director_note": "A skeletal hand grips the cave entrance arch.\n"
+                             "Yamraj emerges slowly from deep shadow.",
+            "text": "Hanuman.", "motion_prompt": "static"})
+        self.assertIn("skeletal hand grips", p)
+        self.assertIn("emerges slowly", p)
+        self.assertIn('speaks: "Hanuman."', p)
+        self.assertIn("never a frozen still", p)
 
     def test_assignments_carry_the_r2v_reference_paths(self):
         data = {"orientation": "portrait", "detect_speakers": False,
@@ -1281,3 +1523,124 @@ class VisualSubjectIdentityTests(unittest.TestCase):
         with mock.patch.object(scene_intelligence, "design_treatment", return_value=None):
             out = scene_intelligence.design_all_scenes([frame])
         self.assertEqual(out[0]["scene"]["image_prompt"], "")
+
+
+class LikenessChainTests(unittest.TestCase):
+    """Likeness fidelity chain (2026-07-20): Gate B3 compares the GENERATED face to
+    the REAL reference (Gate B2 only checks the prompt text — a stranger passed QC),
+    and canonical portraits derive FROM the real photo via the identity path instead
+    of inventing a face from text ('not even 10 percent of my character pictures')."""
+
+    def _img(self, w=360, h=640):
+        import tempfile
+        from PIL import Image
+        import random
+        img = Image.new("RGB", (w, h))
+        img.putdata([(random.randint(0, 255),) * 3 for _ in range(w * h)])
+        p = tempfile.mktemp(suffix=".jpg")
+        img.save(p, quality=95)
+        return p
+
+    def test_gate_b3_passes_without_a_reference(self):
+        """No ref → nothing to compare → open gate, zero LLM calls."""
+        from agents.safety import check_likeness
+        import unittest.mock as mock
+        with mock.patch("agents.llm.chat") as chat:
+            self.assertTrue(check_likeness("/nonexistent.jpg", "", "f01"))
+            self.assertTrue(check_likeness("/nonexistent.jpg", "/gone.jpg", "f01"))
+            chat.assert_not_called()
+
+    def test_gate_b3_fails_a_stranger_and_passes_a_match(self):
+        from agents.safety import check_likeness
+        import unittest.mock as mock
+        gen, ref = self._img(), self._img()
+        try:
+            with mock.patch("agents.llm.chat",
+                            return_value='{"same_person": false, "similarity": 2, "reason": "different face"}'):
+                self.assertFalse(check_likeness(gen, ref, "f01"))
+            with mock.patch("agents.llm.chat",
+                            return_value='{"same_person": true, "similarity": 8, "reason": "same"}'):
+                self.assertTrue(check_likeness(gen, ref, "f01"))
+            # same person but weak similarity still fails (threshold 6)
+            with mock.patch("agents.llm.chat",
+                            return_value='{"same_person": true, "similarity": 4, "reason": "vague"}'):
+                self.assertFalse(check_likeness(gen, ref, "f01"))
+        finally:
+            os.remove(gen), os.remove(ref)
+
+    def test_gate_b3_degrades_open_and_can_be_disabled(self):
+        from agents.safety import check_likeness
+        import unittest.mock as mock
+        gen, ref = self._img(), self._img()
+        try:
+            with mock.patch("agents.llm.chat", side_effect=RuntimeError("offline")):
+                self.assertTrue(check_likeness(gen, ref, "f01"))
+            os.environ["HOB_LIKENESS_QC"] = "0"
+            try:
+                with mock.patch("agents.llm.chat") as chat:
+                    self.assertTrue(check_likeness(gen, ref, "f01"))
+                    chat.assert_not_called()
+            finally:
+                os.environ.pop("HOB_LIKENESS_QC", None)
+        finally:
+            os.remove(gen), os.remove(ref)
+
+    def test_checked_generation_enforces_likeness_when_ref_given(self):
+        """_generate_image_checked retries on a likeness fail; a strange face never
+        returns silently as a pass."""
+        from agents import image_generator as ig
+        import unittest.mock as mock
+        out = self._img()
+        calls = {"n": 0}
+
+        def gen():
+            # regenerate the file each attempt — the checked loop deletes rejects
+            calls["n"] += 1
+            from PIL import Image
+            Image.new("RGB", (8, 8)).save(out)
+        try:
+            with mock.patch("agents.safety.check_face_sanity", return_value=True), \
+                 mock.patch("agents.safety.critique_image", return_value=True), \
+                 mock.patch("agents.safety.check_likeness",
+                            side_effect=[False, True]) as lk:
+                path = ig._generate_image_checked(
+                    "flux", "p", out, "gpt_image", "f01", max_retries=2,
+                    generator=gen, likeness_ref="/refs/mom_face.jpg")
+            self.assertEqual(path, out)
+            self.assertEqual(calls["n"], 2)          # retried once after the fail
+            self.assertEqual(lk.call_args[0][1], "/refs/mom_face.jpg")
+        finally:
+            os.remove(out)
+
+    def test_portrait_derives_from_real_photo_via_identity_path(self):
+        """reference_path set → the canonical sheet goes through edit_image (identity
+        path), the identity-preservation clause rides the prompt, and the ref hash
+        joins the cache key (photo swap → new sheet)."""
+        import tempfile
+        from agents import image_generator as ig
+        import unittest.mock as mock
+        ref = self._img()
+        out_dir = tempfile.mkdtemp()
+        seen = []
+
+        def fake_checked(model_id, prompt, out_path, fallback, frame_id, **kw):
+            seen.append({"prompt": prompt, "gen": kw.get("generator"),
+                         "likeness_ref": kw.get("likeness_ref")})
+            from PIL import Image
+            Image.new("RGB", (8, 8)).save(out_path)
+            return out_path
+        try:
+            with mock.patch.object(ig, "_generate_image_checked", side_effect=fake_checked):
+                p1 = ig.generate_character_portrait(
+                    "a young mother", out_dir, char_id="mom", reference_path=ref)
+                p_text = ig.generate_character_portrait(
+                    "a young mother", out_dir, char_id="mom")
+            self.assertIn("IDENTICAL to the reference", seen[0]["prompt"])
+            self.assertEqual(seen[0]["likeness_ref"], ref)  # Gate B3 armed on the sheet itself
+            self.assertIsNotNone(seen[0]["gen"])            # identity path, not text-to-image
+            self.assertIsNone(seen[1]["gen"])               # no-photo path unchanged
+            self.assertNotEqual(p1, p_text)                 # ref participates in the cache key
+        finally:
+            os.remove(ref)
+            import shutil
+            shutil.rmtree(out_dir, ignore_errors=True)

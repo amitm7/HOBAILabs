@@ -40,9 +40,11 @@ def _identity_order() -> list[str]:
     return [m for m in ids if m and not (m in seen or seen.add(m))]
 
 
-def edit_image(image_path: str, edit_prompt: str, out_path: str, model_id: str = "") -> str:
-    """Generate a new image conditioned on `image_path` (the reference person/character)
-    via the configured identity model, with automatic failover. Returns out_path."""
+def edit_image(image_path, edit_prompt: str, out_path: str, model_id: str = "") -> str:
+    """Generate a new image conditioned on `image_path` (the reference person/
+    character) via the configured identity model, with automatic failover.
+    `image_path` may be a LIST for multi-image conditioning (fal models only —
+    the OpenAI fallback uses the first image). Returns out_path."""
     order = ([model_id] + _identity_order()) if model_id else _identity_order()
     seen: set = set()
     order = [m for m in order if m and not (m in seen or seen.add(m))]
@@ -53,7 +55,8 @@ def edit_image(image_path: str, edit_prompt: str, out_path: str, model_id: str =
             if backend == "fal":
                 return _fal_edit(m, image_path, edit_prompt, out_path)
             if backend == "openai":
-                return _openai_edit(image_path, edit_prompt, out_path)
+                first = image_path[0] if isinstance(image_path, list) else image_path
+                return _openai_edit(first, edit_prompt, out_path)
             raise RuntimeError(f"unknown edit backend {backend!r} for {m}")
         except Exception as e:
             last_err = e
@@ -66,16 +69,20 @@ def edit_image(image_path: str, edit_prompt: str, out_path: str, model_id: str =
     raise RuntimeError(f"all identity/edit models failed: {last_err}")
 
 
-def _fal_edit(model_id: str, image_path: str, edit_prompt: str, out_path: str) -> str:
-    """Reference-conditioned generation via a fal edit model (Nano Banana / Flux Kontext)."""
+def _fal_edit(model_id: str, image_path, edit_prompt: str, out_path: str) -> str:
+    """Reference-conditioned generation via a fal edit model (Nano Banana / Flux
+    Kontext). `image_path` may be a single path or a LIST of paths — multi-image
+    conditioning (e.g. face ref + composition sketch) rides the same
+    `image_urls` array the endpoint already accepts."""
     from agents import fal_client
     endpoint = model_router.model_field(model_id, "fal_endpoint")
     if not endpoint:
         raise RuntimeError(f"no fal_endpoint for edit model {model_id!r}")
     ref_key = model_router.model_field(model_id, "ref_input") or "image_urls"
-    uri = fal_client.file_to_data_uri(image_path)
+    paths = image_path if isinstance(image_path, list) else [image_path]
+    uris = [fal_client.file_to_data_uri(p) for p in paths]
     args = {"prompt": edit_prompt, "num_images": 1, "output_format": "jpeg", "sync_mode": True}
-    args[ref_key] = [uri] if ref_key == "image_urls" else uri
+    args[ref_key] = uris if ref_key == "image_urls" else uris[0]
     print(f"[ImageEditor] {model_id} ({endpoint}): '{edit_prompt[:60]}'…")
     result = fal_client.run_sync(endpoint, args, timeout=180)
     url = fal_client.extract_media_url(result, keys=("images", "image"))

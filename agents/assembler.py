@@ -124,6 +124,51 @@ def frame_timecodes(frames: list[dict], clips: list[dict],
     return out
 
 
+def _has_audio(path: str) -> bool:
+    """True if the file has an audio stream (r2v clips carry NATIVE sound —
+    wind, thuds — while i2v clips are video-only)."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0",
+                            "-show_entries", "stream=codec_type", "-of", "csv=p=0",
+                            path], capture_output=True, text=True, timeout=15)
+        return "audio" in (r.stdout or "")
+    except Exception:
+        return False
+
+
+def _clip_ambience_track(clips: list[dict], temp: "Path", transition: str,
+                         overlaps: list[float] | None, gain: float = 0.5) -> str | None:
+    """3-stem mixer, stem 3 (2026-07-19): one full-length AMBIENCE track from
+    (a) clip-NATIVE audio — r2v models like HappyHorse generate sound WITH the
+    video, event-synced by construction (the thud lands where the visual hit is)
+    — previously stripped by `-an` at normalize and lost; and (b) per-shot
+    generated SFX (`item['ambience_path']`, mmaudio from authored [Sound:] cues).
+    Each source is positioned at its clip's EFFECTIVE start (rule #9) and mixed
+    at `gain` so it sits UNDER narration/bed. Returns None when no clip has any
+    ambience — callers then change nothing (zero-diff for i2v-only reels)."""
+    timecodes = effective_timecodes([c["actual_duration"] for c in clips],
+                                    transition, overlaps)
+    srcs = []
+    for i, c in enumerate(clips):
+        amb = (c.get("ambience_path") or "").strip()
+        p = amb if (amb and os.path.exists(amb)) else c.get("clip_path", "")
+        if p and os.path.exists(p) and (amb or _has_audio(p)):
+            srcs.append((p, timecodes[i][0]))
+    if not srcs:
+        return None
+    out = str(temp / "ambience.m4a")
+    inputs, chain, labels = [], [], []
+    for k, (p, start) in enumerate(srcs):
+        inputs += ["-i", p]
+        ms = int(round(max(0.0, start) * 1000))
+        chain.append(f"[{k}:a]adelay={ms}|{ms},volume={gain}[a{k}]")
+        labels.append(f"[a{k}]")
+    chain.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0[aout]")
+    _run(["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(chain),
+          "-map", "[aout]", "-c:a", "aac", "-b:a", "160k", out])
+    return out if os.path.exists(out) and os.path.getsize(out) > 1000 else None
+
+
 def _concat_clips_hard(clips: list[dict], output_path: str):
     """Hard cut: normalize all clips to one resolution/format, then stream-copy concat.
     Concat demuxer with -c copy requires identical codec params across inputs;
@@ -549,6 +594,32 @@ def assemble_caption_only(clips: list[dict], temp_dir: str, output_path: str,
         ]
 
     _run(cmd)
+
+    # 3-stem post-mix: fold the clip-native/SFX ambience UNDER whatever audio the
+    # branch above produced (VO+bed / VO / music / silence). Video is stream-
+    # COPIED — no quality loss, no re-encode cost. Best-effort: a failed mix
+    # keeps the already-finished output (never a dead render), with a ledger note.
+    try:
+        amb = _clip_ambience_track(clips, temp, transition, overlaps)
+        if amb:
+            mixed = output_path + ".amb.mp4"
+            _run(["ffmpeg", "-y", "-i", output_path, "-i", amb,
+                  "-filter_complex",
+                  "[1:a]apad[amb];[0:a][amb]amix=inputs=2:normalize=0:duration=first[aout]",
+                  "-map", "0:v", "-map", "[aout]",
+                  "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", mixed])
+            os.replace(mixed, output_path)
+            print("[Assembler] clip-native/SFX ambience mixed under the track ✓")
+    except Exception as e:
+        print(f"[Assembler] ambience mix skipped ({e}) — output keeps VO/music only")
+        try:
+            from agents import degradation
+            degradation.report("audio", "info",
+                               f"ambience stem skipped ({str(e)[:80]}) — reel has "
+                               f"voice/music but no clip-native SFX layer")
+        except Exception:
+            pass
+
     print(f"[Assembler] Output → {output_path}")
 
 

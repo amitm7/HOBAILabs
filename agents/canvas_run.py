@@ -221,6 +221,13 @@ def board_cards(frames: list[dict]) -> list[dict]:
             "review":     f.get("review_status") or "",   # S30 P3: editorial QA verdict
             "form":       shot_form(f),              # S28: dialogue | narration | silent
             "form_override": f.get("form_override") or "",
+            # WHO IS ON SCREEN — distinct from who SPEAKS. Surfacing this killed a
+            # recurring "everything says narrator" confusion: the backend tagged
+            # visual subjects correctly but the board only displayed the speaker.
+            # Empty for narrator shots (no chip noise on a first-person story).
+            "on_screen":  ("" if (f.get("visual_subject_id") or "narrator") == "narrator"
+                           else (f.get("visual_subject_label")
+                                 or f.get("visual_subject_id") or "")),
             "overlays":   f.get("overlays") or [],   # T14 Frame Composer spec per shot
             "caption":    f.get("caption", ""),
             "shot_size":  f.get("shot_size") or "",
@@ -435,6 +442,29 @@ def _preserve_real(frame: dict) -> None:
             frame["orig_visual"] = src
 
 
+def use_locked_face(state: dict, frame_id: str) -> dict:
+    """One-click AI-LIKENESS: flip this shot to an AI generation conditioned on
+    its on-screen character's LOCKED face (the Character-sheet ref) — no upload,
+    no path-typing. The counterpart to set_ai_generic: that one strips identity
+    on purpose; this one restores it on purpose. Exists because the two 'make it
+    AI' affordances were indistinguishable and operators picked generic thinking
+    they'd get the likeness (zero-trap rule: the wrong click was invisible)."""
+    f = next((x for x in state.get("frames", []) if x.get("frame_id") == frame_id), None)
+    if not f:
+        raise ValueError("unknown shot")
+    vid = f.get("visual_subject_id") or f.get("speaker_id") or "narrator"
+    char = next((c for c in state.get("characters", []) if c.get("id") == vid), None)
+    ref = (char or {}).get("ref_path", "")
+    if not ref:
+        who = (char or {}).get("name") or vid
+        raise ValueError(f"No locked face for {who} — attach a photo on the "
+                         f"Character sheet first (📎), then retry.")
+    state = attach_asset(state, path=ref, mode="reference", frame_id=frame_id)
+    f.pop("forced_ai", None)                 # explicit likeness beats prior generic
+    state["board"] = board_cards(state["frames"])
+    return state
+
+
 def set_ai_generic(state: dict, frame_id: str) -> dict:
     """Replace a shot's visual with a FULLY AI-generated image — no real footage, no face
     reference. The escape hatch for a matched real photo the operator dislikes that Restore
@@ -463,6 +493,7 @@ EDITABLE_FRAME_FIELDS = {
     "caption", "director_note", "motion_override", "negative_prompt", "image_prompt",
     "emotion", "camera_angle",   # nested under scene (B1)
     "form_override",             # S28: force a shot's form (dialogue|narration|silent)
+    "visual_subject_id",         # who is ON SCREEN (≠ speaker) — operator-correctable
 }
 _SCENE_FIELDS = {"image_prompt", "emotion", "camera_angle"}
 
@@ -767,7 +798,8 @@ def derive_characters(state: dict) -> list[dict]:
 # T4: "voice_id" gives each character their own narrator (radio-drama dialogue) —
 # resolved per-frame by cast.voice_for_frame via the render data's voice_map.
 CHARACTER_ATTRS = ("role", "name", "gender", "age", "skin_tone", "hair", "clothing",
-                   "species", "voice_id", "source")
+                   "species", "voice_id", "source",
+                   "ref_full_path")   # original multi-person photo behind a face-crop ref
 
 
 def _character_appearance(char: dict) -> str:

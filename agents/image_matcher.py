@@ -389,3 +389,54 @@ def exif_upright(frames: list[dict], out_dir: str) -> int:
         except Exception as e:
             print(f"[Matcher] exif_upright skipped {os.path.basename(p)} ({e})")
     return fixed
+
+
+# ── Face extraction for character references (2026-07-20) ─────────────────────
+# A family photo usually shows MORE THAN ONE person; attaching it whole as a
+# character's identity ref gives the conditioning model an ambiguous signal
+# (whose face?). Extracting the right face region gives each character a clean,
+# unambiguous ref. Strictly best-effort: no cv2 / no face / any error → None,
+# and the caller keeps the original photo.
+
+def _pick_face(boxes, prefer: str = "largest"):
+    """Pick one (x, y, w, h) box: 'largest' for adults (the dominant face),
+    'smallest' for a baby/child character in a photo that also shows a parent."""
+    if not len(boxes):
+        return None
+    key = (lambda b: b[2] * b[3])
+    ordered = sorted(boxes, key=key)
+    return tuple(ordered[0] if prefer == "smallest" else ordered[-1])
+
+
+def extract_face_ref(path: str, out_path: str, prefer: str = "largest",
+                     margin: float = 0.6, min_face_px: int = 60) -> str | None:
+    """Crop the preferred face (plus margin for hair/shoulders) from `path` into
+    `out_path`; returns out_path or None when nothing usable was found."""
+    try:
+        import cv2
+        img = cv2.imread(path)
+        if img is None:
+            return None
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        boxes = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4,
+                                         minSize=(min_face_px, min_face_px))
+        box = _pick_face(boxes, prefer)
+        if box is None:
+            return None
+        x, y, w, h = box
+        H, W = img.shape[:2]
+        mx, my = int(w * margin), int(h * margin)
+        x0, y0 = max(0, x - mx), max(0, y - my)
+        x1, y1 = min(W, x + w + mx), min(H, y + h + my)
+        crop = img[y0:y1, x0:x1]
+        if crop.size == 0:
+            return None
+        cv2.imwrite(out_path, crop, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        print(f"[Matcher] face ref extracted ({prefer} of {len(boxes)} face(s)) "
+              f"→ {os.path.basename(out_path)}")
+        return out_path
+    except Exception as e:
+        print(f"[Matcher] face extraction skipped ({e}) — using the full photo")
+        return None

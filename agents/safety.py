@@ -179,6 +179,54 @@ _CRITIQUE_PROMPT = (
 )
 
 
+_LIKENESS_PROMPT = (
+    "You are a strict likeness judge. Image 1 is an AI-GENERATED shot of a story "
+    "character; Image 2 is the REAL reference photo of the person the character "
+    "must look like. Judge ONLY facial identity — face shape, eyes, nose, mouth, "
+    "skin tone, apparent age — ignoring pose, lighting, outfit, style and scene. "
+    "If the face in Image 1 is too small or turned away to judge, pass it. "
+    'Reply ONLY as JSON: {"same_person": true/false, "similarity": 0-10, '
+    '"reason": "<short>"}. Be strict: a stranger who vaguely resembles them is '
+    "NOT the same person."
+)
+
+
+def check_likeness(image_path: str, reference_path: str, frame_id: str,
+                   min_similarity: int = 6) -> bool:
+    """Gate B3 (2026-07-20): the generated face is COMPARED to the real reference
+    — the gate the whole reference chain was missing (Gate B2 checks the prompt
+    text, so a total stranger could pass QC while looking nothing like the
+    person; found live: 'not even 10 percent of my character pictures').
+    Fast-tier vision, two images. Degrades open on API failure, never blocks.
+    Disable with HOB_LIKENESS_QC=0."""
+    if os.environ.get("HOB_LIKENESS_QC", "1") == "0":
+        return True
+    if not (reference_path and os.path.exists(reference_path)):
+        return True
+    try:
+        from agents import llm
+        text = llm.chat(
+            [{"role": "user", "content": [
+                {"type": "text", "text": _LIKENESS_PROMPT},
+                {"type": "image", "path": image_path},
+                {"type": "image", "path": reference_path},
+            ]}],
+            json_mode=True, max_tokens=200, model_tier="fast",
+        )
+        verdict = llm.json_loads_lenient(text)
+        sim = int(verdict.get("similarity", 10) or 10)
+        ok = bool(verdict.get("same_person", True)) and sim >= min_similarity
+        if not ok:
+            print(f"[Safety] Gate B3: {frame_id} — likeness failed "
+                  f"(similarity {sim}/10: {verdict.get('reason', '')})")
+        else:
+            print(f"[Safety] Gate B3: {frame_id} — likeness {sim}/10. ✓")
+        return ok
+    except Exception as e:
+        print(f"[Safety] Gate B3: likeness QC unavailable ({e}) — skipping.")
+        return True
+
+
 def critique_image(image_path: str, frame_id: str, prompt: str) -> bool:
     """
     Gate B2: vision-LLM critique on the cheap 'fast' tier — catches what the

@@ -212,7 +212,13 @@ _VISUALS_RE = re.compile(r"(?is)\[\s*VISUALS?\s*:\s*(.*?)\]")
 _SOUND_BRACKET_RE = re.compile(r"(?is)\[\s*SOUND[^:\]]*:\s*(.*?)\]")
 _SOUND_LINE_RE = re.compile(r"(?im)^\s*Sound(?:\s+design)?\s*:\s*(.+)$")
 _SPEAKER_LINE_RE = re.compile(r"^([A-Z][A-Z0-9 .'\-]{1,30}?)\s*(?:\(([^)]{1,120})\))?\s*:\s*(.*)$")
-_QUOTES = "\"“”"
+# Indic scripts have no upper case, so the Latin ALL-CAPS speaker guard can't
+# apply — a Devanagari/Gurmukhi/Bengali speaker header is a SHORT Indic name +
+# optional (delivery) + colon; the QUOTED-dialogue requirement (below) remains
+# the guard against direction lines, same as for Latin.
+_SPEAKER_LINE_INDIC_RE = re.compile(
+    r"^([ऀ-෿][ऀ-෿\s]{0,30}?)\s*(?:\(([^)]{1,120})\))?\s*:\s*(.*)$")
+_QUOTES = "\"“”'’"
 
 _SHOT_SIZE_KEYWORDS = (  # first match wins — order matters (extreme before close)
     ("extreme close", "extreme close-up"), ("macro", "detail insert"),
@@ -242,7 +248,10 @@ def _kw(text: str, table) -> str:
 
 
 def _slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+    # \w alone mangles Indic names: combining vowel signs (matras — ा ु ी) are
+    # NOT \w, so यमराज became यमर_ज. The explicit Indic block keeps them; Latin
+    # behaviour is unchanged.
+    return re.sub(r"[^\wऀ-෿]+", "_", name.strip().lower()).strip("_")
 
 
 def _extract_dialogue(lines: list[str]):
@@ -251,8 +260,13 @@ def _extract_dialogue(lines: list[str]):
     keeps 'TONE:' / 'CAMERA WORK:' production-note headers from reading as cast."""
     out, i = [], 0
     while i < len(lines):
-        m = _SPEAKER_LINE_RE.match(lines[i].strip())
-        if m and m.group(1).strip() == m.group(1).strip().upper():
+        s = lines[i].strip()
+        m = _SPEAKER_LINE_RE.match(s)
+        if m and m.group(1).strip() != m.group(1).strip().upper():
+            m = None                       # Latin rule demands ALL-CAPS
+        if m is None:
+            m = _SPEAKER_LINE_INDIC_RE.match(s)   # Indic has no case — quote guard applies
+        if m:
             speaker, delivery, rest = m.group(1).strip(), (m.group(2) or "").strip(), m.group(3).strip()
             used = [i]
             if not rest and i + 1 < len(lines) and lines[i + 1].strip()[:1] in _QUOTES:
@@ -353,6 +367,7 @@ def _compile_frames(brief: str) -> list[dict]:
         if sounds:
             f["audio_intent"] = sounds           # [Sound:] cues → the SFX driver
         frames.append(f)
+        return f
 
     def _subject_in(text: str) -> str:
         """Most-mentioned registered cast name in `text` ('' → symbolic shot)."""
@@ -409,8 +424,23 @@ def _compile_frames(brief: str) -> list[dict]:
                          + [f"[on screen] {v}" for v in small_visuals]
                          + ([f"[style] {style}"] if style else []))
 
+        # Delta B — deterministic cinematic grammar for shots whose author wrote
+        # no camera direction (keyword scan found nothing → old behaviour was a
+        # wall of "medium", galleri5's breakdown varies size by function): first
+        # shot of a block establishes wide; dialogue alternates medium ↔ close-up
+        # (conversation coverage); promoted visual cues read as detail inserts.
+        # An AUTHORED camera note always wins — this only fills genuine gaps.
+        def _grammar(kind_: str, first_in_block: bool) -> str:
+            if first_in_block:
+                return "wide establishing"
+            if kind_ == "dialogue":
+                return "close-up" if n % 2 else "medium"   # n = shots emitted so far
+            return "detail insert"
+
         if not events:
-            _emit("", note, span or 5.0, subject=_subject_in(block), sounds=sounds)
+            f0 = _emit("", note, span or 5.0, subject=_subject_in(block), sounds=sounds)
+            if _kw(note.split("[style]")[0], _SHOT_SIZE_KEYWORDS) == "":
+                f0["shot_size"] = _grammar("visual", True)
             continue
 
         per = span / len(events) if span else 0.0
@@ -419,11 +449,16 @@ def _compile_frames(brief: str) -> list[dict]:
             if kind == "dialogue":
                 speaker, delivery, line = payload
                 dur = per or max(3.5, min(9.0, len(line.split()) / 2.0))
-                _emit(line, note, dur, speaker=speaker, delivery=delivery, sounds=snd)
+                gram = _grammar("dialogue", k == 0)
+                f0 = _emit(line, note, dur, speaker=speaker, delivery=delivery, sounds=snd)
             else:
                 vis_note = f"[on screen] {payload}\n{note}"
-                _emit("", vis_note, per or 4.0,
-                      subject=_subject_in(payload) or _subject_in(block), sounds=snd)
+                gram = _grammar("visual", k == 0)
+                f0 = _emit("", vis_note, per or 4.0,
+                           subject=_subject_in(payload) or _subject_in(block), sounds=snd)
+            if f0["shot_size"] == "medium" and \
+                    _kw(f0["director_note"].split("[style]")[0], _SHOT_SIZE_KEYWORDS) == "":
+                f0["shot_size"] = gram
 
     return frames
 

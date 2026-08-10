@@ -241,6 +241,30 @@ def _image_to_base64(path: str) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
+def _kie_scene_prompt(item: dict) -> str:
+    """r2v SCENE prompt. Reference-to-video generates the WHOLE scene (unlike
+    i2v, which only moves an existing still), so it needs the shot's authored
+    ACTION — the director_note ('a skeletal hand grips the arch… resolving into
+    his full form') — not the i2v camera micro-cue. Feeding it caption+'static'
+    produced frozen tableaus (found live 2026-07-19: 'image still cuts, not
+    moving characters'). A camera hold is NOT a scene hold: the camera may be
+    locked while the character moves — said explicitly, because r2v models
+    otherwise read 'static' as freeze-everything."""
+    import re as _re
+    note = _re.sub(r"\s+", " ", (item.get("director_note") or "")).strip()[:600]
+    text = (item.get("text") or "").strip()
+    motion = (item.get("motion_prompt") or "").strip()
+    parts = []
+    if note:
+        parts.append(note)
+    if text:
+        parts.append(f'The character on screen speaks: "{text[:160]}"')
+    parts.append(f"Camera: {motion or 'slow cinematic push-in'}.")
+    parts.append("Live-action motion — the characters move, breathe and act "
+                 "naturally throughout; never a frozen still image.")
+    return " ".join(parts)
+
+
 def _kling_motion_prompt(segment_text: str, motion_prompt: str = "") -> str:
     # Image-to-video prompts must describe MOTION only — the reference image
     # already carries appearance/lighting, and re-describing the subject in text
@@ -521,8 +545,10 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
 
         # Shared clip cache (paid clips reused for free) — namespaced by model.
         if backend in ("kling", "higgsfield", "fal", "kie"):
-            # kie r2v: the reference images CONDITION the output, so they join
-            # the cache key (a changed character ref must regenerate the clip).
+            # kie r2v: the reference images AND the scene prompt CONDITION the
+            # output, so both join the cache key (a changed ref or a rewritten
+            # action must regenerate — the frozen-tableau clips must not be
+            # served from cache after a prompt fix).
             _refhash = ""
             if backend == "kie":
                 import hashlib as _hl
@@ -530,6 +556,7 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
                             item.get("location_ref_path", "")):
                     if _rp and os.path.exists(_rp):
                         _refhash += _hl.md5(open(_rp, "rb").read()).hexdigest()[:8]
+                _refhash += _hl.md5(_kie_scene_prompt(item).encode()).hexdigest()[:8]
             cache_key = _model_cache_key(model_id, media, motion + _refhash,
                                          duration, force_5s)
             cached = _cache_lookup(cache_key)
@@ -561,7 +588,7 @@ def _build_one_clip(item: dict, temp_dir: str, width: int, height: int,
             item["_media"]        = media
             item["_provider"]     = "kie"
             item["_model_id"]     = model_id
-            item["_kie_prompt"]   = _kling_motion_prompt(item.get("text", ""), motion)
+            item["_kie_prompt"]   = _kie_scene_prompt(item)
             item["_kie_aspect"]   = aspect
             item["_kie_duration"] = 5 if force_5s else max(3, min(15, round(duration)))
             item["_kie_refs"]     = [p for p in (item.get("character_ref_path", ""),

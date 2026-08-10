@@ -188,7 +188,28 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str,
             raw_path = os.path.join(tmp_dir, f"raw_{i:03d}.mp3")
             frame_voice = voice_for_frame(frame, voice_id, voice_map, lang=lang)
             try:
-                if use_elevenlabs and frame_voice:
+                # Provider seam (config/tts.json): the render LANGUAGE picks the
+                # engine — Sarvam for the Indic languages ElevenLabs can't speak
+                # natively (hi/mr/bn/pa), ElevenLabs everywhere else. A missing
+                # SARVAM_API_KEY / Sarvam failure degrades to ElevenLabs
+                # (accented but working) with a ledger note — never a dead track.
+                spoken_ok = False
+                if lang:
+                    from agents import sarvam_tts
+                    if sarvam_tts.provider_for_lang(lang) == "sarvam":
+                        try:
+                            sarvam_tts.generate(caption, raw_path, lang)
+                            spoken_ok = True
+                        except Exception as se:
+                            try:
+                                from agents import degradation
+                                degradation.report(
+                                    "voice", "info",
+                                    f"Sarvam TTS unavailable for '{lang}' ({str(se)[:80]}) "
+                                    f"— falling back to ElevenLabs (accent may drift)")
+                            except Exception:
+                                pass
+                if not spoken_ok and use_elevenlabs and frame_voice:
                     emotion = frame.get("scene", {}).get("emotion", "")
                     # A different speaker breaks prosody continuity — only pass
                     # previous_text when the voice is the same as the prior line.
@@ -196,7 +217,7 @@ def generate_voiceover_track(frames: list[dict], out_path: str, voice_id: str,
                     _generate_elevenlabs(caption, raw_path, frame_voice,
                                          voice_settings=_voice_settings_for(emotion),
                                          previous_text=prev or None)
-                else:
+                elif not spoken_ok:
                     _generate_openai(caption, raw_path)
                 spoken = get_audio_duration(raw_path)
                 _fit_seg(raw_path, seg_path, duration)   # pad/trim to frame length

@@ -608,11 +608,27 @@ prompt</b> (what to avoid), and a <b>Continuity lock</b> (outfit/styling that mu
 not change). Sensible defaults are prefilled; tweak per shot as needed.</p>
 
 <h2 id="canvas">15 · Director Canvas — build the reel stage by stage</h2>
-<p>Open <b>Canvas</b> from the header. Instead of the wizard, you get a <b>board</b>
-that builds the reel one approved step at a time:
-<b>Script → Storyboard → Key Frames → Audio → Video → Final Cut</b>. Same engine,
-models, costs and safety/spend gates as the other modes — just driven stage by stage,
-so you see and approve everything before it spends.</p>
+<p>Open <b>Canvas</b> from the header. After you Plan, the whole production lives on
+<b>one infinite canvas</b> (S33) — a pannable, zoomable surface with nine workspaces
+left→right: <b>01 Script · 02 Cast · 03 Locations · 04 Storyboard · 05 Sketches ·
+06 Key Frames · 07 Video · 08 Audio · 09 Output</b>. The film column (04–08) shares one
+column grid, so shot N reads as a vertical scan — breakdown → sketch → still → clip →
+sound. The <b>pipeline bar, cost banner, timeline and command box stay docked</b> at the
+bottom (spend truth can never be panned out of view). It still builds the reel one
+approved step at a time — <b>Script → Storyboard → Key Frames → Audio → Video → Final
+Cut</b> — with the same engine, models, costs and safety/spend gates as always.</p>
+<p><b>Getting around:</b> the <b>workspace pills</b> in the top bar glide to any zone
+(an oversized zone — a 30-shot board, a long script — lands on its <i>head</i> at a
+readable zoom; wheel-pan the rest). <b>Drag</b> pans · <b>wheel</b> pans ·
+<b>⌘/Ctrl&nbsp;+&nbsp;wheel</b> zooms to the cursor · <b>⇧1</b> fits everything ·
+<b>Esc</b> closes the <b>Shot Inspector</b>, which slides in as an overlay when you
+click any shot (board card, timeline tile, or any stage-lane cell — the selection ring
+follows you across all of them). The − / ＋ / ⤢ zoomer sits in the top bar. The two
+money buttons — <b>⚙ Audio &amp; Captions</b> (the settings drawer: World Context,
+Captions Format, Brand) and <b>🎬 Render reel</b> — sit in a <b>docked bar at the
+bottom-center of the board</b>, always visible while you pan (they used to hide in
+the top-right corner). The reel's <b>Audio Setup</b> lives in the
+08&nbsp;·&nbsp;Audio zone (next to a per-beat strip of who carries each line).</p>
 
 <h3>Step by step (this is the workflow to test)</h3>
 <ol>
@@ -670,7 +686,7 @@ so you see and approve everything before it spends.</p>
   only, it never regenerates anything.</li>
   <li><b>Pick your audio:</b> 🎵 Music (auto) · ⬆ Upload a song · 🎙 Voiceover
   (ElevenLabs — choose a voice) · 🔇 None.</li>
-  <li><b>Generate Video</b> (or the top <b>🎬 Render reel</b> button). It <b>reuses the
+  <li><b>Generate Video</b> (or the docked <b>🎬 Render reel</b> button, bottom-center). It <b>reuses the
   approved Key Frames</b> (no re-charge), each shot's clip appears on its card as it
   finishes, and the full reel plays below with a download link.</li>
 </ol>
@@ -701,13 +717,21 @@ so you see and approve everything before it spends.</p>
   dropdown, and <b>⚡ Suggest fidelity</b> assesses quality and recommends a rung (keep
   clean shots real, Restore soft ones, Re-create only amateur ambient B-roll). A shot
   showing a real <i>person</i> is never offered Re-create — only Real or Restore.</li>
-  <li><b>Save &amp; resume:</b> every action auto-saves. Close the tab and come back via
-  the <b>Resume…</b> picker, or the link in the address bar.</li>
+  <li><b>Save &amp; resume:</b> every action auto-saves. Opening plain <b>/canvas</b> always
+  starts a <b>new story</b>; to get back into a saved one, use the <b>Resume…</b> picker or
+  its <b>?run=</b> link from the address bar (bookmarkable). The <b>＋ New</b> button clears
+  the board any time.</li>
   <li><b>🔇 No-audio warning:</b> if music generation fails (e.g. the music provider is out
   of credits) the reel still renders, but the board shows a red <b>no-soundtrack warning</b>
   and the render status reads <b>"done — ⚠ NO AUDIO"</b> instead of "done ✓". A final output
   check also probes the finished file: if you asked for audio and the reel is silent for any
   reason, it's flagged before download. Fix the cause and re-run <b>Final Cut</b>.</li>
+  <li><b>Three per-shot face choices (Inspector):</b> <b>🎭 Their face (AI)</b> — one click
+  AI-generates the shot with the on-screen character's LOCKED face from the Character sheet
+  (same person, staged moment; labeled AI likeness) · <b>👤 Other face…</b> — upload a
+  different reference for this one shot · <b>👻 Generic (no face)</b> — anonymous figure,
+  no identity at all. The board's <b>👤 chip</b> shows who is ON SCREEN per shot (may differ
+  from who speaks — a narrator can describe someone else).</li>
   <li><b>🔒 Faces before spend:</b> Key Frames now <b>refuses to generate</b> while an
   on-screen character has no locked face (📎 photo or 🎨 generated) — it names who's
   missing; an unlocked face is how the same character drifted between shots. Confirming
@@ -740,6 +764,11 @@ so you see and approve everything before it spends.</p>
   <li><b>Reviewing a face:</b> the portrait shows large — <b>click to view full size</b>.
   <b>↻ New face</b> generates a fresh sample (never the cached previous image) and picks up
   any attribute edits you just typed, no separate Save needed.</li>
+  <li><b>Real photo → real face in AI shots:</b> if a character has a real photo attached,
+  <b>🎨 Generate</b> re-renders <i>that exact person</i> into the clean canonical sheet
+  instead of inventing a face, and a <b>likeness check</b> compares every AI shot of them
+  against the real photo — a stranger's face is re-rolled automatically. The original photo
+  stays attached, so ↻ New face always re-derives from the real face.</li>
   <li><b>Outfit &amp; anatomy lock:</b> <code>clothing</code> is enforced as the SAME outfit in
   every scene; the <code>species/anatomy</code> field (e.g. "vanara — monkey tail") keeps
   non-human anatomy consistent. Portraits render head-to-knees so the outfit anchors identity.</li>

@@ -1,0 +1,15 @@
+{
+ "_note": "TTS provider seam (mirrors config/llm.json / music.json). Voice-over speech is routed PER LANGUAGE: ElevenLabs stays the default (and the only voice-clone path — presenter/Tier B); Sarvam covers the Indic languages ElevenLabs has no native voices for (voices.json 2026-07-17 audit: 8 verified hi voices, ZERO mr/bn/pa). A missing SARVAM_API_KEY degrades that language back to ElevenLabs (accented) with a ledger note — never a broken render.",
+ "providers_by_language": {
+  "default": "elevenlabs",
+  "hi": "sarvam",
+  "mr": "sarvam",
+  "bn": "sarvam",
+  "pa": "sarvam"
+ },
+ "sarvam": {
+  "model": "bulbul:v2",
+  "speaker": "anushka",
+  "_note": "VERIFY on docs.sarvam.ai before first paid run: model/speaker ids, endpoint (api.sarvam.ai/text-to-speech), payload field names and the api-subscription-key header. Language codes are sent as <lang>-IN. Needs SARVAM_API_KEY in .env."
+ }
+}
