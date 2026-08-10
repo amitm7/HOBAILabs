@@ -1,0 +1,281 @@
+{
+  "_note": "S34 stylist packs — the brief's 'multiple stylist agents, one per product type and theme type', expressed as DATA rather than as N code paths. One agent reads the matching pack. A new genre is a JSON entry, not a deploy. Each pack carries where this apparel is shot, how the model carries it, what may be styled around it, and what is WRONG for the genre. `locations` is the L1 stage pool: 3 per genre, chosen deterministically by SKU hash so a collection is coherent without every SKU looking identical. NO pack may contain legible text/signage — that rule is global (plan §12).",
+  "_updated": "2026-08-09",
+  "_match_note": "Selection is keyword-first over the tag-read product description + detected category, falling back to 'everyday'. Keywords are matched case-insensitively as substrings.",
+  "stylists": {
+    "everyday": {
+      "label": "Everyday Casual",
+      "match": [
+        "t-shirt",
+        "tee",
+        "top",
+        "shirt",
+        "casual",
+        "co-ord",
+        "coord",
+        "blouse"
+      ],
+      "pov": "Elevated everyday — clothes a real person actually leaves the house in, shot with the care usually reserved for luxury. Warm, unforced, aspirational but reachable.",
+      "locations": [
+        "a sunlit European boutique courtyard: weathered stone archways with real depth, wrought-iron balconies, terracotta planters with olive and bougainvillea, a linen-covered café table, worn stone paving falling away into soft bokeh",
+        "a quiet old-town side street in warm morning light: pastel plaster walls, shuttered windows, a bicycle against stone, potted geraniums, long soft shadows across the cobbles",
+        "a bright minimal loft interior: tall windows with sheer linen, pale oak floor, a single ceramic vase, clean negative space and soft north light"
+      ],
+      "light": "warm directional late-morning sun, soft-edged shadows",
+      "styling": "plain unbranded tailored trousers or straight jeans in a neutral tone, simple leather sandals or clean minimal sneakers, at most one fine gold piece",
+      "energy": "relaxed and self-possessed, natural weight shifts, unhurried",
+      "avoid": "gym clothing, evening wear, heavy jewellery, formal tailoring"
+    },
+    "formal": {
+      "label": "Formal / Workwear",
+      "match": [
+        "blazer",
+        "formal",
+        "suit",
+        "trouser",
+        "office",
+        "shirt formal",
+        "workwear"
+      ],
+      "pov": "Contemporary power dressing. Architectural, composed, quietly expensive. The garment's cut and line are the entire story.",
+      "locations": [
+        "a modern glass-and-stone office atrium: clean vertical lines, a wide staircase, polished concrete, cool daylight raking through tall glazing",
+        "a marble lobby with deep columns and a long reflective floor, restrained and symmetrical, soft ambient bounce",
+        "an urban crossing in early-morning light: crisp architecture, wide pavement, long shadows, city depth compressed behind"
+      ],
+      "light": "cool clean daylight with controlled contrast, crisp shadow edges",
+      "styling": "sharply tailored complementary separates, polished leather loafers or heeled mules, a structured unbranded leather bag, minimal metal jewellery",
+      "energy": "upright and deliberate, purposeful stride, calm authority",
+      "avoid": "beachwear, athletic clothing, rustic or bohemian props, messy layering"
+    },
+    "ethnic_indian": {
+      "label": "Indian Ethnic",
+      "match": [
+        "kurta",
+        "kurti",
+        "saree",
+        "sari",
+        "lehenga",
+        "salwar",
+        "anarkali",
+        "dupatta",
+        "ethnic",
+        "palazzo"
+      ],
+      "pov": "Indian heritage craft, photographed with reverence for drape and handwork. The fall of the fabric and the detail of the embroidery carry the frame.",
+      "locations": [
+        "a heritage haveli courtyard: carved sandstone jharokha windows, scalloped arches, an inlaid stone floor, brass planters, warm filtered afternoon light",
+        "a colonnaded verandah of an old palace: lime-washed pillars, jaali screens casting patterned shade, a worn stone step, deep warm shadow",
+        "a terrace at golden hour with weathered lime plaster walls, marigold in brass urns, a hand-block-printed textile draped over a low wall"
+      ],
+      "light": "warm golden low-angle light, rich saturated shadow, gentle haze",
+      "styling": "traditional complementary pieces only — matching dupatta drape, juttis or embellished flats, delicate gold jhumkas and bangles, never Western casualwear",
+      "energy": "poised and graceful, elongated posture, fabric caught mid-movement, hands expressive and soft",
+      "avoid": "Western street settings, sneakers, denim, modern office backdrops, gym contexts"
+    },
+    "festive": {
+      "label": "Festive / Occasion",
+      "match": [
+        "festive",
+        "party",
+        "sequin",
+        "embroidered",
+        "occasion",
+        "wedding",
+        "celebration",
+        "gown"
+      ],
+      "pov": "Celebration wear. Light is the subject as much as the garment — the way it catches embellishment, sequin and sheen.",
+      "locations": [
+        "a candlelit heritage interior at dusk: carved wooden columns, warm lamplight pooling, marigold garlands out of focus, deep amber shadow",
+        "a courtyard at blue hour with strung warm festoon lights overhead, rangoli patterns on stone, glowing bokeh behind",
+        "an ornate mirrored hall with soft directional warm light and rich reflected highlights"
+      ],
+      "light": "warm low ambient with strong specular highlights on embellishment, dusk or evening",
+      "styling": "occasion footwear, statement earrings, an embellished clutch, hair dressed rather than casual",
+      "energy": "elegant and dynamic, fabric in motion, a sense of turning into the light",
+      "avoid": "daytime casual settings, sportswear, flat lighting, minimal styling"
+    },
+    "activewear": {
+      "label": "Activewear / Gym",
+      "match": [
+        "gym",
+        "active",
+        "legging",
+        "sports bra",
+        "training",
+        "workout",
+        "tights",
+        "yoga"
+      ],
+      "pov": "Performance and capability, not decoration. Bodies in motion, sweat-real, functional. Fabric technology is the hero — compression, stretch, breathability.",
+      "locations": [
+        "a functional training gym: matte black rigging, rubber flooring, weight racks softly out of focus, cool directional window light cutting across",
+        "an urban rooftop at dawn: painted running lines, city skyline hazy behind, cool blue early light and long shadows",
+        "a concrete stairwell or underpass with strong graphic geometry, cool daylight from one end, hard-edged shadow"
+      ],
+      "light": "cool crisp directional light, high contrast, defined shadow edges, no softening",
+      "styling": "matched technical separates in a muted tone, performance trainers, a simple water bottle or gym towel, hair tied back, no jewellery",
+      "energy": "athletic and mid-motion — stretching, mid-stride, recovering, breathing. Never a static fashion pose",
+      "avoid": "cafés, heritage architecture, jewellery, heels, loose flowing fabric, soft romantic light"
+    },
+    "sportswear": {
+      "label": "Performance Sport / Outdoor",
+      "match": [
+        "jersey",
+        "running",
+        "track",
+        "cycling",
+        "outdoor",
+        "trail",
+        "performance",
+        "hiking"
+      ],
+      "pov": "Sport as it is actually played. Weather, ground, effort. Documentary energy rather than studio polish.",
+      "locations": [
+        "a stadium tunnel opening onto a floodlit pitch, deep shadow to bright, atmospheric haze",
+        "an outdoor athletics track in low golden light, lane markings receding, heat shimmer",
+        "a mountain trail at dawn: cold air, mist between pines, wet rock underfoot"
+      ],
+      "light": "dramatic natural light — dawn, dusk or floodlight, strong rim separation",
+      "styling": "sport-appropriate technical layers, running or trail shoes, a cap or headband, no fashion accessories",
+      "energy": "genuine physical effort — running, climbing, mid-exertion, breath visible in cold air",
+      "avoid": "urban fashion posing, indoor luxury, styling props, static standing"
+    },
+    "loungewear": {
+      "label": "Loungewear / Sleepwear",
+      "match": [
+        "nightsuit",
+        "pyjama",
+        "pajama",
+        "lounge",
+        "sleep",
+        "robe",
+        "nightwear",
+        "co-ord set lounge"
+      ],
+      "pov": "Softness and calm. Domestic intimacy, morning light, nothing performed. Comfort is the product.",
+      "locations": [
+        "a sunlit bedroom: rumpled white linen, a pale wooden headboard, sheer curtains diffusing morning light, a book face-down",
+        "a quiet minimal apartment corner: a linen armchair, ceramic mug on a low table, plants, soft window light",
+        "a bright kitchen in early morning: pale cabinetry, steam from a cup, warm low sun across a worktop"
+      ],
+      "light": "soft diffused morning window light, low contrast, gentle falloff",
+      "styling": "bare feet or simple slippers, no jewellery, hair loose and undone, a mug or open book as a natural prop",
+      "energy": "unposed and languid — curled, leaning, stretching on waking, gaze away from camera",
+      "avoid": "outdoor city settings, heels, formal styling, hard light, structured posing"
+    },
+    "denim": {
+      "label": "Denim",
+      "match": [
+        "denim",
+        "jean",
+        "jeans",
+        "jegging"
+      ],
+      "pov": "Denim is texture and attitude. Wash, whiskering, hardware and fit are the whole story — shoot them hard and honest.",
+      "locations": [
+        "a sunlit Mediterranean old-town street: pale stone paving, whitewashed walls, bougainvillea spilling over a doorway, café tables and rattan chairs, warm late-morning light and soft shadow",
+        "an industrial loft: raw brick, steel-framed windows, worn timber floor, hard side light and deep shadow",
+        "a sunlit brick alley with a painted plain wall, weathered surfaces, strong graphic light",
+        "a desert roadside in late light: dusty asphalt, open sky, warm rim light along the silhouette"
+      ],
+      "light": "hard directional light that reveals wash, whiskering and seam texture",
+      "styling": "a plain unbranded fitted tee or simple knit tucked or half-tucked, leather boots or clean sneakers, a simple belt",
+      "energy": "confident and casual, hands in pockets, weight cocked, effortless",
+      "avoid": "delicate romantic settings, formal interiors, heavy jewellery, soft flat light"
+    },
+    "swim_resort": {
+      "label": "Swim / Resort",
+      "match": [
+        "swim",
+        "bikini",
+        "beach",
+        "resort",
+        "kaftan",
+        "cover-up",
+        "poolside"
+      ],
+      "pov": "Sun, water and ease. Light on skin and fabric, salt and heat. Editorial, never gratuitous.",
+      "locations": [
+        "a pool edge at midday: turquoise water, white stone coping, a single striped towel, sharp bright light",
+        "a rocky Mediterranean cove: clear shallow water, pale rock, sea haze on the horizon",
+        "a shaded resort terrace: rattan furniture, palm shadow patterns across pale plaster, warm bounce light"
+      ],
+      "light": "bright high sun with clean specular highlights on water and skin, or warm late-afternoon glow",
+      "styling": "bare feet or simple flat raffia/leather sandals, and sunglasses. Nothing worn over the swimwear on any frame",
+      "energy": "relaxed and sun-warmed, walking out of water, adjusting a strap, natural and unstudied",
+      "avoid": "urban settings, cold light, formal posing, and ANY garment worn over the swimwear — no cover-up, kaftan, sarong, shirt, trousers, shorts or skirt"
+    },
+    "winterwear": {
+      "label": "Winter / Outerwear",
+      "match": [
+        "jacket",
+        "coat",
+        "sweater",
+        "sweatshirt",
+        "hoodie",
+        "knit",
+        "puffer",
+        "winter",
+        "woollen",
+        "cardigan"
+      ],
+      "pov": "Warmth made visible. Volume, layering and loft — the garment's bulk and how it moves in cold air.",
+      "locations": [
+        "a misty pine forest path: cold blue light, fog between trunks, damp ground, breath visible",
+        "an alpine village street in winter light: stone buildings, snow-dusted rooflines, warm window glow behind",
+        "a weathered stone cabin exterior at dusk: bare branches, cold clear air, low warm sun on the horizon"
+      ],
+      "light": "cool overcast or low winter sun, soft directional, blue shadow with warm highlight",
+      "styling": "layered unbranded knitwear beneath, boots, a plain scarf or beanie, gloves held rather than worn",
+      "energy": "hands in pockets, shoulders raised against cold, walking with intent, collar turned up",
+      "avoid": "summer settings, bare skin, tropical light, sandals"
+    },
+    "streetwear": {
+      "label": "Streetwear / Youth",
+      "match": [
+        "oversized",
+        "graphic",
+        "street",
+        "cargo",
+        "baggy",
+        "utility",
+        "sneaker"
+      ],
+      "pov": "Culture-first. Proportion, attitude and place. Slightly raw, deliberately imperfect framing.",
+      "locations": [
+        "a concrete underpass with strong geometry and graphic shadow, no lettering on any surface",
+        "a skate park at golden hour: worn concrete bowls, chain-link fence, dust in the low light",
+        "a metro platform or stairwell with hard fluorescent-and-daylight mix and cool tiled surfaces"
+      ],
+      "light": "mixed hard light, deliberate contrast, some flare tolerated",
+      "styling": "oversized plain unbranded layers, chunky sneakers, a plain cap or crossbody bag",
+      "energy": "loose and off-hand — mid-movement, leaning, seated on steps, gaze away from camera",
+      "avoid": "heritage luxury settings, delicate styling, formal posture, soft romantic light"
+    },
+    "luxury": {
+      "label": "Luxury Editorial",
+      "match": [
+        "silk",
+        "satin",
+        "premium",
+        "luxury",
+        "cashmere",
+        "designer",
+        "couture",
+        "velvet"
+      ],
+      "pov": "Restraint and material. Very few elements, each one considered. The fabric's fall and sheen carry everything.",
+      "locations": [
+        "a marble gallery with deep columns and a single shaft of directional light across polished stone",
+        "a minimal boutique interior: pale plaster, a single sculptural chair, controlled pooled light",
+        "a colonnade at dusk with long architectural shadows and a limited restrained palette"
+      ],
+      "light": "controlled directional light with deliberate falloff, rich shadow, minimal fill",
+      "styling": "one considered accessory at most, fine leather footwear, nothing that competes with the garment",
+      "energy": "still, sculptural, elongated — a held moment rather than an action",
+      "avoid": "busy backgrounds, casual props, harsh flat light, cluttered styling"
+    }
+  }
+}

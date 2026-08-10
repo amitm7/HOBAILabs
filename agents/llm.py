@@ -141,10 +141,31 @@ def _data_uri(part: dict) -> str:
 
 
 def _norm_content(content):
-    """Return content as a list of parts (text/image)."""
-    if isinstance(content, str):
-        return [{"type": "text", "text": content}]
-    return content
+    """Return content as a list of parts, each {"type": "text"|"image"}.
+
+    Also accepts the OpenAI-shaped part {"type": "image_url", "image_url": {"url": …}}
+    and rewrites it to this module's image part, so every backend sees ONE shape.
+
+    An unrecognised part type RAISES instead of being dropped. Every backend loops
+    `if type == text … elif type == image`, so an unknown part used to vanish and the
+    vision call answered from the text alone — a confident wrong answer rather than a
+    failure, which is the silent-degradation class rule 13 exists to prevent.
+    """
+    parts = [{"type": "text", "text": content}] if isinstance(content, str) else content
+    out = []
+    for p in parts:
+        kind = p.get("type")
+        if kind in ("text", "image"):
+            out.append(p)
+        elif kind == "image_url":
+            url = (p.get("image_url") or {}).get("url", "")
+            out.append({"type": "image", "data_uri": url} if url.startswith("data:")
+                       else {"type": "image", "path": url})
+        else:
+            raise ValueError(
+                f"llm.chat: unknown content part type {kind!r} — use "
+                '{"type":"text"|"image"}; images take "path" or "data_uri"')
+    return out
 
 
 # ── Public entry point ────────────────────────────────────────────────────────

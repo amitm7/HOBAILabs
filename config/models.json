@@ -1,7 +1,7 @@
 {
  "_note": "Model capability catalog + per-shot routing policy. Keep model FACTS here, costs in pricing.json. The router (agents/model_router.py) reads 'routing'; clip_builder/image_generator read 'models' to dispatch a backend. Add a model by adding an entry under 'models' and listing its id in 'routing'.",
  "_updated": "2026-06-07",
- "_fal_endpoints_warning": "fal.ai endpoint slugs and pricing shift monthly — VERIFY each fal_endpoint on fal.ai before the first paid run.",
+ "_fal_endpoints_warning": "fal.ai endpoint slugs and pricing shift monthly \u2014 VERIFY each fal_endpoint on fal.ai before the first paid run.",
  "models": {
   "flux": {
    "kind": "image",
@@ -195,7 +195,7 @@
    ],
    "max_concurrent": 4,
    "pricing_key": "upscale.aura_sr_usd",
-   "_use": "REAL person/footage — does NOT invent detail, so a real face stays the real face (moat-safe)."
+   "_use": "REAL person/footage \u2014 does NOT invent detail, so a real face stays the real face (moat-safe)."
   },
   "clarity_upscaler": {
    "kind": "upscale",
@@ -210,7 +210,7 @@
    ],
    "max_concurrent": 4,
    "pricing_key": "upscale.clarity_usd",
-   "_use": "AI stills / ambient B-roll — adds detail (hallucinates), NEVER route a real person here."
+   "_use": "AI stills / ambient B-roll \u2014 adds detail (hallucinates), NEVER route a real person here."
   },
   "nano_banana_edit": {
    "kind": "edit",
@@ -226,7 +226,7 @@
    ],
    "max_concurrent": 4,
    "pricing_key": "image_gen.nano_banana_usd",
-   "_use": "Reference-conditioned generation — keeps a supplied face/character across a NEW scene. The strong identity path (real face-refs AND fiction characters). VERIFY the fal endpoint before a big run."
+   "_use": "Reference-conditioned generation \u2014 keeps a supplied face/character across a NEW scene. The strong identity path (real face-refs AND fiction characters). VERIFY the fal endpoint before a big run."
   },
   "flux_kontext": {
    "kind": "edit",
@@ -241,7 +241,7 @@
    ],
    "max_concurrent": 4,
    "pricing_key": "image_gen.flux_portrait_usd",
-   "_use": "In-context edit — holds a subject across scenes. Alternative identity model to nano_banana."
+   "_use": "In-context edit \u2014 holds a subject across scenes. Alternative identity model to nano_banana."
   },
   "gpt_image_edit": {
    "kind": "edit",
@@ -253,7 +253,7 @@
    ],
    "max_concurrent": 4,
    "pricing_key": "image_gen.openai_edit_usd",
-   "_use": "OpenAI gpt-image-1 edit — the original identity/edit path, now the FALLBACK."
+   "_use": "OpenAI gpt-image-1 edit \u2014 the original identity/edit path, now the FALLBACK."
   },
   "mmaudio": {
    "backend": "fal",
@@ -289,10 +289,26 @@
     "1:1"
    ],
    "_note": "Alibaba HappyHorse 1.1 reference-to-video via Kie.ai jobs API (KIE_API_KEY). input.reference_image = 1-9 URLs defining subject IDENTITY (not first frame); prompt may address them as '[Image 1]', '[Image 2]'; 3-15s; 720p/1080p; NATIVE AUDIO. Contract verified against docs.kie.ai 2026-07-19 (tools/kie_probe.py re-verifies free). The galleri5 A/B winner's model."
+  },
+  "seedream_edit": {
+   "kind": "edit",
+   "backend": "fal",
+   "fal_endpoint": "fal-ai/bytedance/seedream/v4/edit",
+   "tier": "standard",
+   "ref_input": "image_urls",
+   "strengths": [
+    "garment",
+    "multi-ref",
+    "pattern",
+    "cheap"
+   ],
+   "max_concurrent": 4,
+   "pricing_key": "image_gen.seedream_usd",
+   "_use": "S34 shoot bake-off candidate \u2014 multi-reference edit, far cheaper than nano_banana. VERIFY the endpoint slug before a big run."
   }
  },
  "routing": {
-  "_note": "shot_type → cost_tier → ordered preference list of model ids. Router picks the first id that exists in 'models'. 'real' (real photo/video at the video step) and 'passthrough' (real media at the image step) are handled in the router code.",
+  "_note": "shot_type \u2192 cost_tier \u2192 ordered preference list of model ids. Router picks the first id that exists in 'models'. 'real' (real photo/video at the video step) and 'passthrough' (real media at the image step) are handled in the router code.",
   "image": {
    "face": {
     "draft": [
@@ -314,9 +330,9 @@
    }
   },
   "video": {
-   "_kling_dead_note": "KLING IS REFUSING WORK (verified live 2026-07-17): POST /v1/videos/image2video -> HTTP 429 {\"code\":1102,\"message\":\"Account balance not enough\"}. The API Platform is PREPAID-PACKS-ONLY — there is no pay-as-you-go tier, so with '2 packages purchased, 0 in effect' every Kling call fails. Both packs were trials (100Units depleted; 1000Units expired 2026-07-04 stranding 258/1000). Top-up is NOT self-serve — the dashboard offers only 'Contact us for purchase', so restoring Kling needs a sales cycle. Consequently the 2026-07-02 'kling_pro leads every premium lane to burn a prepaid Kling balance' hack is not just obsolete, it is actively harmful: it made every premium shot start with a doomed 429. Kling is therefore DEMOTED to last on every lane (kept, not deleted, so restoring a pack re-activates it with no code change). This restores the best-fit routing the hack's own revert note prescribed: landscape→hailuo, hero→seedance, dialogue→veo. TO RESTORE KLING: buy a resource pack via Kling sales, confirm `python -m agents.balances` shows a live pack, then move kling_pro/kling_std back up the lists.",
-   "_higgsfield_first_note": "2026-07-17: higgsfield LEADS landscape+hero (its declared strengths: camera-move, cinematic) and sits 2nd on face. Why: (a) it is the only video backend with BOTH working code and live prepaid credit — fal is balance-locked and both Kling packs are dead, so every other premium video model is currently unpayable; (b) $0.10/5s is cheaper than kling_pro's $0.14. Verified live 2026-07-17 with a real DoP render: 74s end-to-end (NOT the 1.5-5min the agents/higgsfield.py docstring claims), 720x1280 true 9:16, 5.37s, 30fps, h264, no audio; identity held across the clip and the subject produced real motion (head turn + foreground parallax), not just a camera push. NOT added to 'real' (the render reframes/re-crops the source — unsafe for real-media preservation until tested on an actual photo) or 'dialogue' (no audio/lipsync strength). TO REVERT: drop 'higgsfield' from the lists below; the model entry + fallbacks can stay.",
-   "_draft_note": "kling_std ($0.08) WAS the entire draft tier — with Kling refusing, higgsfield ($0.10, prepaid credit already owned) is the only cheap draft option left. It is slower (~74s/clip, max_concurrent 4), which is the real cost of this; seedance/veo/hailuo are 3-5x pricier and wrong for iteration. kling_std stays last so a restored pack instantly reclaims the lane.",
+   "_kling_dead_note": "KLING IS REFUSING WORK (verified live 2026-07-17): POST /v1/videos/image2video -> HTTP 429 {\"code\":1102,\"message\":\"Account balance not enough\"}. The API Platform is PREPAID-PACKS-ONLY \u2014 there is no pay-as-you-go tier, so with '2 packages purchased, 0 in effect' every Kling call fails. Both packs were trials (100Units depleted; 1000Units expired 2026-07-04 stranding 258/1000). Top-up is NOT self-serve \u2014 the dashboard offers only 'Contact us for purchase', so restoring Kling needs a sales cycle. Consequently the 2026-07-02 'kling_pro leads every premium lane to burn a prepaid Kling balance' hack is not just obsolete, it is actively harmful: it made every premium shot start with a doomed 429. Kling is therefore DEMOTED to last on every lane (kept, not deleted, so restoring a pack re-activates it with no code change). This restores the best-fit routing the hack's own revert note prescribed: landscape\u2192hailuo, hero\u2192seedance, dialogue\u2192veo. TO RESTORE KLING: buy a resource pack via Kling sales, confirm `python -m agents.balances` shows a live pack, then move kling_pro/kling_std back up the lists.",
+   "_higgsfield_first_note": "2026-07-17: higgsfield LEADS landscape+hero (its declared strengths: camera-move, cinematic) and sits 2nd on face. Why: (a) it is the only video backend with BOTH working code and live prepaid credit \u2014 fal is balance-locked and both Kling packs are dead, so every other premium video model is currently unpayable; (b) $0.10/5s is cheaper than kling_pro's $0.14. Verified live 2026-07-17 with a real DoP render: 74s end-to-end (NOT the 1.5-5min the agents/higgsfield.py docstring claims), 720x1280 true 9:16, 5.37s, 30fps, h264, no audio; identity held across the clip and the subject produced real motion (head turn + foreground parallax), not just a camera push. NOT added to 'real' (the render reframes/re-crops the source \u2014 unsafe for real-media preservation until tested on an actual photo) or 'dialogue' (no audio/lipsync strength). TO REVERT: drop 'higgsfield' from the lists below; the model entry + fallbacks can stay.",
+   "_draft_note": "kling_std ($0.08) WAS the entire draft tier \u2014 with Kling refusing, higgsfield ($0.10, prepaid credit already owned) is the only cheap draft option left. It is slower (~74s/clip, max_concurrent 4), which is the real cost of this; seedance/veo/hailuo are 3-5x pricier and wrong for iteration. kling_std stays last so a restored pack instantly reclaims the lane.",
    "real": {
     "draft": [
      "higgsfield",
@@ -379,7 +395,7 @@
    }
   },
   "identity": {
-   "_note": "Reference-conditioned generation (keep a supplied face/character in a new scene). Ordered failover — the edit path (agents/image_editor.edit_image) tries these in order. Override the primary with env IDENTITY_MODEL.",
+   "_note": "Reference-conditioned generation (keep a supplied face/character in a new scene). Ordered failover \u2014 the edit path (agents/image_editor.edit_image) tries these in order. Override the primary with env IDENTITY_MODEL.",
    "default": [
     "nano_banana_edit",
     "gpt_image_edit"
@@ -387,7 +403,7 @@
   }
  },
  "fallbacks": {
-  "_note": "Gap #8 — per-model ordered alternates for vendor failover. Each chain prefers a DIFFERENT backend first so one vendor outage/price-spike degrades independently. The router (model_router.run_with_fallback) tries the primary, then these in order. Same kind only.",
+  "_note": "Gap #8 \u2014 per-model ordered alternates for vendor failover. Each chain prefers a DIFFERENT backend first so one vendor outage/price-spike degrades independently. The router (model_router.run_with_fallback) tries the primary, then these in order. Same kind only.",
   "flux": [
    "nano_banana",
    "gpt_image",
@@ -408,7 +424,7 @@
    "gpt_image",
    "seedream"
   ],
-  "_video_note": "2026-07-17: higgsfield inserted as the FIRST alternate on every kling/fal chain. Before this, the video chains only LOOKED cross-vendor: kling_pro -> [seedance, veo, kling_std] is two fal hops then kling, so with fal balance-locked AND both Kling packs expired there was no live path — a kling failure exhausted the whole chain. higgsfield is the only third video backend (own credit, own vendor), so it is what makes the '_note' claim above actually true for video.",
+  "_video_note": "2026-07-17: higgsfield inserted as the FIRST alternate on every kling/fal chain. Before this, the video chains only LOOKED cross-vendor: kling_pro -> [seedance, veo, kling_std] is two fal hops then kling, so with fal balance-locked AND both Kling packs expired there was no live path \u2014 a kling failure exhausted the whole chain. higgsfield is the only third video backend (own credit, own vendor), so it is what makes the '_note' claim above actually true for video.",
   "kling_std": [
    "higgsfield",
    "hailuo",
@@ -450,7 +466,7 @@
    "kling_pro"
   ]
  },
- "_defaults_note": "defaults[kind] is the LAST resort in select_model/candidates — it fires when a shot_type/tier has no routing entry. It pointed at kling_std, i.e. the one video vendor that refuses every request (2026-07-17), which turned the safety net into a guaranteed failure. Point it at a vendor that can actually bill.",
+ "_defaults_note": "defaults[kind] is the LAST resort in select_model/candidates \u2014 it fires when a shot_type/tier has no routing entry. It pointed at kling_std, i.e. the one video vendor that refuses every request (2026-07-17), which turned the safety net into a guaranteed failure. Point it at a vendor that can actually bill.",
  "defaults": {
   "image": "flux",
   "video": "higgsfield"

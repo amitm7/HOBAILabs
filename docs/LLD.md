@@ -26,8 +26,8 @@ agents/
                           invalidate_from/public_state; PaidStageDispatch signals render reuse.
   model_router.py         shot → model id (pure logic over config/models.json)
   image_generator.py      ai_portrait/ai_symbolic → still (flux|openai|fal backends); prompt-hash cache
-  image_editor.py         reference-conditioned identity edit — PLUGGABLE (config routing.identity): nano_banana_edit (fal, default) -> gpt_image_edit fallback; env IDENTITY_MODEL; per-endpoint circuit-broken
-  safety.py               Gate A (moderation) + Gate B (face sanity) + Gate B2 (vision critique)
+  image_editor.py         reference-conditioned identity edit — PLUGGABLE (config routing.identity): nano_banana_edit (fal, default) -> gpt_image_edit fallback; env IDENTITY_MODEL; per-endpoint circuit-broken. S34 probe facts (tools/shoot_probe.py, 2026-08-08): nano-banana/edit DOES honour the full image_urls array (multi-reference conditioning verified); `aspect_ratio` is honoured approximately (1024x1024 -> 896x1152, ratio 0.778 for "4:5") while `image_size` is IGNORED — so an exact 4:5 frame needs a post-generation crop, not an argument. seedream_edit ignores aspect_ratio entirely and returns 2048x2048. gpt_image_edit still passes only the FIRST reference.
+  safety.py               Gate A (moderation) + Gate B (face sanity) + Gate B2 (vision critique) + Gate B3 (likeness vs real reference)
   cast.py                 multi-speaker detection + voice resolution per frame
   brand.py                brief extraction, mandatories gate, PIL CTA card, disclosure
   balances.py             live per-vendor credit/balance probes (read-only, concurrent)
@@ -67,6 +67,7 @@ agents/
   caption_writer.py       frames → ASS subtitle file (uses effective_timecodes)
   music_generator.py      pluggable music engine (config/music.json): lyria (Gemini interactions)|suno; provider dispatch + graceful fallback; instrumental beds vs vocal songs
   beat_track.py           music → onset/beat times (ffmpeg + numpy, no librosa; graceful [])
+  shoot.py                S34 product-photoshoot SEAM — the one entry point web_app uses (scan/run_sku/status/personas). Implementation still lives in tools/shoot_{bakeoff,campaign,batch,persona}.py and is loaded by path; `ponytail:` documented interim indirection so web_app never imports from tools/. When the approach settles, move the bodies here and delete the loader — no caller changes.
   sfx.py                  S30 Phase 2 SFX/atmosphere seam: generate_sfx(video, prompt, out, variant) → clip-synced foley/atmosphere WAV via the models.json "mmaudio" entry (fal video→audio); content-hash cached (video 1MB fingerprint+size+prompt+variant, rule 12); '' on ANY failure + degradation.report("sfx","info") — callers mix nothing. Creates the output dir BEFORE the paid call (neither download_media nor ffmpeg makes parents, so a missing run subdir used to fail the write *after* fal billed, and the bare except swallowed it → paid, no track). Final-Cut mix stem = ticketed follow-up (S30 plan Phase 2; S1 lesson: audio-mix changes get their own verify loop)
   assembler.py            clips → normalize → concat/xfade → captions → music → voiceover
                           → apply_brand_overlay (brand post-pass);
@@ -219,7 +220,18 @@ into the system prompt. This eliminates partial-JSON parse failures.
 - **`json_schema` param:** OpenAI → `response_format={type:"json_schema", json_schema:{...}}`
   (strict structured outputs); Bedrock/Gemini → schema injected as a system directive.
 - **Message format is provider-neutral:** `content` is a string or a list of
-  `{type:text}` / `{type:image, path|data_uri}` parts. Each backend translates:
+  `{type:text}` / `{type:image, path|data_uri}` parts, normalised by `_norm_content`
+  ([:143](../agents/llm.py#L143)) before any backend sees it. It also accepts the
+  OpenAI-shaped `{type:"image_url", image_url:{url}}` part and rewrites it to
+  `{type:"image", path|data_uri}`, so callers may use either shape.
+  **An unknown part type RAISES `ValueError`** (2026-08-08). *Sharp edge it fixes:* every
+  backend loops `if type=="text" … elif type=="image"`, so an unrecognised part previously
+  hit neither branch and was silently dropped — the vision call then answered from the text
+  alone and returned a confident wrong answer instead of failing (rule 13: degradation must
+  never be silent). Found by `tools/shoot_probe.py`, which passed `image_url` parts and got
+  "NEITHER" for an image plainly showing both shapes. All in-repo callers already used the
+  `{type:"image", path}` shape, so no shipped gate was affected.
+  Each backend then translates:
   - **OpenAI** ([:121](../agents/llm.py#L121)) — `image_url` data-URIs.
   - **Anthropic (direct API)** (`_anthropic_chat`) — top-level `system`, typed text/image (base64) blocks, `ANTHROPIC_API_KEY`. Independent of Bedrock/Marketplace; the working Claude path when Bedrock isn't entitled. Bare model ids (no `us.*`/version suffix). `temperature` auto-dropped for Opus 4.7/4.8/Fable (they 400 on sampling params).
   - **Bedrock Converse** — system blocks separated; images as raw bytes; IAM auth. Versioned `us.*` inference-profile ids required; needs a Marketplace agreement (account-gated).
@@ -461,6 +473,50 @@ the SAME `frames[]` schema the other doors produce, so `_build_frames_from_paylo
   LLM planner; unstructured prose briefs use the LLM path unchanged. New frame
   keys: `audio_intent`, `voice_direction`, `compiled` (audio_intent is the
   future SFX driver; voice_direction awaits TTS style support).
+- **Sketch-as-composition + face extraction (2026-07-20, probe-verified):**
+  ⑪ once the storyboard stage is APPROVED, each shot's `storyboard_art` sketch
+  rides the multi-image edit path (`image_editor.edit_image` now accepts a LIST
+  → nano-banana `image_urls`) as a BINDING composition reference alongside the
+  face ref — live probe: framing/blocking transferred exactly, zero pencil
+  bleed, identity held. Flag: `_canvas_render_data.sketch_composition` →
+  `_generate_stills(sketch_composition=)`; sketch hash joins the still cache
+  key; unapproved storyboard = free composition (old behaviour); real/passthrough
+  untouched. ⑫ `image_matcher.extract_face_ref(path, out, prefer)` — attaching
+  a multi-person photo as a character ref now auto-crops the RIGHT face
+  (baby/child characters take the smallest, adults the largest; margin 0.6;
+  best-effort → full photo kept on failure); original preserved as
+  `ref_full_path` (CHARACTER_ATTRS); generated `charref_*` portraits skipped
+  (clean full-body by design). New route `/use-locked-face` + Inspector triad
+  (🎭 Their face / 👤 Other face… / 👻 Generic) replaced the ambiguous pair.
+- **Hindi-first authoring (2026-07-19):** ⑨ compile mode parses INDIC dialogue —
+  `_SPEAKER_LINE_INDIC_RE` accepts a Devanagari/Bengali/Gurmukhi speaker header
+  (no upper case exists, so the quoted-dialogue requirement is the guard) and
+  `_slug` keeps Indic word chars incl. matras (यमराज stayed यमराज, was यमर_ज →
+  falsy → narrator). ⑩ `languages.detect_language(texts)` — script-block
+  detection (≥20% of letters; Devanagari→hi, shared with Marathi — operator
+  override wins) — wired in `_run_inner` BEFORE caption_style/VO so an authored-
+  Hindi story automatically gets the Devanagari caption font (Noto, T13), the
+  native-hi voice table (`voices.json language_voices.hi`), and the Sarvam
+  provider seam. Devanagari verified visually through the Remotion overlay.
+- **2026-07-19 batch 2 (rematch day):** ⑥ **TTS provider seam** — `config/tts.json`
+  routes voice-over PER LANGUAGE (`sarvam_tts.provider_for_lang`): hi/mr/bn/pa →
+  `agents/sarvam_tts.py` (api.sarvam.ai, `SARVAM_API_KEY`, bulbul — VERIFY ids at
+  first paid run), everything else ElevenLabs (still the only voice-clone path).
+  Missing key/vendor failure degrades per-frame to ElevenLabs + `voice` ledger
+  info — never a dead track. ⑦ **Compile grammar (delta B, deterministic):**
+  keyword-less shots get cinematic coverage instead of a wall of "medium" —
+  first shot of an authored block = wide establishing, dialogue alternates
+  medium↔close-up, promoted visual cues = detail insert; an authored camera note
+  always wins. ⑧ **3-stem mixer SHIPPED (same day):** `assembler._clip_ambience_track` builds
+  one full-length AMBIENCE stem from clip-NATIVE audio (r2v clips generate
+  sound WITH the video — event-synced by construction; previously stripped by
+  `-an` at normalize) plus per-shot `ambience_path` SFX, each positioned at its
+  clip's EFFECTIVE start (rule #9), gain 0.5. Mixed as a universal POST-step
+  after whichever audio branch ran (`-c:v copy` — no re-encode); no ambience →
+  exact no-op; failure degrades with an `audio` ledger info. `_run_inner` runs
+  the S30 SFX pass before assembly: an authored `[Sound:]` cue (`audio_intent`,
+  now on assignments) → `sfx.generate_sfx` (mmaudio) ONLY for clips WITHOUT
+  native audio — never double-layered. Lipsync assembly path unchanged.
 - **2026-07-19 batch (post-A/B adoption):** ① `remotion_overlay.render_overlay`
   takes `width/height` (CLI `--width/--height`, dims join the overlay cache key) —
   the portrait-default overlay on a landscape reel composited captions ~1700px
@@ -741,6 +797,7 @@ the **✨ Suggest from image** button (post-Preview, in the frame-iter row) sets
 | **A** | `moderate_frames(frames)` / `moderate_script(text)` | Before scene design | Harmful/policy-violating content |
 | **B** | `check_face_sanity(path)` | After image gen (≤2 retries) | Deformed face, bad dimensions, file < 10 KB |
 | **B2** | `critique_image(image_path, frame_id, prompt) -> bool` | After stills pass, before motion | Blank/abstract/empty image when prompt required a real subject |
+| **B3** | `check_likeness(image_path, reference_path, frame_id, min_similarity=6) -> bool` | Inside `_generate_image_checked` when a `likeness_ref` is set (ref-conditioned stills + ref-derived portraits) | Generated face that is NOT the reference person (fails on `same_person=false` or similarity < 6/10) |
 | **Brand** | `critique_brand(image_path, frame_id, brand) -> bool` | After stills pass on brand runs | Visual conflicts with brand safety requirements |
 
 Gate B2 uses a vision LLM call. Prompt: "Does this image match the description? Flag if
@@ -748,6 +805,15 @@ blank/abstract/empty when a real subject was expected." Returns `True` if OK.
 
 Gate A is **non-blocking** on API error (logged, render continues). Gate B triggers
 up to 2 retries (deleting the bad file) then accepts the last result.
+
+Gate B3 (likeness chain, 2026-07-20) is the gate B2 could never be: B2 judges the
+image against the *prompt text*, so a total stranger passed QC while looking nothing
+like the reference person. B3 sends BOTH images (generated + real reference) to the
+fast-tier vision LLM with a strict likeness-judge prompt — facial identity only
+(face shape/eyes/nose/mouth/skin tone/age), ignoring pose/lighting/outfit/style;
+too-small/turned-away faces pass. JSON verdict `{same_person, similarity 0-10,
+reason}`; blocks below 6/10 → retry. Degrades open on API failure; disable with
+`HOB_LIKENESS_QC=0`.
 
 ---
 
@@ -767,10 +833,25 @@ where `_prompt_hash(model_id, prompt)` is `MD5(model_id + "|" + prompt)[:12]`.
 Changing the prompt → new filename → re-generates. Changing only the frame → can reuse.
 Contrast with the old scheme (`ai_portrait_{fid}.jpg`) which reused across prompt changes.
 
-**Gate B + B2 in `_generate_image_checked()`:**
+**Gate B + B2 + B3 in `_generate_image_checked()`:**
 - Runs Gate B sanity check after generation.
 - On failure: delete file, retry (≤2), then accept last result.
 - Gate B2 critique also runs here; result logged but non-blocking.
+- New param `likeness_ref: str = ""` — when set, Gate B3 (`safety.check_likeness`)
+  must ALSO pass each attempt: the generated face is compared to that real reference
+  photo, and a stranger's face triggers a retry like any other Gate B failure.
+  `generate_contextual_image` passes `likeness_ref=reference_path` whenever it
+  generates through the identity path (ref-conditioned stills), and the
+  ref-derived canonical portrait passes its own source photo.
+
+**`generate_character_portrait(..., reference_path="")` (likeness chain, 2026-07-20):**
+when the character has a REAL photo, the canonical sheet is derived FROM it via the
+identity path (`edit_image(reference_path, <canonical recipe + identity-preservation
+clause>)`) instead of being invented from sheet-attribute text — same flat-lit
+full-body recipe, but the face is the person's. The identity clause forbids
+beautify/de-age/stylize. The photo's hash joins the cache key (`|ref:<md5>`), so
+swapping the photo re-derives the sheet; Gate B3 is armed on the sheet itself
+(`likeness_ref=reference_path`). No photo → text path, byte-for-byte unchanged.
 
 **Fallback subject descriptor:** if `subject_description` is empty, uses
 `cast.subject_descriptor(frame, narrator_description)` — never a hardcoded sample name.
@@ -966,7 +1047,16 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/products` | GET/POST | List products / register a product (name + specs JSON + reference photo) |
 | `/api/products/<id>` | DELETE | Delete a product |
 | `/api/studio/plan` | POST | `shot_planner.plan(brief, scope, talent, product)` → editable `frames[]` |
-| `/canvas` | GET | Director Canvas board page (`canvas.html` + `canvas.js`) |
+| `/shoot` | GET | **S34 Product Photoshoot** page (`shoot.html`, standalone like canvas — not the wizard shell). Folder-driven: scan an inbox, see which SKU folders the ledger still owes, run them, review frames grouped by destination (`d2c` / `marketplace`) with parked frames ringed amber. |
+| `/api/shoot/scan` | POST | `{inbox}` → SKU folders + per-folder `pending` (ledger truth, so the page and the CLI agree) + cost estimate + pool size. `@safe_paths("inbox")`. |
+| `/api/shoot/run` | POST | `{inbox, sku, force?, cap?}` → shoots ONE SKU, returns its manifest. **One SKU per request on purpose**: the browser drives the loop, so there is no background job state, no polling and nothing to lose when the page closes — the ledger already records what finished. `sku` is validated as a folder NAME (no separators) on top of `@safe_paths("inbox")`. |
+| `/api/shoot/retry` | POST | `{inbox, sku, shot, model?, cap?}` → re-shoots ONE frame of an already-shot SKU, reusing its stored campaign decisions and its existing anchor. Redoing a whole SKU to fix one parked frame throws away five good generations, which is why this is separate from `/run`. **Retrying `front_2` is refused** — every other frame is conditioned on the anchor, so replacing it silently orphans the set. Derived frames (`front_1`, `detail`, `detail2`) re-crop for free. |
+| `/api/shoot/campaign` | POST | `{inbox, sku}` → the stored `_campaign.json`, so results survive a reload. |
+| `/api/shoot/personas/mint` | POST | `{brand?, count?}` → mints the casting pool (spends). |
+| `/api/shoot/personas/cull` | POST | `{brand?, ids[], dropped}` → drop/restore faces. A dropped face is never cast again. |
+| `/api/shoot/status` | GET | The `shoot_jobs` ledger + total spend. |
+| `/api/shoot/personas` | GET | The brand's casting pool for the review strip. |
+| `/canvas` | GET | Director Canvas page (`canvas.html` + `canvas.js`). **S33 unified canvas (2026-07-19):** page 2 is ONE pannable/zoomable surface — nine absolutely-positioned zones (`#zone-script/cast/loc/board/sketch/frames/video/audio/out`) on `#cv-world`, moved by a single transform (`cvApply`: translate+scale; drag/wheel pan, ⌘-wheel zoom-to-cursor, ⇧1 fit, jumplist `cvGlideTo` — an oversized zone glides to its HEAD at readable scale instead of confetti-fit). `cvLayout()` is a deterministic measure-and-place pass run at the end of every `render()` (zones are content-sized; the film column 04–08 stacks at one X so shot columns align — lanes share the board's 232+26px pitch). **Stage lanes (S33.2):** `renderLanes(board)` (called from `renderBoard`) fills `#lane-sketch/frames/video/audio`; lane cells carry `data-frame` + `.lane-cell`, route through `handleBoardOrInspectorClick` → the SAME Shot Inspector (now a docked overlay: `#insp-close` / Esc via `closeInspector`); `.video-poster` markup reused so hover-play works unchanged; selection ring syncs across board/timeline/lanes (`selectFrame`). Audio Setup controls moved statically from the settings drawer into `#zone-audio` (ids unchanged). The S31 stage view (`#stage-view`, `sv-*`) and the 📄 Script/board toggle were DELETED — the script panel renders permanently in zone 01 on every `render()` (skipped while focused or during T13 lang review, which now glides to the zone instead of hiding the board). Governance chrome (stage bar, cost banner, timeline, chat) stays docked, never pannable. **Docked action bar (2026-07-20):** `#settings-gear` (relabeled "⚙ Audio & Captions") + `#render-btn` moved out of the crowded `.cv-top` top-right into `#cv-dock` — absolute bottom-center of `.cv-canvas` (z-32, clear of the left nav-hint and right inspector), `:has()`-hidden when both buttons are hidden, in the `CV_NO_PAN` list; ids unchanged so all canvas.js show/disable/relabel ("Render reel"→"Final Cut") logic is untouched. |
 | `/api/canvas/plan` | POST | `canvas_run.new_canvas(brief, …, story_type)` → new canvas (runs free Script stage); returns `run_id` + `public_state`. **`story_type`** = `real` (HOB — match/passthrough real media) \| `ai` (fiction — everything generated; UI hides the real-media folder tools, characters defined on the sheet). A mode flag into the shared engine (no fork); invalid → `real`. **Characters-first (ALL story types — auto-fill slice 1, was AI-only):** Plan runs `derive_characters` (free cast detection; tags `frames[].speaker_id`) so the sheet is populated before any spend — for real stories it's the anchor list for photo matching + consent; the board auto-renders it, a bulk "🎨 Generate all faces" drives `/character-portrait` per unlocked character (sequential, spend-gated each), and the Key Frames Generate button soft-warns (`confirm`) when non-narrator characters lack `ref_path` — warn-not-block, narrator excluded (voice-only). **Slideshow-risk gate (Item 8):** `plan_qc.score_plan(frames)` — 6 structural dimensions (repetition, motion/duration monotony, static ratio, caption wall, coverage), advisory only: warnings appended to `plan_review` as "Slideshow risk — …" with fixes, `{total, risk}` exposed as `public_state.plan_qc`, high risk also ledgered (`degradation.report("plan","warn",…)`). **Auto-fill carve-outs (owner):** music, per-shot image assignment, and per-shot emotion are never auto-filled; `plan_suggestions` now also returns a reel-level `mood`, consumed by the canvas `#mood` input (✨-fills only while empty; saved via `/settings` `mood` key, capped 60 chars, absent-key never clobbers; exposed as `public_state.mood`; threads into re-plans + the render payload). |
 | `/api/canvas/<run_id>/state` | GET | Current board state (`canvas_run.public_state`) |
 | `/api/canvas/<run_id>/advance` | POST (operator) | Run a stage. Free stages execute in-process; **paid stages return a per-stage cost + `check_spend_cap` result *before* any spend** (the anti-wallet-drain), then dispatch to the render pipeline. 409 if the stage is locked |
@@ -999,7 +1089,7 @@ sticky action bar (`#preview-btn`, `#run-btn`, `#cost-chip`), preview panel (pho
 | `/api/canvas/<run_id>/fidelity` | POST (operator) | Set a shot's rung. **Restore/Re-create are dispatched by the UI to the verified `/restore`+`/recreate` routes** (reused untouched); this route handles **Passthrough** (`canvas_run.revert_passthrough`) — drop the override and restore the shot to its **untouched original** real media (preserved as `orig_visual`). Cascade-invalidates downstream |
 | `/api/canvas/<run_id>/characters` | POST (operator) | **Cast detection (Characters stage):** `canvas_run.derive_characters` runs `cast.detect_cast(frames)` to surface the REAL people in the story (narrator + named speakers), stored on `state["characters"]` (`{id,name,gender,age,consent,ref_path}`). Idempotent; safe to re-run. Returns `public_state.characters` |
 | `/api/canvas/<run_id>/character` | POST (operator) | Update one **story-level character** (`canvas_run.set_character`): real reference photo + consent AND appearance **`attrs`** (role/name/gender/age/skin_tone/hair/clothing/source). Propagates to every shot whose `visual_subject_id==char_id` (falls back to `speaker_id` for older frames — see §6 speaker_id vs. visual_subject_id): `character_ref_path` (face identity) + a `character_appearance` clause (`_character_appearance`) that `image_generator.generate_contextual_image` injects into the prompt — so the character's look stays consistent across the reel, including a narrated-about (rarely-quoted) protagonist. Per-frame overrides still win. Path validated `_path_allowed`. |
-| `/api/canvas/<run_id>/character-portrait` | POST (operator) | **P1 character-sheet-first:** generate a CANONICAL portrait for one character from its sheet attributes + the world style (`image_generator.generate_character_portrait`, face-strong model + QC gates), set it as that character's `ref_path`, and link it to their shots (`set_character`) so every shot conditions on the SAME face via the pluggable identity path. AI/fiction characters (generated → no real-person consent gate). Spend-gated. |
+| `/api/canvas/<run_id>/character-portrait` | POST (operator) | **P1 character-sheet-first:** generate a CANONICAL portrait for one character from its sheet attributes + the world style (`image_generator.generate_character_portrait`, face-strong model + QC gates), set it as that character's `ref_path`, and link it to their shots (`set_character`) so every shot conditions on the SAME face via the pluggable identity path. AI/fiction characters (generated → no real-person consent gate). Spend-gated. **Likeness chain (2026-07-20):** if the character already holds a REAL photo (any `ref_path`/`ref_full_path` that isn't a generated `charref_*` sheet — the uploaded ref or its face crop), the route passes it as `reference_path` → the sheet is derived FROM the person's face (identity path + Gate B3), and the real photo is preserved on `ref_full_path` after `ref_path` becomes the `charref_*` sheet, so "↻ New face" re-rolls keep the identity source. |
 | `/api/canvas/<run_id>/locations` | POST (operator) | **S30 Phase 1 location anchoring (the S28 "character sheet for places"):** `canvas_run.derive_locations` — one reasoning-tier LLM pass (`_LOCATION_SCHEMA`) → the story's distinct places at slugline granularity (deduped, 1–4 typical), stored on `state["locations"]` (`{id,label,description,time_of_day,plate_path,source}`) and tagging `frames[].location_id` (the place-level `speaker_id`). Re-derive merges operator work by id. Degrades to a **no-op** (frames unanchored + `degradation.report("plan","info",…)`). Free. |
 | `/api/canvas/<run_id>/location` | POST (operator) | Update one location's `attrs` (label/description/time_of_day) — `canvas_run.set_location` re-propagates the **invariant clause** (`_location_clause`, T11 phrasing: "this EXACT location… same geometry, same light direction") onto every frame tagged with it as `frames[].location_clause`; `image_generator.generate_contextual_image` appends it to the prompt (part of the cache-hash → edits regenerate stills). Also stamps `frames[].location_ref_path` (the plate) — **reserved for the D5 multi-ref follow-up**; the FACE ref wins today's single-ref edit path (identity beats place, S19/S20). Cascade-invalidates keyframes. |
 | `/api/canvas/<run_id>/location-plate` | POST (operator) | Generate the CANONICAL plate for one location (`image_generator.generate_location_plate`) — **plate discipline** (teardown §10.4 item 5): EMPTY environment, no people, negative space at center for characters to occupy, lighting headroom. Checked generation path on purpose (Gate B passes no-face images by design; Gate B2 catches baked-in text/era drift). Applies just-typed `attrs` first (same lesson as the portrait route); `variant` obeys rule 12 (0 = reuse, else fresh). Cache: `locations/locplate_<loc>_<md5(model|loc_v<variant>|prompt)>.jpg`. Spend-gated at `pricing.image_cost("flux")`. |

@@ -5,6 +5,36 @@
 
 ---
 
+
+## Product Photoshoot (`/shoot`)
+
+Turns a folder of SKU photos into finished campaign images. Point it at a folder that has one
+subfolder per SKU with the product photos inside — a mounted Google Drive folder behaves
+exactly like a local one.
+
+1. **Scan** — shows how many SKUs there are, how many still need shooting, and what it will cost.
+   Already-finished SKUs are skipped, so re-scanning a big folder is free.
+2. **Generate** — each SKU produces seven images: six for your own site (front crop, full length,
+   back, side, lifestyle, detail) plus a packshot for marketplace listings.
+3. **Review** — frames appear grouped by destination. Anything ringed amber failed the quality
+   check twice and is **parked for review**; the rest still ship.
+
+Results are written back into `<SKU>/photoshoot/d2c/` and `.../marketplace/`, alongside a
+`_campaign.json` recording the model, location, styling, quality scores and cost.
+
+**Retry a single frame** — every image has a Retry button. It re-shoots just that frame, keeping
+the same model, location and styling as the rest of the set, and swaps it in place. Redoing the
+whole SKU to fix one image would waste the five that were fine. The full-length front shot is the
+exception: everything else is built from it, so retrying it means redoing the SKU.
+
+**Model and cost** — pick Nano Banana ($0.06/frame) or Seedream ($0.01/frame) before generating;
+the estimate updates as you switch. The per-SKU cap stops runaway retries.
+
+**Casting pool** — the brand's models are generated once and reused. Each SKU is cast from the
+pool by product type (an athletic model for activewear), and the same SKU always gets the same
+face, so a re-shoot next season matches.
+
+
 ## Table of Contents
 
 0. [What This App Does (Plain English)](#0-what-this-app-does-plain-english)
@@ -235,9 +265,25 @@ the on-screen text.
 
 ## 3e. Director Canvas (`/canvas`) — *work in progress*
 
-A **stage-gated board** that builds your reel one approved step at a time —
-**Script → Storyboard → Key Frames → Audio → Video → Final Cut**. Open it from the
-**Canvas** link in the header.
+One **infinite canvas** (S33): after you Plan, the whole production lives on a single
+pannable, zoomable surface — nine workspaces laid out left→right:
+**01 Script · 02 Cast · 03 Locations · 04 Storyboard · 05 Sketches · 06 Key Frames ·
+07 Video · 08 Audio · 09 Output**. The film column (04–08) shares one column grid, so
+shot N reads as one vertical scan — breakdown → sketch → still → clip → sound. The
+**pipeline bar, cost banner, timeline and command box stay docked** at the bottom, so
+spend truth and stage controls can never be panned out of view. It still builds the
+reel one approved stage at a time — **Script → Storyboard → Key Frames → Audio →
+Video → Final Cut**. Open it from the **Canvas** link in the header.
+
+**Getting around:** the **workspace pills** in the top bar glide you to any zone (an
+oversized zone — a 30-shot board, a long script — lands on its *head* at readable zoom;
+wheel-pan through the rest). **Drag** pans, **wheel** pans, **⌘/Ctrl + wheel** zooms to
+the cursor, **⇧1** fits everything, and **Esc** closes the **Shot Inspector**, which
+slides in as an overlay when you click any shot — on the board, the timeline strip, or
+any stage lane. The − / ＋ / ⤢ zoomer sits in the top bar. The two buttons that
+matter most — **⚙ Audio & Captions** (the settings drawer) and **🎬 Render reel** —
+sit in a **docked bar at the bottom-center of the board**, always visible while you
+pan (they used to hide in the crowded top-right corner).
 
 **Why it's different from the wizard:**
 - **You approve each stage before the next one runs.** Nothing paid happens until
@@ -271,10 +317,18 @@ A **stage-gated board** that builds your reel one approved step at a time —
   (e.g. *epic Indian miniature painting*, *anime*, *3D Pixar*) and a **setting** (e.g. *ancient
   Ayodhya palace + forest*) — click **Apply world** and it's woven into *every* shot so the
   reel looks unified and the world stays consistent. Especially important for AI/fiction.
-- **📄 Script — review your story first (free).** After planning, click **📄 Script** to read
-  the whole story as narration, shot by shot, and **edit any line inline** — the cheap review
-  step before you spend anything on matching or generation. **📄 Back to board** returns to the
-  shot cards. (The captions *are* the script, so edits here update the shots directly.)
+- **📄 The Script zone (01) — your story is always on the canvas (free).** The film, line by
+  line, lives in the first workspace — read it top to bottom and **edit any line inline**,
+  before you spend anything on matching or generation. The captions *are* the script, so
+  edits save straight to the shots. (There's no view toggle any more — jump there with the
+  **Script** pill.)
+- **Stage lanes (05–08) — every pipeline layer gets its own row.** Under the board, each
+  stage's artifacts sit in an aligned lane: **Sketches** (the pencil panels), **Key Frames**
+  (each shot's anchor still, with its REAL/AI badge), **Video** (hover a clip to play it),
+  and **Audio** (a per-beat strip of who carries each line — 🎬 dialogue · 🎙 narration ·
+  🌫 silent — beside the reel's **Audio Setup**, which moved here from the settings drawer).
+  Click any lane cell and the same **Shot Inspector** opens on that shot; the selection ring
+  follows you across the board, the lanes and the timeline.
 - **Real story or AI story?** At the top, pick **📷 Real story** (your real photos/video —
   the HOB authentic path) or **🎭 AI story (fiction)** for a fully-generated tale (mythology,
   a parable, any invented characters — e.g. Ramayana). In AI story mode the real-media tools
@@ -295,13 +349,12 @@ A **stage-gated board** that builds your reel one approved step at a time —
   **opt-in per shot**, never automatic. For safety it **refuses any footage with a person
   in it** — your subjects stay real (use Enhance for those). Re-created scenes are clearly
   labelled **AI · from real**.
-- **Storyboard view (✏️).** Click **✏️ Storyboard** to flip the board into **hand-drawn
-  pencil-sketch panels** — one comic-board panel per shot (graphite sketch of the framing +
-  blocking, with blue motion arrows for the camera move). It's a **planning view** — loose
-  concept sketches, *not* the final render and *not* a likeness of anyone — for seeing the
-  whole reel's shot flow at a glance. First click renders the panels (cheap, a few seconds
-  each, in parallel); after that it's an instant toggle (they're cached). Click again to flip
-  back to your photos/AI shots.
+- **Pencil sketches (the 05 · Sketches lane, ✏️).** The **hand-drawn storyboard panels** —
+  one comic-board panel per shot (graphite sketch of framing + blocking, with blue motion
+  arrows for the camera move) — live in their own lane under the board. Click **✏️ Sketch
+  missing panels** to draw any that don't exist yet (cheap, a few seconds each, in
+  parallel, cached). They're **planning artifacts** — loose concept sketches, *not* the
+  final render and *not* a likeness of anyone — for seeing the reel's shot flow at a glance.
 - **Upscale a shot (⬆, final-render quality).** Hover a shot with a still and click **⬆** to
   generatively upscale it. It's **routed for safety**: a **real** shot uses a *faithful*
   super-resolution that sharpens without inventing detail — your subject's face stays exactly
@@ -343,6 +396,13 @@ A **stage-gated board** that builds your reel one approved step at a time —
   and click **🎨 Generate** — it creates one **canonical portrait** (in your chosen World
   style), and every shot of that character then reuses that exact face. This is how you keep
   *Rama looking like Rama* across a whole mythological reel.
+- **Generate keeps a real face real.** If the character already has a **real photo**
+  attached, **🎨 Generate** doesn't invent a face — it re-renders *that exact person* into
+  the clean canonical sheet (same face, flat light, full body), which conditions AI shots
+  far better than a candid photo. A **likeness check** then guards every AI shot of them:
+  the generated face is compared to the real photo and re-rolled if it isn't the same
+  person. Your original photo stays attached, so **↻ New face** re-derives from the real
+  face, not from the previous AI image.
 - **Location sheet (places kept consistent).** Click **🏞 Locations** — the board reads the
   story and lists its distinct **places** (e.g. *cave interior*, *chai stall at dawn*), the
   "character sheet for places." Edit each one's name/description/time-of-day, then
@@ -449,7 +509,8 @@ A **stage-gated board** that builds your reel one approved step at a time —
   change them. *(Font list shows installed fonts — Montserrat today; more are a deploy step.)*
 - **Edit any shot inline:** each card lets you tweak the **caption, camera move, emotion,
   camera angle,** and the image prompt — changes cascade so nothing stale ships.
-- **Render the reel** with the **🎬 Render reel** button (top bar). With a music bed it
+- **Render the reel** with the **🎬 Render reel** button (docked bar, bottom-center of
+  the board). With a music bed it
   **cuts on the beat** (hard cut on a beat, soft dissolve off it) instead of a uniform
   crossfade — so it reads as a film, not a slideshow. Even with no music, cuts follow a
   steady **tempo** (set by the mood); voiceover keeps gentle cuts so they don't fight
@@ -486,6 +547,14 @@ Studio mode** link in the header. See [docs/MODE3_PLAN.md](docs/MODE3_PLAN.md).
 - **Brief → shots** — pick a scope (*Commerce* for product/fashion/jewelry ads, or
   *General* for any idea), write a plain-language brief, and click **✨ Plan shots**.
   The AI drafts editable shot cards: on-screen line, camera move, and shot size.
+- **Write your script in Hindi — it just works (Hindi-first).** Author dialogue
+  directly in Devanagari — `यमराज (कठोर स्वर): "हनुमान।"` — and the compiler
+  attributes every line to the right character, exactly like English scripts
+  (Bengali and Punjabi scripts work too). The tool **detects the language from
+  your text** and automatically switches to the Devanagari caption font and the
+  **native Hindi voice table** (your ElevenLabs Hindi-verified voices; Sarvam's
+  native Indic voices take over automatically once a `SARVAM_API_KEY` is added).
+  Your explicit language choice always overrides detection.
 - **Faces must be locked before Key Frames spend.** If any on-screen character has
   no locked face (📎 photo or 🎨 generated), Key Frames now **refuses to generate**
   and names them — an unlocked face is how the same character used to come out

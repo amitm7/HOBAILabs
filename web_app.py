@@ -465,6 +465,142 @@ def canvas_page():
     return render_template("canvas.html")
 
 
+# ── S34 product photoshoot ──────────────────────────────────────────────────
+# Folder-driven by design: the operator picks an inbox, sees which SKUs still need
+# shooting, and runs them. Generation is ONE SKU PER REQUEST — the browser drives the
+# loop, so there is no background job state, no polling and no queue to get wrong, and
+# progress is just responses arriving. See docs/PRODUCT_SHOOT_PLAN.md §11.
+
+@app.route("/shoot")
+def shoot_page():
+    """Product photoshoot: SKU folders in, campaign images out."""
+    return render_template("shoot.html")
+
+
+@app.route("/api/shoot/scan", methods=["POST"])
+@auth.require_operator()
+@safe_paths("inbox")
+def api_shoot_scan(operator: str):
+    """List SKU folders under the inbox with their ledger status + a cost estimate."""
+    from agents import shoot
+    inbox = (request.json or {}).get("inbox", "").strip()
+    if not inbox:
+        return jsonify({"error": "inbox folder required"}), 400
+    skus = shoot.scan(inbox)
+    pending = [s for s in skus if s["pending"]]
+    per = shoot.price_per_frame()
+    return jsonify({
+        "inbox": inbox, "skus": skus,
+        "pending": len(pending), "done": len(skus) - len(pending),
+        # 7 frames, 5 of them paid (front_1 and detail are crops of front_2).
+        "estimate_usd": round(per * 5 * len(pending), 2),
+        "personas": len(shoot.personas()),
+    })
+
+
+@app.route("/api/shoot/run", methods=["POST"])
+@auth.require_operator()
+@safe_paths("inbox")
+def api_shoot_run(operator: str):
+    """Shoot ONE SKU. The browser calls this per SKU so progress needs no shared state."""
+    from agents import shoot
+    body = request.json or {}
+    inbox, sku = body.get("inbox", "").strip(), body.get("sku", "").strip()
+    if not inbox or not sku:
+        return jsonify({"error": "inbox and sku required"}), 400
+    if os.sep in sku or sku.startswith("."):        # sku is a folder NAME, never a path
+        return jsonify({"error": "invalid sku"}), 400
+    try:
+        model = body.get("model") or "nano_banana_edit"
+        if model not in ("nano_banana_edit", "seedream_edit", "flux_kontext"):
+            return jsonify({"error": "unknown model"}), 400
+        res = shoot.run_sku(inbox, sku, model=model,
+                            cap=float(body.get("cap") or 1.00),
+                            force=bool(body.get("force")))
+    except Exception as e:
+        return jsonify({"sku": sku, "status": "FAILED", "error": str(e)[:200],
+                        "frames": [], "cost_usd": 0.0})
+    return jsonify(res)
+
+
+@app.route("/api/shoot/retry", methods=["POST"])
+@auth.require_operator()
+@safe_paths("inbox")
+def api_shoot_retry(operator: str):
+    """Re-shoot ONE frame. Redoing a whole SKU to fix one parked frame wastes the five
+    good generations, which is why this exists separately from /run."""
+    from agents import shoot
+    b = request.json or {}
+    inbox, sku, shot = (b.get("inbox", "").strip(), b.get("sku", "").strip(),
+                        b.get("shot", "").strip())
+    if not (inbox and sku and shot):
+        return jsonify({"error": "inbox, sku and shot required"}), 400
+    if os.sep in sku or sku.startswith("."):
+        return jsonify({"error": "invalid sku"}), 400
+    try:
+        model = b.get("model") or "nano_banana_edit"
+        if model not in ("nano_banana_edit", "seedream_edit", "flux_kontext"):
+            return jsonify({"error": "unknown model"}), 400
+        return jsonify(shoot.retry_frame(inbox, sku, shot, model=model,
+                                         cap=float(b.get("cap") or 0.30)))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+@app.route("/api/shoot/campaign", methods=["POST"])
+@auth.require_operator()
+@safe_paths("inbox")
+def api_shoot_campaign(operator: str):
+    """The stored manifest for an already-shot SKU, so results survive a page reload."""
+    from agents import shoot
+    b = request.json or {}
+    sku = b.get("sku", "").strip()
+    if os.sep in sku or sku.startswith("."):
+        return jsonify({"error": "invalid sku"}), 400
+    return jsonify(shoot.campaign(b.get("inbox", "").strip(), sku))
+
+
+@app.route("/api/shoot/status")
+@auth.require_operator()
+def api_shoot_status(operator: str):
+    from agents import shoot
+    rows = shoot.status()
+    return jsonify({"jobs": rows, "total_usd": round(sum(r["cost_usd"] for r in rows), 2)})
+
+
+@app.route("/api/shoot/personas")
+@auth.require_operator()
+def api_shoot_personas(operator: str):
+    from agents import shoot
+    return jsonify({"personas": shoot.personas(request.args.get("brand", "default"))})
+
+
+@app.route("/api/shoot/personas/mint", methods=["POST"])
+@auth.require_operator()
+def api_shoot_personas_mint(operator: str):
+    """Mint the brand's casting pool. Spends money, so it is an explicit action."""
+    from agents import shoot
+    b = request.json or {}
+    try:
+        n = max(1, min(int(b.get("count") or 30), 50))
+        return jsonify(shoot.mint_personas(b.get("brand", "default"), n))
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@app.route("/api/shoot/personas/cull", methods=["POST"])
+@auth.require_operator()
+def api_shoot_personas_cull(operator: str):
+    """Drop or restore faces — the brand's one-time review of who represents it."""
+    from agents import shoot
+    b = request.json or {}
+    ids = [i for i in (b.get("ids") or []) if isinstance(i, str)]
+    if not ids:
+        return jsonify({"error": "ids required"}), 400
+    return jsonify(shoot.set_persona_dropped(b.get("brand", "default"), ids,
+                                             bool(b.get("dropped", True))))
+
+
 @app.route("/api/canvas/plan", methods=["POST"])
 @auth.require_operator()
 def api_canvas_plan(operator: str):
@@ -746,6 +882,25 @@ def api_canvas_asset(run_id: str, operator: str):
                     "canvas": canvas_run.public_state(state)})
 
 
+@app.route("/api/canvas/<run_id>/use-locked-face", methods=["POST"])
+@auth.require_operator()
+def api_canvas_use_locked_face(run_id: str, operator: str):
+    """One-click AI-likeness from the character's LOCKED face (no upload) — the
+    identity-preserving counterpart to /ai-source. Labeled + provenance-tracked
+    like any reference-conditioned generation."""
+    from agents import canvas_run
+    state = _canvas_load(run_id)
+    if state is None:
+        return jsonify({"error": "Unknown canvas"}), 404
+    fid = (request.json or {}).get("frame_id", "")
+    try:
+        state = canvas_run.use_locked_face(state, fid)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _canvas_save(run_id, state)
+    return jsonify({"frame_id": fid, "canvas": canvas_run.public_state(state)})
+
+
 @app.route("/api/canvas/<run_id>/ai-source", methods=["POST"])
 @auth.require_operator()
 def api_canvas_ai_source(run_id: str, operator: str):
@@ -871,6 +1026,12 @@ def _canvas_render_data(state: dict, render_id: str, operator: str) -> dict:
         # orientation, so this is pure surfacing.
         "caption_style": {**_CANVAS_CAPTION_DEFAULT, **(state.get("caption_style") or {})},
         "orientation": state.get("orientation") or "portrait",
+        # Sketch-as-composition (2026-07-20, probe-verified): once the operator
+        # APPROVES the storyboard, each sketch becomes a BINDING composition
+        # reference for its still — approval means something. Unapproved → the
+        # still composes freely (today's behaviour).
+        "sketch_composition": state.get("stages", {}).get("storyboard", {})
+                                   .get("status") == "approved",
         "ip": state.get("ip", ""),                              # HOB IP watermark (both modes)
         "transition": state.get("transition") or "crossfade",   # crossfade | cut | …
         "session_id": render_id, "operator_id": operator,
@@ -963,6 +1124,16 @@ def api_canvas_character_portrait(run_id: str, operator: str):
         variant = 0
     appearance = canvas_run._character_appearance(char) or (char.get("name") or char.get("label") or "a person")
     world_clause = canvas_run._world_clause(state.get("world") or {})
+    # Likeness chain (2026-07-20): when the character already has a REAL photo (an
+    # uploaded ref / face crop — anything that isn't a generated charref_* sheet),
+    # derive the canonical portrait FROM it via the identity path, so the sheet
+    # keeps the person's actual face instead of inventing one from text.
+    real_ref = ""
+    for cand in (char.get("ref_path"), char.get("ref_full_path")):
+        if cand and os.path.exists(cand) \
+                and not os.path.basename(cand).startswith("charref_"):
+            real_ref = cand
+            break
     usd = pricing.image_cost("flux")
     one = {"mode": "story", "quality": state.get("quality", "dev"),
            "frames": [{"frame_id": f"char_{char_id}"}], "session_id": run_id, "operator_id": operator}
@@ -973,7 +1144,7 @@ def api_canvas_character_portrait(run_id: str, operator: str):
     try:
         portrait = image_generator.generate_character_portrait(
             appearance, out_dir, world_clause=world_clause, char_id=char_id,
-            variant=variant)
+            variant=variant, reference_path=real_ref)
         governance.release_reservation(one, run_id=run_id, reason="canvas_char_portrait_done")
         governance.record_cost_event(governance.project_key(one), item="canvas_char_portrait",
                                      usd=usd, run_id=run_id, event_type="estimate")
@@ -986,7 +1157,12 @@ def api_canvas_character_portrait(run_id: str, operator: str):
     char["source"] = "ai"
     # Anchor the generated portrait as this character's reference (+ auto-consent: it's a
     # generated character, not a real person). set_character links it to their shots.
-    state = canvas_run.set_character(state, char_id, ref_path=portrait, consent=True)
+    # When the sheet was derived FROM a real photo, keep that photo on ref_full_path —
+    # the durable identity source for later re-rolls (else it's lost once ref_path
+    # becomes the charref_* sheet).
+    extra = {"ref_full_path": real_ref} if real_ref else {}
+    state = canvas_run.set_character(state, char_id, ref_path=portrait, consent=True,
+                                     attrs=extra)
     _canvas_save(run_id, state)
     return jsonify({"char_id": char_id, "portrait": f"/media?path={portrait}",
                     "canvas": canvas_run.public_state(state)})
@@ -1072,6 +1248,7 @@ def api_canvas_keyframes(run_id: str, operator: str):
     spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
     if spend_missing:
         return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
+    data["_reserved_run"] = render_id   # T1.1: the executor releases this hold on completion
     run_dir = RUNS_DIR / render_id
     run_dir.mkdir(parents=True, exist_ok=True)
     with _runs_lock:
@@ -1536,6 +1713,30 @@ def api_canvas_set_character(run_id: str, operator: str):
     if ref_path and not _path_allowed(ref_path):
         return jsonify({"error": "Reference path not allowed"}), 400
     attrs = body.get("attrs") if isinstance(body.get("attrs"), dict) else None
+    # Face extraction (2026-07-20): an OPERATOR photo often shows several people
+    # (mom + baby) — attaching it whole gives the identity model an ambiguous
+    # "whose face?" signal. Crop the right person's face region as the effective
+    # ref (baby/child characters take the SMALLEST face, adults the largest);
+    # the original is kept on the character as ref_full_path. Generated canonical
+    # portraits (charref_*) are skipped — they're clean full-body sheets by design.
+    if ref_path and not os.path.basename(ref_path).startswith("charref_"):
+        try:
+            from agents.image_matcher import extract_face_ref
+            char = next((c for c in state.get("characters", [])
+                         if c.get("id") == char_id), {}) or {}
+            hay = " ".join(str(char.get(k, "")) for k in ("id", "name", "age",
+                                                          "age_bracket", "role")).lower()
+            prefer = "smallest" if any(w in hay for w in
+                                       ("baby", "child", "kid", "infant",
+                                        "बच्च", "शिशु")) else "largest"
+            crop = extract_face_ref(ref_path, f"{os.path.splitext(ref_path)[0]}_face.jpg",
+                                    prefer=prefer)
+            if crop:
+                if attrs is None:
+                    attrs = {}
+                ref_path, attrs = crop, {**attrs, "ref_full_path": body.get("ref_path")}
+        except Exception as e:
+            print(f"[Characters] face extraction skipped ({e})")
     try:
         state = canvas_run.set_character(state, char_id, ref_path=ref_path,
                                          consent=body.get("consent"), attrs=attrs)
@@ -1775,6 +1976,7 @@ def api_canvas_video(run_id: str, operator: str):
     spend_missing = governance.reserve_spend(data, _estimate_payload_cost(data), run_id=render_id)
     if spend_missing:
         return jsonify({"error": "Spend cap exceeded", "missing": spend_missing}), 400
+    data["_reserved_run"] = render_id   # T1.1: released at the stop_after='clips' gate
     run_dir = RUNS_DIR / render_id
     run_dir.mkdir(parents=True, exist_ok=True)
     with _runs_lock:
@@ -3439,7 +3641,8 @@ def redo_still():
         frames = _generate_stills(frames, assets_dir, subject_name, subject_desc, mood,
                                   cost_tier=("draft" if quality == "dev" else "premium"),
                                   face_ref=bool(data.get("face_ref")), brand=brand,
-                                  force_regen_ids={frame_payload["frame_id"]})
+                                  force_regen_ids={frame_payload["frame_id"]},
+                                  sketch_composition=bool(data.get("sketch_composition")))
     except Exception as e:
         try:
             from agents import governance
@@ -3681,11 +3884,16 @@ def _build_frames_from_payload(data: dict, max_frame_dur: float) -> list[dict]:
             # path until 2026-07-19 (canvas plates never conditioned renders).
             "location_clause":   (fd.get("location_clause") or "").strip(),
             "location_ref_path": (fd.get("location_ref_path") or "").strip(),
+            "storyboard_art":    (fd.get("storyboard_art") or "").strip(),
             "character_appearance": (fd.get("character_appearance") or "").strip(),
             "audio_intent":      (fd.get("audio_intent") or "").strip(),
             "voice_direction":   (fd.get("voice_direction") or "").strip(),
             "negative_prompt": (fd.get("negative_prompt") or "").strip(),
             "continuity_lock": (fd.get("continuity_lock") or "").strip(),
+            # T14 overlays (speaker chips / logo end-card / insets) — Final Cut reads
+            # f["overlays"] off the REBUILT frames (line ~4578), so this MUST ride the
+            # rebuild or overlays are silently dropped from the finished reel (T3.1).
+            "overlays": fd.get("overlays") or [],
         })
 
     # Resolve speaker_id → gender/age/label. Prefer the cast carried from the
@@ -3707,7 +3915,8 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                      subject_description: str, mood: str,
                      cost_tier: str = "draft", face_ref: bool = False,
                      brand: dict | None = None,
-                     force_regen_ids: set | None = None) -> list[dict]:
+                     force_regen_ids: set | None = None,
+                     sketch_composition: bool = False) -> list[dict]:
     """
     Scene intelligence + image generation + edit pass — everything BEFORE animation.
     Mutates frames to set visual_path to the final still for each frame.
@@ -3844,8 +4053,12 @@ def _generate_stills(frames: list[dict], assets_dir: str, subject_name: str,
                       f"({os.path.basename(talent_ref or char_ref)}) — {fallback}")
             ref = first_portrait_by_speaker.get(sid, "") if face_ref else ""
         if ps == "ai_portrait":
+            # Approved storyboard ⇒ the sketch BINDS this still's composition
+            # (probe-verified: framing transfers, zero pencil bleed).
+            sk = (f.get("storyboard_art") or "") if sketch_composition else ""
             f["visual_path"] = generate_contextual_image(f, assets_dir, model_id=mid,
-                                                         reference_path=ref)
+                                                         reference_path=ref,
+                                                         sketch_path=sk)
             first_portrait_by_speaker.setdefault(sid, f["visual_path"])
         elif ps == "ai_symbolic":
             f["visual_path"] = generate_symbolic_image(f, assets_dir, model_id=mid)
@@ -4149,6 +4362,14 @@ def _execute_preview(run_id: str, data: dict, run_dir: Path):
         _finish("error")
     finally:
         _thread_run.run_id = None   # pooled threads are reused — don't leak the binding
+        reserved = data.get("_reserved_run")   # T1.1: keyframes reserved a hold; release it
+        if reserved:                            # (else it leaks forever and blocks Final Cut)
+            try:
+                from agents import governance
+                governance.release_reservation(data, run_id=reserved,
+                                               reason="canvas_keyframes_done")
+            except Exception as e:
+                print(f"[Governance] keyframes reservation release skipped ({e})")
         try:   # T1: persist this stage's degradation ledger on the canvas
             events = degradation.drain(run_id)
             cid = data.get("canvas_run_id", "")
@@ -4173,7 +4394,8 @@ def _preview_inner(run_id: str, data: dict, run_dir: Path):
     assets_dir = str(run_dir / "assets")
     brand = data.get("brand") if data.get("mode") == "brand" else None
     frames = _generate_stills(frames, assets_dir, subject_name, subject_desc, mood,
-                              face_ref=bool(data.get("face_ref")), brand=brand)
+                              face_ref=bool(data.get("face_ref")), brand=brand,
+                              sketch_composition=bool(data.get("sketch_composition")))
 
     _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v", ".webm"}
     stills = []
@@ -4213,6 +4435,20 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
     global_img_model = (data.get("image_model", "") or "").strip()
     global_vid_model = (data.get("video_model", "") or "").strip()
     caption_style = data.get("caption_style", {})
+    # Hindi-first (detect→declare, 2026-07-19): a story AUTHORED in an Indic
+    # script previously rendered with NO language flag — captions burned without
+    # Devanagari glyphs (tofu) and voices never reached the native-Hindi table.
+    # Detection fills the flag only when the operator didn't set one.
+    if not data.get("language"):
+        try:
+            from agents.languages import detect_language
+            _det = detect_language([f.get("caption", "") for f in data.get("frames", [])])
+            if _det:
+                data["language"] = _det
+                print(f"[Pipeline] Authored-language detected: {_det} — native "
+                      f"captions font + {_det} voice table engaged")
+        except Exception as e:
+            print(f"[Pipeline] language detection skipped ({e})")
     # T13: the render language rides caption_style so the burner picks a font with
     # the right glyphs (Devanagari/Gurmukhi/Bengali → bundled Noto Serif).
     if data.get("language") and data["language"] != "en":
@@ -4245,7 +4481,8 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
     frames = _generate_stills(frames, assets_dir, subject_name, subject_description,
                               mood, cost_tier=cost_tier,
                               face_ref=bool(data.get("face_ref")),
-                              brand=brand or None)
+                              brand=brand or None,
+                              sketch_composition=bool(data.get("sketch_composition")))
 
     # ── Lip sync pass (between edit and build_clips) ────────────────────────
     clip_temp = tempfile.mkdtemp(prefix="hob_clips_")
@@ -4314,6 +4551,12 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
                 # clip directly — threaded so clip_builder can pass them.
                 "character_ref_path": f.get("character_ref_path", ""),
                 "location_ref_path":  f.get("location_ref_path", ""),
+                # Authored [Sound:] cue (compile mode) — drives per-shot SFX for
+                # clips without native audio; the ambience stem mixes it under VO.
+                "audio_intent":      f.get("audio_intent", ""),
+                # r2v scene prompt: reference-to-video generates the WHOLE scene,
+                # so it needs the shot's authored ACTION, not a camera micro-cue.
+                "director_note":     f.get("director_note", ""),
                 # Router picks the video model per shot (cost-tier aware), unless
                 # the approval gate forced this frame to Ken Burns.
                 "model_id":          _video_model_for(f),
@@ -4359,7 +4602,35 @@ def _run_inner(run_id: str, data: dict, run_dir: Path):
             print(f"[Pipeline] Video stage: {len(clips)} clips built — stopping before "
                   f"assembly (approve Video, then run Final Cut).")
             shutil.rmtree(clip_temp, ignore_errors=True)
+            if data.get("_reserved_run"):   # T1.1: release the video-stage hold on the
+                try:                         # early return, else it blocks Final Cut. No
+                    from agents import governance   # cost record here — Final Cut's own
+                    governance.release_reservation(  # render_estimate is the single ledger
+                        data, run_id=data["_reserved_run"], reason="video_stage_done")
+                except Exception as e:
+                    print(f"[Governance] video-stage reservation release skipped ({e})")
             return
+
+        # S30 SFX wiring (2026-07-19): an authored [Sound:] cue becomes a per-shot
+        # SFX track via mmaudio (video→audio, event-synced by construction) — but
+        # ONLY for clips WITHOUT native audio (r2v clips carry their own; never
+        # double-layer). Strictly best-effort + cached; the assembler's ambience
+        # stem mixes whatever exists under the VO/bed.
+        try:
+            from agents.assembler import _has_audio as _clip_has_audio
+            from agents import sfx as _sfx
+            for c in clips:
+                cue = (c.get("audio_intent") or "").strip()
+                cp = c.get("clip_path") or ""
+                if cue and cp and os.path.exists(cp) and not _clip_has_audio(cp):
+                    sdir = run_dir / "sfx"
+                    sdir.mkdir(parents=True, exist_ok=True)
+                    out = _sfx.generate_sfx(cp, cue, str(sdir / f"sfx_{c['segment_id']}.wav"))
+                    if out:
+                        c["ambience_path"] = out
+                        print(f"[SFX] {c['segment_id']}: [Sound: {cue[:40]}…] → ambience stem")
+        except Exception as e:
+            print(f"[SFX] pass skipped ({e})")
 
         # Beat-aware cutting (P1): for music-bed reels, derive per-junction
         # overlaps from the music's beats so cuts land ON the beat (punchy) instead

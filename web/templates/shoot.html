@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veristory.ai — Product Photoshoot</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  /* ══ S34 Product Photoshoot ═══════════════════════════════════════════════
+     Folder-driven, not a wizard: the operator points at an inbox, sees which SKUs
+     still need shooting, and runs them. Generation is one request per SKU, so
+     progress is simply responses arriving — no job state, no polling.
+     ═══════════════════════════════════════════════════════════════════════ */
+  body { margin: 0; background: var(--bg, #0e1013); color: var(--text, #e8eaed);
+         font-family: var(--font-sans, -apple-system, system-ui, sans-serif); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; display: grid; gap: 20px; }
+  a.back { color: var(--text-muted, #8b929c); text-decoration: none; font-size: 13px; }
+  a.back:hover { color: var(--accent, #3aa173); }
+  h1 { margin: 6px 0 4px; font-size: 26px; }
+  .muted { color: var(--text-muted, #8b929c); font-size: 13px; }
+
+  .card { background: var(--surface, #16181c); border: 1px solid var(--border, #2a2e35);
+          border-radius: 10px; padding: 20px; display: grid; gap: 14px; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row.between { justify-content: space-between; flex-wrap: wrap; }
+  .inline { display: flex; gap: 6px; align-items: center; font-size: 13px;
+            color: var(--text-muted, #8b929c); }
+  label.field { display: grid; gap: 6px; }
+  label.field > span { font-size: 13px; font-weight: 600; }
+  input[type=text] { flex: 1; padding: 9px 12px; border-radius: 7px;
+    border: 1px solid var(--border, #2a2e35); background: var(--bg, #0e1013);
+    color: inherit; font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; }
+  .btn { padding: 9px 16px; border-radius: 7px; border: 1px solid var(--border, #2a2e35);
+    background: var(--surface-2, #1d2026); color: inherit; cursor: pointer; font-size: 13px; }
+  .btn:hover:not([disabled]) { border-color: var(--accent, #3aa173); }
+  .btn.primary { background: var(--accent, #2e8b63); border-color: var(--accent, #2e8b63);
+    color: #fff; font-weight: 600; }
+  .btn.ghost { background: none; }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+  .stat-row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .stat { display: grid; gap: 2px; }
+  .stat b { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em;
+               color: var(--text-muted, #8b929c); }
+  .sku-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11.5px; padding: 3px 9px; border-radius: 20px;
+    border: 1px solid var(--border, #2a2e35); font-family: var(--font-mono, monospace); }
+  .chip.pending { border-color: var(--accent, #3aa173); color: var(--accent, #3aa173); }
+  .chip.done { color: var(--text-muted, #8b929c); }
+
+  .progress { height: 4px; background: var(--border, #2a2e35); border-radius: 3px; overflow: hidden; }
+  .progress .bar { height: 100%; width: 0; background: var(--accent, #3aa173); transition: width .3s; }
+
+  .results { display: grid; gap: 12px; }
+  .result { border: 1px solid var(--border, #2a2e35); border-radius: 8px; padding: 12px;
+            display: grid; gap: 10px; }
+  .result header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .result h3 { margin: 0; font-size: 14px; font-family: var(--font-mono, monospace); }
+  .tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+         padding: 2px 7px; border-radius: 3px; border: 1px solid currentColor; }
+  .tag.done { color: #3aa173; } .tag.review { color: #e0895f; }
+  .tag.failed, .tag.needs_input { color: #e05f5f; } .tag.skipped { color: #8b929c; }
+  .dest { font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+          color: var(--text-muted, #8b929c); margin-top: 2px; }
+  .frames { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .frame { flex: 0 0 auto; width: 116px; display: grid; gap: 4px; }
+  .frame img { width: 116px; aspect-ratio: 4/5; object-fit: cover; border-radius: 4px;
+    border: 1px solid var(--border, #2a2e35); background: var(--bg, #0e1013); display: block; }
+  .frame.parked img { border-color: #e0895f; }
+  .frame small { font-size: 10.5px; color: var(--text-muted, #8b929c);
+    font-family: var(--font-mono, monospace); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .why { font-size: 12px; color: #e0895f; }
+
+  .pool { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pool img { width: 62px; aspect-ratio: 4/5; object-fit: cover; border-radius: 4px;
+    border: 1px solid var(--border, #2a2e35); }
+  .pool img.dropped { opacity: .22; filter: grayscale(1); }
+  .pool figure { margin: 0; display: grid; gap: 3px; justify-items: center; cursor: pointer; }
+  .pool figcaption { font-size: 9.5px; color: var(--text-muted, #8b929c);
+                     font-family: var(--font-mono, monospace); }
+  select, input[type=number] { padding: 5px 8px; border-radius: 6px;
+    border: 1px solid var(--border, #2a2e35); background: var(--bg, #0e1013);
+    color: inherit; font-size: 12px; }
+  .frame .retry { font-size: 10.5px; padding: 2px 6px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--border, #2a2e35); background: none; color: inherit; width: 100%; }
+  .frame .retry:hover { border-color: var(--accent, #3aa173); }
+  .frame .retry[disabled] { opacity: .5; cursor: progress; }
+  table.hist { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.hist th { text-align: left; font-weight: 600; font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted, #8b929c);
+    padding: 6px 8px; border-bottom: 1px solid var(--border, #2a2e35); }
+  table.hist td { padding: 6px 8px; border-bottom: 1px solid var(--border, #2a2e35);
+    font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <a class="back" href="/canvas">← Veristory</a>
+    <h1>Product Photoshoot</h1>
+    <p class="muted">Point at a folder of SKUs. Each one gets a full campaign — six images for
+      your own site plus a packshot for marketplace listings — written back beside the originals.</p>
+  </div>
+
+  <section class="card">
+    <label class="field">
+      <span>SKU folder</span>
+      <div class="row">
+        <input type="text" id="inbox" placeholder="/Users/you/Desktop/PhotoShoot" autocomplete="off">
+        <button type="button" class="btn" id="scan-btn">Scan</button>
+      </div>
+      <small class="muted">One subfolder per SKU with its product photos inside. A mounted Drive
+        folder works exactly like a local one.</small>
+    </label>
+    <div id="scan-out" hidden style="display:grid;gap:10px"></div>
+  </section>
+
+  <section class="card" id="run-card" hidden>
+    <div class="row between">
+      <div>
+        <strong id="run-title">Ready</strong>
+        <div class="muted" id="run-sub"></div>
+      </div>
+      <div class="row">
+        <label class="inline">Model
+          <select id="model">
+            <option value="nano_banana_edit">Nano Banana — $0.06/frame</option>
+            <option value="seedream_edit">Seedream — $0.01/frame</option>
+          </select>
+        </label>
+        <label class="inline">Cap/SKU $<input type="number" id="cap" value="1.00" step="0.10"
+                                              min="0" style="width:64px"></label>
+        <label class="inline"><input type="checkbox" id="force"> Redo finished SKUs</label>
+        <button type="button" class="btn primary" id="run-btn">Generate</button>
+      </div>
+    </div>
+    <div class="progress" id="progress" hidden><div class="bar" id="bar"></div></div>
+    <div id="results" class="results"></div>
+  </section>
+
+  <section class="card">
+    <div class="row between">
+      <strong>Casting pool</strong>
+      <div class="row">
+        <span class="muted" id="pool-count"></span>
+        <button type="button" class="btn ghost" id="pool-btn">Show faces</button>
+        <button type="button" class="btn ghost" id="mint-btn">Mint pool…</button>
+      </div>
+    </div>
+    <p class="muted">The brand's models, minted once and reused. Every SKU is cast from these,
+      and the same SKU always gets the same face. <b>Click a face to drop it</b> — dropped faces
+      are never cast again. This review is worth doing once: every campaign inherits it.</p>
+    <div id="pool" class="pool"></div>
+  </section>
+
+  <section class="card">
+    <div class="row between">
+      <strong>History</strong>
+      <button type="button" class="btn ghost" id="hist-btn">Show</button>
+    </div>
+    <div id="hist"></div>
+  </section>
+
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const media = p => "/media?path=" + encodeURIComponent(p);
+  // The operator token is a cookie (agents/auth._extract_token), so same-origin fetch
+  // carries it automatically — no header plumbing needed here.
+  const post = (url, body) => fetch(url, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  }).then(r => r.json());
+  const get = url => fetch(url).then(r => r.json());
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+  let scan = null;
+  try { $("inbox").value = localStorage.getItem("hob_shoot_inbox") || ""; } catch (e) {}
+
+  const PRICE = {nano_banana_edit: 0.06, seedream_edit: 0.01, flux_kontext: 0.05};
+  const estimate = () => (scan ? scan.pending * 5 * (PRICE[$("model").value] || 0.06) : 0);
+  $("model").onchange = () => { if (scan) renderScan(); };
+
+  $("scan-btn").onclick = async () => {
+    const inbox = $("inbox").value.trim();
+    if (!inbox) return;
+    $("scan-btn").disabled = true;
+    try {
+      const r = await post("/api/shoot/scan", {inbox});
+      if (r.error) { alert(r.error); return; }
+      scan = r;
+      try { localStorage.setItem("hob_shoot_inbox", inbox); } catch (e) {}
+      renderScan();
+    } catch (e) {
+      alert("Scan failed: " + e);
+    } finally { $("scan-btn").disabled = false; }
+  };
+
+  function renderScan() {
+    const out = $("scan-out");
+    out.hidden = false;
+    out.innerHTML =
+      `<div class="stat-row">
+        <div class="stat"><b>${scan.skus.length}</b><span>SKU folders</span></div>
+        <div class="stat"><b>${scan.pending}</b><span>to shoot</span></div>
+        <div class="stat"><b>${scan.done}</b><span>already done</span></div>
+        <div class="stat"><b>$${estimate().toFixed(2)}</b><span>estimate</span></div>
+        <div class="stat"><b>${scan.personas}</b><span>faces in pool</span></div>
+      </div>
+      <div class="sku-list">${scan.skus.map(s =>
+        `<span class="chip ${s.pending ? "pending" : "done"}">${esc(s.sku)}</span>`).join("")}</div>`;
+    $("run-card").hidden = false;
+    $("run-title").textContent = scan.pending ? `${scan.pending} SKU(s) ready` : "Nothing pending";
+    $("run-sub").textContent = scan.pending
+      ? `About $${estimate().toFixed(2)} — seven images each, five of them generated.`
+      : "Tick “Redo finished SKUs” to shoot them again.";
+  }
+
+  $("run-btn").onclick = async () => {
+    if (!scan) return;
+    const force = $("force").checked;
+    const todo = scan.skus.filter(s => force || s.pending);
+    if (!todo.length) { alert("Nothing to do — tick “Redo finished SKUs” to re-shoot."); return; }
+
+    $("run-btn").disabled = true;
+    $("scan-btn").disabled = true;
+    $("progress").hidden = false;
+    $("results").innerHTML = "";
+    let spent = 0;
+
+    // One request per SKU. Progress is just responses arriving, so closing the page
+    // loses nothing — the ledger already records everything that finished.
+    for (let i = 0; i < todo.length; i++) {
+      $("run-title").textContent = `Shooting ${todo[i].sku} — ${i + 1} of ${todo.length}`;
+      let res;
+      try {
+        res = await post("/api/shoot/run", {
+          inbox: scan.inbox, sku: todo[i].sku, force,
+          model: $("model").value, cap: parseFloat($("cap").value) || 1.00});
+      } catch (e) {
+        res = {sku: todo[i].sku, status: "FAILED", error: String(e), frames: [], cost_usd: 0};
+      }
+      spent += res.cost_usd || 0;
+      $("results").insertAdjacentHTML("beforeend", resultHtml(res));
+      $("bar").style.width = ((i + 1) / todo.length * 100) + "%";
+      $("run-sub").textContent = `$${spent.toFixed(2)} spent`;
+    }
+    $("run-title").textContent = "Finished";
+    $("run-btn").disabled = false;
+    $("scan-btn").disabled = false;
+    try { scan = await post("/api/shoot/scan", {inbox: scan.inbox}); renderScan(); } catch (e) {}
+  };
+
+  function resultHtml(r) {
+    const st = String(r.status || "FAILED").toLowerCase();
+    const byDest = {};
+    (r.frames || []).filter(f => f.ok && f.path).forEach(f => {
+      const d = /\/marketplace\//.test(f.path) ? "marketplace" : "d2c";
+      (byDest[d] = byDest[d] || []).push(f);
+    });
+    const groups = Object.keys(byDest).sort().map(d =>
+      `<div><div class="dest">${d}</div><div class="frames">${byDest[d].map(f => {
+        const parked = f.status === "REVIEW";
+        const canRetry = f.shot !== "front_2";   // the anchor cannot be retried alone
+        return `<div class="frame ${parked ? "parked" : ""}" data-sku="${esc(r.sku)}" data-shot="${esc(f.shot)}">
+          <a href="${media(f.path)}" target="_blank" rel="noopener">
+            <img src="${media(f.path)}" alt="${esc(f.shot)}" loading="lazy"></a>
+          <small title="${esc(f.shot)}">${esc(f.shot)}${parked ? " ⚠" : ""}</small>
+          ${canRetry ? '<button type="button" class="retry">Retry</button>' : ""}</div>`;
+      }).join("")}</div></div>`).join("");
+    const why = (r.frames || []).filter(f => f.reject_reason)
+      .map(f => `${esc(f.shot)}: ${esc(f.reject_reason)}`).join(" · ");
+    return `<div class="result">
+      <header>
+        <h3>${esc(r.sku)}</h3>
+        <span class="tag ${st}">${esc(r.status)}</span>
+        <span class="muted">${esc(r.product || r.error || "")}</span>
+        <span style="flex:1"></span>
+        <span class="muted">$${(r.cost_usd || 0).toFixed(2)}</span>
+      </header>
+      ${groups}
+      ${why ? `<div class="why">Parked for review — ${why}</div>` : ""}
+    </div>`;
+  }
+
+  // Retry one frame, in place. Delegated so it works for results added later.
+  $("results").addEventListener("click", async ev => {
+    const btn = ev.target.closest(".retry");
+    if (!btn) return;
+    const cell = btn.closest(".frame");
+    const sku = cell.dataset.sku, shot = cell.dataset.shot;
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const r = await post("/api/shoot/retry",
+        {inbox: scan.inbox, sku, shot, model: $("model").value,
+         cap: parseFloat($("cap").value) || 0.30});
+      if (!r.ok) { alert(r.error || "Retry failed"); return; }
+      const img = cell.querySelector("img");
+      img.src = media(r.path) + "&t=" + Date.now();          // bust the cache
+      cell.classList.toggle("parked", r.status === "REVIEW");
+      cell.querySelector("small").textContent = shot + (r.status === "REVIEW" ? " ⚠" : "");
+      if (r.reject_reason) console.warn(shot, r.reject_reason);
+    } catch (e) { alert("Retry failed: " + e); }
+    finally { btn.disabled = false; btn.textContent = "Retry"; }
+  });
+
+  $("mint-btn").onclick = async () => {
+    const n = parseInt(prompt("How many faces to mint? (one-time, ~$0.06 each)", "30"), 10);
+    if (!n || n < 1) return;
+    if (!confirm(`Mint ${n} faces — about $${(n * 0.06).toFixed(2)}. This replaces the pool.`)) return;
+    $("mint-btn").disabled = true; $("mint-btn").textContent = "Minting…";
+    try {
+      const r = await post("/api/shoot/personas/mint", {count: n});
+      alert(r.error ? r.error : `Minted ${r.minted} faces.`);
+      $("pool-btn").click();
+    } finally { $("mint-btn").disabled = false; $("mint-btn").textContent = "Mint pool…"; }
+  };
+
+  $("hist-btn").onclick = async () => {
+    const d = await get("/api/shoot/status");
+    $("hist").innerHTML = !d.jobs.length ? '<span class="muted">Nothing shot yet.</span>' :
+      `<table class="hist"><tr><th>SKU</th><th>Status</th><th>Frames</th><th>Cost</th></tr>
+       ${d.jobs.map(j => `<tr><td>${esc(j.sku)}</td>
+         <td><span class="tag ${String(j.status).toLowerCase()}">${esc(j.status)}</span></td>
+         <td>${j.frames}</td><td>$${j.cost_usd.toFixed(2)}</td></tr>`).join("")}
+       <tr><td colspan="3"><b>Total</b></td><td><b>$${d.total_usd.toFixed(2)}</b></td></tr></table>`;
+  };
+
+  $("pool-btn").onclick = async () => {
+    try {
+      const d = await get("/api/shoot/personas");
+      const ps = d.personas || [];
+      $("pool-count").textContent = ps.length
+        ? `${ps.filter(p => !p.dropped).length} active of ${ps.length}` : "";
+      $("pool").innerHTML = ps.map(p =>
+        `<figure data-id="${esc(p.id)}" data-dropped="${p.dropped ? 1 : 0}"
+                 title="${esc(p.id)} · realism ${p.realism} · ${esc(p.build || "")} · ${esc((p.suits || []).join(", "))}">
+           <img src="${media(p.path)}" class="${p.dropped ? "dropped" : ""}" loading="lazy">
+           <figcaption>${esc(p.id)}</figcaption></figure>`
+      ).join("") || '<span class="muted">No pool yet — use “Mint pool…”.</span>';
+    } catch (e) { alert("Could not load the pool: " + e); }
+  };
+
+  // Click a face to drop it; click again to restore. The cull is the brand's review.
+  $("pool").addEventListener("click", async ev => {
+    const fig = ev.target.closest("figure");
+    if (!fig) return;
+    const dropped = fig.dataset.dropped === "1";
+    try {
+      await post("/api/shoot/personas/cull", {ids: [fig.dataset.id], dropped: !dropped});
+      $("pool-btn").click();
+    } catch (e) { alert("Could not update the pool: " + e); }
+  });
+})();
+</script>
+</body>
+</html>

@@ -37,3 +37,8 @@ surabhi_assets/
 .cursor/hooks.json
 .cursor/HOOKS-HARDENING.md
 # .agents/product-marketing.md is real, portable content - intentionally NOT ignored
+
+# S34 shoot tool outputs — generated images, not source
+tools/_bakeoff_out/
+tools/_campaign_out/
+tools/_probe_out/
