@@ -12,6 +12,24 @@ Turns a folder of SKU photos into finished campaign images. Point it at a folder
 subfolder per SKU with the product photos inside — a mounted Google Drive folder behaves
 exactly like a local one.
 
+### Local folders vs the hosted app
+
+A web page cannot read or write your own disk, and a server in Mumbai cannot see your Mac.
+So there are two ways to work, and which you want decides where you run it:
+
+**Work on your own folders — run it locally.** This is the same thing the command line does,
+with a UI on top. Browse… walks your real folders and results are written straight into
+`<your folder>/<SKU>/photoshoot/`.
+
+```bash
+cd /Users/amitmishra/Documents/GitHub/HOBAILabs
+~/.pyenv/versions/3.12.3/bin/python3.12 web_app.py     # → http://localhost:7860/shoot
+```
+
+**Use the hosted app (creative.kevat.ai)** — upload a SKU folder with the folder picker, and
+**Download** each finished SKU as a zip. The server keeps its own inbox; your machine is
+never touched in either direction.
+
 **"Path not allowed"?** The server only reads folders under one configured root, and the box
 is not your laptop — a path like `/Users/you/Desktop/PhotoShoot` will be rejected on
 creative.kevat.ai. The folder field is pre-filled with the root this server accepts

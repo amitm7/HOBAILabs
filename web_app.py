@@ -6,6 +6,7 @@ Open: http://localhost:7860
 import contextlib
 import functools
 import json
+import io
 import os
 import re
 import shutil
@@ -532,6 +533,74 @@ def api_shoot_config():
     })
 
 
+# Upload is a trust boundary: bytes and names arrive from a browser, and with guest mode on
+# from anyone. Everything below is a limit, not a nicety.
+SHOOT_UPLOAD_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+SHOOT_MAX_FILE_MB = float(os.environ.get("HOB_SHOOT_MAX_FILE_MB", "25"))
+SHOOT_MAX_FILES = int(os.environ.get("HOB_SHOOT_MAX_FILES", "60"))
+
+
+def _safe_component(name: str) -> str:
+    """One path COMPONENT from untrusted input — never a path.
+
+    Browsers send `webkitRelativePath` like "MySku/front.jpg"; a hostile client can send
+    "../../etc/x". Take the basename, drop anything that is not word/dot/dash, and refuse
+    dot-leading names so `..` and hidden files cannot survive."""
+    base = os.path.basename((name or "").replace("\\", "/").strip())
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).lstrip(".")
+    return cleaned[:120]
+
+
+@app.route("/api/shoot/upload", methods=["POST"])
+@auth.require_operator(guest=True)
+def api_shoot_upload(operator: str):
+    """Upload a SKU folder from the operator's machine into the server's inbox.
+
+    A browser cannot give the server a local PATH — it can only send the bytes. So the
+    folder picker uploads, and the files land under <ASSETS_BROWSE_ROOT>/inbox/<SKU>/.
+    """
+    if (blocked := _guest_blocked(operator)):
+        return blocked
+    sku = _safe_component(request.form.get("sku", ""))
+    if not sku:
+        return jsonify({"error": "a folder name is required"}), 400
+
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "no files received"}), 400
+    if len(files) > SHOOT_MAX_FILES:
+        return jsonify({"error": f"too many files ({len(files)}); "
+                                 f"limit is {SHOOT_MAX_FILES} per SKU"}), 413
+
+    dest = Path(ASSETS_BROWSE_ROOT) / "inbox" / sku
+    # Belt and braces: the sanitised name must still resolve inside the inbox.
+    if not str(dest.resolve()).startswith(str((Path(ASSETS_BROWSE_ROOT) / "inbox").resolve())):
+        return jsonify({"error": "invalid folder name"}), 400
+    dest.mkdir(parents=True, exist_ok=True)
+
+    saved, skipped = [], []
+    for f in files:
+        name = _safe_component(f.filename)
+        if not name or os.path.splitext(name)[1].lower() not in SHOOT_UPLOAD_EXT:
+            skipped.append(f.filename or "?")
+            continue
+        f.seek(0, os.SEEK_END)
+        mb = f.tell() / (1024 * 1024)
+        f.seek(0)
+        if mb > SHOOT_MAX_FILE_MB:
+            skipped.append(f"{name} ({mb:.1f}MB > {SHOOT_MAX_FILE_MB}MB)")
+            continue
+        f.save(str(dest / name))
+        saved.append(name)
+
+    if not saved:
+        return jsonify({"error": "nothing usable — images only "
+                                 f"({', '.join(sorted(SHOOT_UPLOAD_EXT))})",
+                        "skipped": skipped[:8]}), 400
+    return jsonify({"sku": sku, "saved": len(saved), "skipped": skipped[:8],
+                    "inbox": str(Path(ASSETS_BROWSE_ROOT) / "inbox")})
+
+
 @app.route("/api/shoot/scan", methods=["POST"])
 @auth.require_operator(guest=True)
 @safe_paths("inbox")
@@ -625,6 +694,33 @@ def api_shoot_campaign(operator: str):
     if os.sep in sku or sku.startswith("."):
         return jsonify({"error": "invalid sku"}), 400
     return jsonify(shoot.campaign(b.get("inbox", "").strip(), sku))
+
+
+@app.route("/api/shoot/download", methods=["POST"])
+@auth.require_operator(guest=True)
+@safe_paths("inbox")
+def api_shoot_download(operator: str):
+    """Zip a finished SKU's images so a hosted run can be pulled back to the operator's
+    machine. A remote server cannot write to their disk; this is the closest honest
+    equivalent — they choose where the download lands."""
+    if (blocked := _guest_blocked(operator)):
+        return blocked
+    b = request.json or {}
+    sku = b.get("sku", "").strip()
+    if os.sep in sku or sku.startswith("."):
+        return jsonify({"error": "invalid sku"}), 400
+    out_dir = Path(os.path.expanduser(b.get("inbox", ""))) / sku / "photoshoot"
+    if not out_dir.is_dir():
+        return jsonify({"error": "nothing shot for that SKU yet"}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(out_dir.rglob("*")):
+            if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png", ".json"):
+                z.write(f, arcname=str(Path(sku) / f.relative_to(out_dir)))
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"{sku}_photoshoot.zip")
 
 
 @app.route("/api/shoot/status")

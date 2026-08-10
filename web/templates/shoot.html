@@ -77,6 +77,15 @@
   .pool img { width: 62px; aspect-ratio: 4/5; object-fit: cover; border-radius: 4px;
     border: 1px solid var(--border, #2a2e35); }
   .pool img.dropped { opacity: .22; filter: grayscale(1); }
+  .browser { border: 1px solid var(--border, #2a2e35); border-radius: 7px; padding: 8px;
+             max-height: 240px; overflow-y: auto; display: grid; gap: 2px; }
+  .browser .crumb { font-family: var(--font-mono, monospace); font-size: 11.5px;
+                    color: var(--text-muted, #8b929c); padding: 2px 4px 6px; }
+  .browser button { text-align: left; background: none; border: none; color: inherit;
+    cursor: pointer; padding: 5px 8px; border-radius: 5px; font-size: 12.5px;
+    font-family: var(--font-mono, monospace); }
+  .browser button:hover { background: var(--surface-2, #1d2026); }
+  .browser .count { color: var(--text-muted, #8b929c); font-size: 11px; }
   .pool figure { margin: 0; display: grid; gap: 3px; justify-items: center; cursor: pointer; }
   .pool figcaption { font-size: 9.5px; color: var(--text-muted, #8b929c);
                      font-family: var(--font-mono, monospace); }
@@ -87,6 +96,7 @@
     border: 1px solid var(--border, #2a2e35); background: none; color: inherit; width: 100%; }
   .frame .retry:hover { border-color: var(--accent, #3aa173); }
   .frame .retry[disabled] { opacity: .5; cursor: progress; }
+  .result .dl { padding: 3px 10px; font-size: 11.5px; }
   table.hist { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   table.hist th { text-align: left; font-weight: 600; font-size: 10.5px;
     text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted, #8b929c);
@@ -110,7 +120,14 @@
       <span>SKU folder</span>
       <div class="row">
         <input type="text" id="inbox" placeholder="loading…" autocomplete="off">
+        <button type="button" class="btn" id="browse-btn">Browse…</button>
         <button type="button" class="btn" id="scan-btn">Scan</button>
+      </div>
+      <div id="browser" class="browser" hidden></div>
+      <div class="row" style="margin-top:4px">
+        <label class="btn ghost" for="upload-input">Upload a SKU folder from this computer</label>
+        <input type="file" id="upload-input" webkitdirectory directory multiple hidden>
+        <span class="muted" id="upload-status"></span>
       </div>
       <small class="muted" id="root-hint">One subfolder per SKU with its product photos
         inside. A mounted Drive folder works exactly like a local one.</small>
@@ -202,6 +219,74 @@
   const PRICE = {nano_banana_edit: 0.06, seedream_edit: 0.01, flux_kontext: 0.05};
   const estimate = () => (scan ? scan.pending * 5 * (PRICE[$("model").value] || 0.06) : 0);
   $("model").onchange = () => { if (scan) renderScan(); };
+
+  // ── server-side folder browser (uses the existing /browse-dirs route) ──
+  async function openBrowser(path) {
+    const el = $("browser");
+    el.hidden = false;
+    try {
+      const d = await get("/browse-dirs?path=" + encodeURIComponent(path || ""));
+      if (d.error) { el.innerHTML = `<span class="muted">${esc(d.error)}</span>`; return; }
+      const cur = d.path || path || "";
+      const rows = (d.dirs || []).map(x =>
+        `<button data-path="${esc(x.path)}">📁 ${esc(x.name)}` +
+        (x.media_count ? ` <span class="count">${x.media_count} images</span>` : "") +
+        `</button>`).join("");
+      el.innerHTML =
+        `<div class="crumb">${esc(cur)}</div>` +
+        (d.parent ? `<button data-path="${esc(d.parent)}">⬆︎ up</button>` : "") +
+        (rows || '<span class="muted">No subfolders here.</span>') +
+        `<button data-use="${esc(cur)}" style="color:var(--accent,#3aa173)">✓ use this folder</button>`;
+    } catch (e) { el.innerHTML = `<span class="muted">Could not browse: ${esc(e)}</span>`; }
+  }
+
+  $("browse-btn").onclick = () => {
+    const el = $("browser");
+    if (!el.hidden) { el.hidden = true; return; }
+    openBrowser($("inbox").value.trim() || (CFG && CFG.suggested_inbox) || "");
+  };
+
+  $("browser").addEventListener("click", ev => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    if (b.dataset.use !== undefined) {
+      $("inbox").value = b.dataset.use;
+      $("browser").hidden = true;
+      $("scan-btn").click();
+    } else if (b.dataset.path !== undefined) {
+      openBrowser(b.dataset.path);
+    }
+  });
+
+  // ── upload a folder from THIS computer ──
+  // A browser cannot hand the server a local path, only bytes — so a local folder is
+  // uploaded into the server's inbox, then scanned like any other.
+  $("upload-input").onchange = async ev => {
+    const files = [...ev.target.files];
+    if (!files.length) return;
+    const rel = files[0].webkitRelativePath || files[0].name;
+    const sku = rel.includes("/") ? rel.split("/")[0] : "";
+    if (!sku) { alert("Pick a folder, not individual files."); return; }
+    const imgs = files.filter(f => /\.(jpe?g|png|webp)$/i.test(f.name));
+    if (!imgs.length) { alert("That folder has no images in it."); return; }
+
+    $("upload-status").textContent = `uploading ${imgs.length} images from ${sku}…`;
+    const fd = new FormData();
+    fd.append("sku", sku);
+    imgs.forEach(f => fd.append("files", f, f.name));
+    try {
+      const r = await fetch("/api/shoot/upload", {method: "POST", body: fd}).then(x => x.json());
+      if (r.error) { $("upload-status").textContent = ""; alert(r.error); return; }
+      $("upload-status").textContent =
+        `✓ ${r.saved} images uploaded to ${r.sku}` +
+        (r.skipped && r.skipped.length ? ` · ${r.skipped.length} skipped` : "");
+      $("inbox").value = r.inbox;
+      $("scan-btn").click();
+    } catch (e) {
+      $("upload-status").textContent = "";
+      alert("Upload failed: " + e);
+    } finally { ev.target.value = ""; }
+  };
 
   $("scan-btn").onclick = async () => {
     const inbox = $("inbox").value.trim();
@@ -307,11 +392,32 @@
         <span class="muted">${esc(r.product || r.error || "")}</span>
         <span style="flex:1"></span>
         <span class="muted">$${(r.cost_usd || 0).toFixed(2)}</span>
+        ${(r.frames || []).some(f => f.ok)
+          ? `<button type="button" class="btn ghost dl" data-sku="${esc(r.sku)}">Download</button>` : ""}
       </header>
       ${groups}
       ${why ? `<div class="why">Parked for review — ${why}</div>` : ""}
     </div>`;
   }
+
+  // Download a finished SKU. A hosted server cannot write to the operator's disk, so the
+  // browser pulls a zip and they choose where it lands.
+  $("results").addEventListener("click", async ev => {
+    const b = ev.target.closest(".dl");
+    if (!b) return;
+    b.disabled = true; b.textContent = "…";
+    try {
+      const res = await fetch("/api/shoot/download", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({inbox: scan.inbox, sku: b.dataset.sku})});
+      if (!res.ok) { alert((await res.json()).error || "Download failed"); return; }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = b.dataset.sku + "_photoshoot.zip"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert("Download failed: " + e); }
+    finally { b.disabled = false; b.textContent = "Download"; }
+  });
 
   // Retry one frame, in place. Delegated so it works for results added later.
   $("results").addEventListener("click", async ev => {
