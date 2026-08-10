@@ -219,43 +219,23 @@ fi
 echo ""
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Step 5: Git commit and push
+# Step 5: Report git state — this script does NOT commit
+#
+# It used to `git add -A` and push a hardcoded message to a hardcoded branch
+# (feat/pipeline-expansion-roadmap), fired by any dirty file. That swept unrelated
+# work into a commit describing someone else's change, on a branch the deployer was
+# probably not on. Deploying and committing are different decisions; keep them apart.
 
-echo "[5/5] Committing changes to git..."
-
+echo "[5/5] Git state"
 cd "$(dirname "$0")/.."
-
-# Check if there are changes to commit
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "  branch : $BRANCH"
+echo "  commit : $(git rev-parse --short HEAD) $(git log -1 --pretty=%s | cut -c1-60)"
 if git status --porcelain | grep -q .; then
-    git add -A
-
-    git commit -m "$(cat <<'EOF'
-Promote to production: voiceover sync, multi-shot coverage, folder upload, /media security
-
-- Voiceover: frame-exact audio padding/trimming (tts_generator._fit_seg)
-- Multi-shot: B-roll coverage with duration splitting (coverage.py, expand_all)
-- Folder upload: 40MB client batching, session asset persistence
-- /media: path validation against allowed roots (web_app._path_allowed)
-- Docs: HLD/LLD updated with new capabilities
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-EOF
-)"
-
-    git push origin feat/pipeline-expansion-roadmap
-    echo "✓ Changes committed and pushed to feat/pipeline-expansion-roadmap"
+    echo "  ⚠ uncommitted changes in the working tree — the image was built from DISK,"
+    echo "    so what is now live may not match any commit. Commit before deploying if"
+    echo "    you need the deploy to be reproducible:"
+    git status --short | sed 's/^/      /' | head -10
 else
-    echo "ℹ️  No changes to commit"
+    echo "  ✓ clean — the deployed image matches $BRANCH@$(git rev-parse --short HEAD)"
 fi
-
-echo ""
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo "✓ Production deployment complete!"
-echo ""
-echo "Image details:"
-echo "  Local: $ECR_REPO:$IMAGE_TAG / $ECR_REPO:$LATEST_TAG"
-echo "  ECR:   $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
-echo "        $ECR_REGISTRY/$ECR_REPO:$LATEST_TAG"
-echo ""
-echo "Visit: https://creative.kevat.ai"
-echo "════════════════════════════════════════════════════════════════════════════════"
