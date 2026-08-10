@@ -638,6 +638,10 @@ def api_shoot_run(operator: str):
         return jsonify({"error": "inbox and sku required"}), 400
     if os.sep in sku or sku.startswith("."):        # sku is a folder NAME, never a path
         return jsonify({"error": "invalid sku"}), 400
+    left = _guest_budget_left(operator)
+    if left <= 0:
+        return jsonify({"error": f"guest daily limit of ${GUEST_DAILY_USD:.2f} reached — "
+                                 f"sign in to continue"}), 429
     try:
         model = body.get("model") or "nano_banana_edit"
         if model not in ("nano_banana_edit", "seedream_edit", "flux_kontext"):

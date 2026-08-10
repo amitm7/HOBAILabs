@@ -702,15 +702,19 @@ def _deliver(path: str, min_long_edge: int = 2048, dpi: int = 300) -> str:
         try:
             from agents import upscaler
             up = upscaler.upscale_file(path, os.path.dirname(path) or ".", creative=False)
-            if up and os.path.exists(up):
-                if os.path.abspath(up) != os.path.abspath(path):
-                    os.replace(up, path)
-                needs = False
+            if up and os.path.exists(up) and os.path.abspath(up) != os.path.abspath(path):
+                os.replace(up, path)
         except Exception as e:                       # never fail delivery on an upscale
-            print(f"    [upscale fell back to Lanczos: {str(e)[:70]}]")
+            print(f"    [upscale error, falling back: {str(e)[:70]}]")
             from agents import degradation
             degradation.report("shoot_upscale", "info",
                                f"aura_sr unavailable ({str(e)[:80]}) — interpolated instead")
+        # Re-MEASURE rather than trusting the return value. upscaler.upscale_file degrades
+        # gracefully by returning the ORIGINAL path on a timeout, which is indistinguishable
+        # from success — a frame once shipped at 896x1120, under the 2K spec, because the
+        # returned path looked like a win. Only the pixels prove it worked.
+        with Image.open(path) as im:
+            needs = max(im.size) < min_long_edge
 
     with Image.open(path) as im:
         w, h = im.size

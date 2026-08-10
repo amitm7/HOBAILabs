@@ -228,12 +228,13 @@
       const d = await get("/browse-dirs?path=" + encodeURIComponent(path || ""));
       if (d.error) { el.innerHTML = `<span class="muted">${esc(d.error)}</span>`; return; }
       const cur = d.path || path || "";
-      const rows = (d.dirs || []).map(x =>
-        `<button data-path="${esc(x.path)}">📁 ${esc(x.name)}` +
-        (x.media_count ? ` <span class="count">${x.media_count} images</span>` : "") +
-        `</button>`).join("");
+      const join = (a, b) => (a.endsWith("/") ? a + b : a + "/" + b);
+      const rows = (d.dirs || []).map(name =>
+        `<button data-path="${esc(join(cur, name))}">📁 ${esc(name)}</button>`).join("");
       el.innerHTML =
-        `<div class="crumb">${esc(cur)}</div>` +
+        `<div class="crumb">${esc(cur)}` +
+        (d.media_count ? ` <span class="count">· ${d.media_count} images here</span>` : "") +
+        `</div>` +
         (d.parent ? `<button data-path="${esc(d.parent)}">⬆︎ up</button>` : "") +
         (rows || '<span class="muted">No subfolders here.</span>') +
         `<button data-use="${esc(cur)}" style="color:var(--accent,#3aa173)">✓ use this folder</button>`;

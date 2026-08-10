@@ -274,7 +274,10 @@ def run_sku(sku: str, inbox: str, model: str, shots: list[str] | None, out_dir: 
             try:
                 lm = _landmarks_cached(anchor)
                 bo._derive(anchor, out, hero, shot, lm)
-                frames.append({"shot": shot, "ok": True, "path": out, "derived_from": anchor})
+                # status must be set here too — without it a derived frame reads as
+                # neither OK nor REVIEW and shows up as a failure in any status view.
+                frames.append({"shot": shot, "ok": True, "status": "OK", "path": out,
+                               "derived_from": anchor})
                 if not quiet:
                     print(f"      {shot:<10} derived (crop of {os.path.basename(anchor)}) — free")
             except Exception as e:
