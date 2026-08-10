@@ -109,11 +109,11 @@
     <label class="field">
       <span>SKU folder</span>
       <div class="row">
-        <input type="text" id="inbox" placeholder="/Users/you/Desktop/PhotoShoot" autocomplete="off">
+        <input type="text" id="inbox" placeholder="loading…" autocomplete="off">
         <button type="button" class="btn" id="scan-btn">Scan</button>
       </div>
-      <small class="muted">One subfolder per SKU with its product photos inside. A mounted Drive
-        folder works exactly like a local one.</small>
+      <small class="muted" id="root-hint">One subfolder per SKU with its product photos
+        inside. A mounted Drive folder works exactly like a local one.</small>
     </label>
     <div id="scan-out" hidden style="display:grid;gap:10px"></div>
   </section>
@@ -180,8 +180,24 @@
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
     ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
-  let scan = null;
-  try { $("inbox").value = localStorage.getItem("hob_shoot_inbox") || ""; } catch (e) {}
+  let scan = null, CFG = null;
+
+  // Ask the server where it will accept an inbox. Without this the operator types a path
+  // that is valid on their laptop, gets "Path not allowed", and has nothing to go on.
+  (async () => {
+    try {
+      CFG = await get("/api/shoot/config");
+      $("inbox").placeholder = CFG.suggested_inbox;
+      let saved = "";
+      try { saved = localStorage.getItem("hob_shoot_inbox") || ""; } catch (e) {}
+      $("inbox").value = (saved && saved.startsWith(CFG.browse_root)) ? saved
+                                                                     : CFG.suggested_inbox;
+      $("root-hint").innerHTML =
+        `One subfolder per SKU with its product photos inside. This server only accepts ` +
+        `folders under <code>${esc(CFG.browse_root)}</code>` +
+        (CFG.guest_mode ? ` · guest limit $${CFG.guest_daily_usd.toFixed(2)}/day` : "");
+    } catch (e) { /* leave the field usable if config is unavailable */ }
+  })();
 
   const PRICE = {nano_banana_edit: 0.06, seedream_edit: 0.01, flux_kontext: 0.05};
   const estimate = () => (scan ? scan.pending * 5 * (PRICE[$("model").value] || 0.06) : 0);
@@ -193,7 +209,15 @@
     $("scan-btn").disabled = true;
     try {
       const r = await post("/api/shoot/scan", {inbox});
-      if (r.error) { alert(r.error); return; }
+      if (r.error) {
+        alert(/not allowed/i.test(r.error) && CFG
+          ? `That folder is outside what this server will read.\n\n` +
+            `Allowed root: ${CFG.browse_root}\nTry: ${CFG.suggested_inbox}\n\n` +
+            `Paths from another machine (e.g. your laptop) will not work here — ` +
+            `copy the SKU folders under the allowed root first.`
+          : r.error);
+        return;
+      }
       scan = r;
       try { localStorage.setItem("hob_shoot_inbox", inbox); } catch (e) {}
       renderScan();

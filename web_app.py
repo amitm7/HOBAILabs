@@ -516,6 +516,22 @@ def shoot_page():
     return render_template("shoot.html")
 
 
+@app.route("/api/shoot/config")
+def api_shoot_config():
+    """Where this server will accept an inbox, so the page can tell the operator instead
+    of letting them guess and hit "Path not allowed". Deliberately unauthenticated and
+    read-only: it exposes one already-configured directory name, and without it the UI
+    cannot be honest about what it accepts."""
+    root = str(ASSETS_BROWSE_ROOT)
+    default = os.path.join(root, "inbox")
+    return jsonify({
+        "browse_root": root,
+        "suggested_inbox": default if os.path.isdir(default) else root,
+        "guest_mode": auth.guest_allowed(),
+        "guest_daily_usd": GUEST_DAILY_USD,
+    })
+
+
 @app.route("/api/shoot/scan", methods=["POST"])
 @auth.require_operator(guest=True)
 @safe_paths("inbox")

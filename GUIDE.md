@@ -12,6 +12,17 @@ Turns a folder of SKU photos into finished campaign images. Point it at a folder
 subfolder per SKU with the product photos inside — a mounted Google Drive folder behaves
 exactly like a local one.
 
+**"Path not allowed"?** The server only reads folders under one configured root, and the box
+is not your laptop — a path like `/Users/you/Desktop/PhotoShoot` will be rejected on
+creative.kevat.ai. The folder field is pre-filled with the root this server accepts
+(`/data/shoot/inbox` in production, which is `/srv/hob/shoot/inbox` on the host). Copy SKU
+folders there first:
+
+```bash
+scp -i ~/.ssh/hobailabs-key.pem -r ~/Desktop/PhotoShoot/443347568_blue \
+    ec2-user@13.202.0.21:/srv/hob/shoot/inbox/
+```
+
 1. **Scan** — shows how many SKUs there are, how many still need shooting, and what it will cost.
    Already-finished SKUs are skipped, so re-scanning a big folder is free.
 2. **Generate** — each SKU produces seven images: six for your own site (front crop, full length,
