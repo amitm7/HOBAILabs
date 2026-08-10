@@ -471,6 +471,45 @@ def canvas_page():
 # loop, so there is no background job state, no polling and no queue to get wrong, and
 # progress is just responses arriving. See docs/PRODUCT_SHOOT_PLAN.md §11.
 
+# Guests may use /shoot when HOB_ALLOW_GUEST=1, but generation spends real money, so a
+# server-side daily ceiling backs the open door. Without it, "login-free" means anyone who
+# finds the URL can drain the fal balance — a role check does not stop that.
+GUEST_DAILY_USD = float(os.environ.get("HOB_GUEST_DAILY_USD", "5.00"))
+
+# ASSETS_BROWSE_ROOT defaults to $HOME. That is fine behind a login; with guest routes open
+# it would let anyone enumerate the home directory through /browse-dirs and /media. Rather
+# than trusting an operator to remember, guest requests are REFUSED while the root is unsafe.
+# Fail closed: the deploy that forgets the variable loses guest mode, not the filesystem.
+def _guest_root_ok() -> bool:
+    try:
+        return ASSETS_BROWSE_ROOT.resolve() != Path.home().resolve()
+    except OSError:
+        return False
+
+
+def _guest_blocked(operator: str):
+    """Return an error response when a guest may not proceed, else None."""
+    if operator != "guest":
+        return None
+    if not _guest_root_ok():
+        return jsonify({"error": "guest access is disabled until ASSETS_BROWSE_ROOT is set to "
+                                 "a dedicated folder (it currently resolves to the home "
+                                 "directory)"}), 503
+    return None
+
+
+def _guest_budget_left(operator: str) -> float:
+    """Remaining guest spend for today. Infinite for a real operator."""
+    if operator != "guest":
+        return float("inf")
+    from agents import shoot
+    import time as _t
+    midnight = _t.time() - (_t.time() % 86400)
+    spent = sum(j["cost_usd"] for j in shoot.status(limit=2000)
+                if (j.get("updated_at") or 0) >= midnight)
+    return max(0.0, GUEST_DAILY_USD - spent)
+
+
 @app.route("/shoot")
 def shoot_page():
     """Product photoshoot: SKU folders in, campaign images out."""
@@ -478,10 +517,12 @@ def shoot_page():
 
 
 @app.route("/api/shoot/scan", methods=["POST"])
-@auth.require_operator()
+@auth.require_operator(guest=True)
 @safe_paths("inbox")
 def api_shoot_scan(operator: str):
     """List SKU folders under the inbox with their ledger status + a cost estimate."""
+    if (blocked := _guest_blocked(operator)):
+        return blocked
     from agents import shoot
     inbox = (request.json or {}).get("inbox", "").strip()
     if not inbox:
@@ -499,10 +540,12 @@ def api_shoot_scan(operator: str):
 
 
 @app.route("/api/shoot/run", methods=["POST"])
-@auth.require_operator()
+@auth.require_operator(guest=True)
 @safe_paths("inbox")
 def api_shoot_run(operator: str):
     """Shoot ONE SKU. The browser calls this per SKU so progress needs no shared state."""
+    if (blocked := _guest_blocked(operator)):
+        return blocked
     from agents import shoot
     body = request.json or {}
     inbox, sku = body.get("inbox", "").strip(), body.get("sku", "").strip()
@@ -515,7 +558,7 @@ def api_shoot_run(operator: str):
         if model not in ("nano_banana_edit", "seedream_edit", "flux_kontext"):
             return jsonify({"error": "unknown model"}), 400
         res = shoot.run_sku(inbox, sku, model=model,
-                            cap=float(body.get("cap") or 1.00),
+                            cap=min(float(body.get("cap") or 1.00), left),
                             force=bool(body.get("force")))
     except Exception as e:
         return jsonify({"sku": sku, "status": "FAILED", "error": str(e)[:200],
@@ -524,11 +567,13 @@ def api_shoot_run(operator: str):
 
 
 @app.route("/api/shoot/retry", methods=["POST"])
-@auth.require_operator()
+@auth.require_operator(guest=True)
 @safe_paths("inbox")
 def api_shoot_retry(operator: str):
     """Re-shoot ONE frame. Redoing a whole SKU to fix one parked frame wastes the five
     good generations, which is why this exists separately from /run."""
+    if (blocked := _guest_blocked(operator)):
+        return blocked
     from agents import shoot
     b = request.json or {}
     inbox, sku, shot = (b.get("inbox", "").strip(), b.get("sku", "").strip(),
@@ -537,21 +582,27 @@ def api_shoot_retry(operator: str):
         return jsonify({"error": "inbox, sku and shot required"}), 400
     if os.sep in sku or sku.startswith("."):
         return jsonify({"error": "invalid sku"}), 400
+    left = _guest_budget_left(operator)
+    if left <= 0:
+        return jsonify({"ok": False, "error": f"guest daily limit of "
+                                              f"${GUEST_DAILY_USD:.2f} reached"}), 429
     try:
         model = b.get("model") or "nano_banana_edit"
         if model not in ("nano_banana_edit", "seedream_edit", "flux_kontext"):
             return jsonify({"error": "unknown model"}), 400
         return jsonify(shoot.retry_frame(inbox, sku, shot, model=model,
-                                         cap=float(b.get("cap") or 0.30)))
+                                         cap=min(float(b.get("cap") or 0.30), left)))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:200]})
 
 
 @app.route("/api/shoot/campaign", methods=["POST"])
-@auth.require_operator()
+@auth.require_operator(guest=True)
 @safe_paths("inbox")
 def api_shoot_campaign(operator: str):
     """The stored manifest for an already-shot SKU, so results survive a page reload."""
+    if (blocked := _guest_blocked(operator)):
+        return blocked
     from agents import shoot
     b = request.json or {}
     sku = b.get("sku", "").strip()
@@ -561,25 +612,32 @@ def api_shoot_campaign(operator: str):
 
 
 @app.route("/api/shoot/status")
-@auth.require_operator()
+@auth.require_operator(guest=True)
 def api_shoot_status(operator: str):
+    if (blocked := _guest_blocked(operator)):
+        return blocked
     from agents import shoot
     rows = shoot.status()
     return jsonify({"jobs": rows, "total_usd": round(sum(r["cost_usd"] for r in rows), 2)})
 
 
 @app.route("/api/shoot/personas")
-@auth.require_operator()
+@auth.require_operator(guest=True)
 def api_shoot_personas(operator: str):
+    if (blocked := _guest_blocked(operator)):
+        return blocked
     from agents import shoot
     return jsonify({"personas": shoot.personas(request.args.get("brand", "default"))})
 
 
 @app.route("/api/shoot/personas/mint", methods=["POST"])
-@auth.require_operator()
+@auth.require_operator(guest=True)
 def api_shoot_personas_mint(operator: str):
-    """Mint the brand's casting pool. Spends money, so it is an explicit action."""
+    """Mint the brand's casting pool. A pool costs ~$1.80 and replaces the brand's faces,
+    so this stays operator-only even in guest mode."""
     from agents import shoot
+    if operator == "guest":
+        return jsonify({"error": "minting the casting pool requires a signed-in operator"}), 403
     b = request.json or {}
     try:
         n = max(1, min(int(b.get("count") or 30), 50))
@@ -589,10 +647,12 @@ def api_shoot_personas_mint(operator: str):
 
 
 @app.route("/api/shoot/personas/cull", methods=["POST"])
-@auth.require_operator()
+@auth.require_operator(guest=True)
 def api_shoot_personas_cull(operator: str):
     """Drop or restore faces — the brand's one-time review of who represents it."""
     from agents import shoot
+    if operator == "guest":
+        return jsonify({"error": "editing the casting pool requires a signed-in operator"}), 403
     b = request.json or {}
     ids = [i for i in (b.get("ids") or []) if isinstance(i, str)]
     if not ids:
@@ -2979,6 +3039,9 @@ def serve_media():
 @app.route("/browse-dirs")
 def browse_dirs():
     """List subfolders + media count under ASSETS_BROWSE_ROOT for the folder picker."""
+    if auth.guest_allowed() and not _guest_root_ok():
+        return jsonify({"error": "folder browsing is disabled while ASSETS_BROWSE_ROOT "
+                                 "resolves to the home directory"}), 503
     req = request.args.get("path", "") or str(ASSETS_BROWSE_ROOT)
     try:
         cur = Path(req).resolve()

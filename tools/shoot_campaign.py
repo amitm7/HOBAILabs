@@ -26,7 +26,12 @@ import sys
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-load_dotenv(".env", override=True)
+# Only load .env when this file is RUN as a script. Imported as a library (agents/shoot.py
+# does this lazily inside a request) an override=True load would silently re-apply the
+# on-disk .env over the server's own environment mid-request — which is how a production
+# HOB_AUTH_DISABLED could be resurrected from a file nobody meant to deploy.
+if __name__ == "__main__":
+    load_dotenv(".env", override=True)
 
 from PIL import Image  # noqa: E402
 

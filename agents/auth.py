@@ -156,12 +156,26 @@ def _extract_token(req) -> str:
     return req.cookies.get("hob_token", "")
 
 
-def require_operator(*roles: str):
+def guest_allowed() -> bool:
+    """Whether unauthenticated visitors may use guest-open routes (HOB_ALLOW_GUEST=1)."""
+    return os.environ.get("HOB_ALLOW_GUEST") == "1"
+
+
+def require_operator(*roles: str, guest: bool = False):
     """Gate a Flask route: valid token required; optionally a role in `roles`.
 
     Injects the verified claims into `flask.g.operator` and passes
     `operator=<operator_id>` to the handler so it never trusts request-body identity.
     Auth can be disabled for local dev with HOB_AUTH_DISABLED=1 (never in prod).
+
+    `guest=True` marks a route as usable without a login when HOB_ALLOW_GUEST=1 — the
+    caller arrives as operator "guest" with role "guest". A real token still wins, so a
+    logged-in operator is never downgraded.
+
+    Only put `guest=True` on a route you are willing to expose to anyone who finds the
+    URL. Routes that SPEND must additionally enforce a guest ceiling (see
+    web_app._guest_budget_left) — an open endpoint onto a paid API is an open wallet,
+    and a role check alone does not stop that.
     """
     def decorator(fn):
         @functools.wraps(fn)
@@ -171,6 +185,9 @@ def require_operator(*roles: str):
                 g.operator = {"sub": "dev", "role": "admin"}
                 return fn(*args, operator="dev", **kwargs)
             claims = verify_token(_extract_token(request))
+            if not claims and guest and guest_allowed():
+                g.operator = {"sub": "guest", "role": "guest"}
+                return fn(*args, operator="guest", **kwargs)
             if not claims:
                 return jsonify({"error": "authentication required"}), 401
             if roles and claims.get("role") not in roles and claims.get("role") != "admin":
