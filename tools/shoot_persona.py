@@ -43,7 +43,11 @@ _spec = importlib.util.spec_from_file_location("bo", os.path.join(_here, "shoot_
 bo = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bo)
 
-ROOT = os.path.join(os.path.expanduser("~"), ".hob_cache", "shoot_personas")
+# HOB_PERSONA_ROOT so the pool can live on a persistent volume. Inside a container the
+# default lands in the image's home directory, which is wiped on every recreate — the
+# brand's faces are an ASSET, not a cache.
+ROOT = os.environ.get("HOB_PERSONA_ROOT") or os.path.join(
+    os.path.expanduser("~"), ".hob_cache", "shoot_personas")
 
 # Each candidate varies only in ways the brand spec leaves open, so every face is on-spec but a
 # DIFFERENT person. Without this they collapse into one face with slightly different hair.
@@ -126,11 +130,20 @@ def load_spec(brand: str, default: str) -> str:
 
 
 def load_pool(brand: str) -> list[dict]:
+    """Read the pool, resolving each face path against the CURRENT pool directory.
+
+    pool.json stores bare filenames, not absolute paths: a pool minted on a laptop and
+    copied to a server must still work, and an absolute /Users/... path would silently
+    point at nothing there. Legacy absolute paths are still honoured by basename."""
     p = _pool_path(brand)
     if not os.path.exists(p):
         return []
     with open(p) as f:
-        return json.load(f)
+        pool = json.load(f)
+    d = _dir(brand)
+    for x in pool:
+        x["path"] = os.path.join(d, os.path.basename(x.get("path") or f"{x['id']}.jpg"))
+    return pool
 
 
 def pick(brand: str, sku: str, genre: str = "") -> dict | None:
@@ -208,7 +221,7 @@ def _mint(brand: str, spec: str, count: int, model: str) -> list[dict]:
             print(f"  {pid}  FAILED  {str(e)[:80]}")
             continue
         s = _score_face(out, spec)
-        pool.append({"id": pid, "path": out, "variant": VARIANTS[i],
+        pool.append({"id": pid, "path": os.path.basename(out), "variant": VARIANTS[i],
                      "realism": s["realism"], "on_spec": s["on_spec"],
                      "ai_tells": s["ai_tells"], "build": s.get("build", ""),
                      "hair": s.get("hair", ""), "age_reads": s.get("age_reads", 0),
